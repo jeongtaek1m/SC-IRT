@@ -106,7 +106,14 @@ python train/assemble_ensemble.py runs/kcat_*.npz --out interact_b2d_w2a_final.n
 ```
 
 Inputs are only what the paper claims: GT agent box-tracks, the ego track, and
-the driving command — no camera, no map, no scenario parameters. Training is
+the driving command — no camera, no map, no scenario parameters.
+
+One asymmetry is deliberate: calibration and the gold anchor are 2PL, but the
+*training signal* fixes a==1 (Rasch geometry). Fitted log-a has split-half
+reliability 0.03-0.15 on this panel — discrimination is rater noise here — and
+an unseen scene has no a to predict, so the encoder learns the one quantity
+that is both reliable and defined out of fold. Re-scoring every arm under the
+2PL gold moves pooled correlations by at most ±0.005. Training is
 GPU-tier reproducibility (see REPRODUCIBILITY.md): seeds move the pooled rho by
 ~0.01 and cross-device bit-identity is not promised, but the assembler was
 verified to rebuild `interact_b2d_w2a_final.npz` bit-for-bit from the original
