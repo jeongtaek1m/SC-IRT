@@ -15,7 +15,7 @@ because the ones that carry no information about *this* planner need not be run.
 
 | | |
 |---|---|
-| Difficulty recovery | rho **+0.520** for the learned encoder, against **+0.191** for the best hand-crafted descriptor (ceiling +0.904) |
+| Difficulty recovery | rho **+0.520** for the learned encoder, against **+0.191** for the best simple descriptor and **+0.418** for the kinematic reference that is also the encoder's own auxiliary input (ceiling +0.904; the GT channel stack, +0.529, ties the encoder — Table IV) |
 | Evaluation efficiency | success rate to ±4.4% in **25.6 routes** instead of 219 — **8.6x** fewer |
 | Unseen scenarios | with no calibration available at all, adaptive selection on predicted difficulty matches the unattainable oracle (31.5 vs 32.9 routes) |
 
@@ -70,16 +70,15 @@ train/            the encoder training pipeline (GPU; see "Training the encoder"
   train_encoder_b2d.py   44-fold LOTO training -> out-of-fold difficulty
   assemble_ensemble.py   six runs -> the released ensemble artifact
 
-data/             1.4 MB — response matrix, route types, 9 descriptor files,
+data/             ~0.5 MB — response matrix, route types, 10 descriptor files (9 npz + 1 csv),
                   frozen encoder predictions
 expected/         reference outputs from this code, pinned configuration
-expected_legacy/  the authors' original outputs, unmodified
 tests/            kernel-equivalence and invariant tests
-tools/            baseline freezing, output comparison
+tools/            numeric output comparison (compare_outputs.py)
 ```
 
-`gold_anchor.py` must run first: it writes the frozen difficulty anchor that five
-other experiments read. `run_all.sh` encodes the order.
+`gold_anchor.py` must run first: it writes the frozen difficulty anchor that three
+other experiments read (encoder_us, encoder_verify, hybrid_prereg). `run_all.sh` encodes the order.
 
 ## Training the encoder
 
@@ -116,9 +115,10 @@ that is both reliable and defined out of fold. Re-scoring every arm under the
 2PL gold moves pooled correlations by at most ±0.005. Training is
 GPU-tier reproducibility (see REPRODUCIBILITY.md): seeds move the pooled rho by
 ~0.01 and cross-device bit-identity is not promised, but the assembler was
-verified to rebuild `interact_b2d_w2a_final.npz` bit-for-bit from the original
-six runs, and a fresh smoke run reproduces the original development trace
-exactly on the original hardware.
+verified to rebuild every numeric key of `interact_b2d_w2a_final.npz` bit-for-bit
+from the original six runs (the `routes` string key is stored with its
+`route_` prefix, which the released trainer now also emits), and a fresh smoke
+run reproduces the original development trace exactly on the original hardware.
 
 ## Method in one page
 

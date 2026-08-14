@@ -63,7 +63,8 @@ print(
 print(f"Spearman-Brown reliability of the full 16-planner gold: {rel_full:.3f}")
 print(f"→ expected ceiling ρ for a perfect predictor = √{rel_full:.3f} = {ceiling:.3f}")
 
-# Point estimates transcribed from gold_anchor.py's leave-one-type-out output.
+# Context lines: the first three are transcribed from gold_anchor.py's output;
+# the scenparamz-glob line comes from the hybrid_prereg.py baseline arm.
 for name, rho in [
     ("cmdkin", 0.418),
     ("cmdkin+camrisk-full", 0.528),

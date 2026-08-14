@@ -1,7 +1,0 @@
-split-half ρ (8명 vs 8명, 20회): 0.692 ± 0.034  [범위 0.581~0.741]
-Spearman-Brown full-gold(16명) 신뢰도: 0.818
-→ 완벽한 predictor의 기대 상한 ρ ≈ √0.818 = 0.904
-  cmdkin                   ρ=+0.418 → 상한 대비 46%   (감쇠보정 ρ=0.462)
-  cmdkin+camrisk-full      ρ=+0.528 → 상한 대비 58%   (감쇠보정 ρ=0.584)
-  GT ck+gtrisk             ρ=+0.529 → 상한 대비 59%   (감쇠보정 ρ=0.585)
-  cmdkin+scenparamz-glob   ρ=+0.554 → 상한 대비 61%   (감쇠보정 ρ=0.613)

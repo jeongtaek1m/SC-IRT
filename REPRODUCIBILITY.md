@@ -26,8 +26,8 @@ nothing anyway.
 
 | Tier | Meaning | Lines |
 |---|---|---|
-| **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` ens6 and the 6-seed mean/sd; `cat_ups` b-tilde rows; `cat_up` random-strat and btilde-spread; the 0.904 ceiling |
-| **B — ±0.002** | Third decimal moves with device or library version | `noise_ceiling` split-half and reliability; most `descriptor_table` rows; `gold_anchor` rho; `hybrid_prereg` point estimates; per-seed rho and bootstrap CIs |
+| **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` ens6 and the 6-seed mean/sd; `cat_ups` Random / shrunk-information rows; `cat_up` random-strat and btilde-spread; the 0.904 ceiling |
+| **B — ±0.002** | Third decimal moves with device or library version | `noise_ceiling` split-half and reliability; most `descriptor_table` rows; `gold_anchor` rho; `hybrid_prereg` point estimates; per-seed rho and bootstrap CIs; `cat_ups` btilde-hybrid |
 | **C — chaotic** | Trajectory-level divergence from ~1e-7 input noise | `cat_up` fisher-1PL, bhat-spread, tinyAnchor (all tau blocks); `cat_ups` ORACLE-fisher |
 
 Tier C is not stochasticity in the usual sense — every generator is explicitly
@@ -58,21 +58,22 @@ python tools/compare_outputs.py expected my_run --tol 0.002
 
 ### Measured drift, legacy vs this release
 
-The refactored code reproduces the pinned-configuration oracle **byte for byte**
-on all eight experiments. The remaining differences against `expected_legacy/`
-predate the refactor: they are what the *unmodified* original scripts already
-produced on a current library stack, and they are dominated by the device change.
+The refactor was validated against the authors' original development outputs
+before release (the raw legacy traces are not shipped; they are Korean-labelled
+logs from the pre-release scripts). Differences were confined to the third
+decimal on Tier-B lines and to the Tier-C chaotic rows below; every verdict,
+both headline Table II rows and all significance calls survive unchanged:
 
 | Experiment | vs legacy |
 |---|---|
-| `encoder_us` | identical |
 | `noise_ceiling` | split-half 0.692 -> 0.691, reliability 0.818 -> 0.817, **ceiling 0.904 unchanged** |
-| `descriptor_table` | all AUROC/MAE identical; Agent-JEPA rho -0.275 -> -0.276 |
+| `descriptor_table` | AUROC/MAE identical; Agent-JEPA rho -0.275 -> -0.276; kin+den rho +0.191 -> +0.190 |
 | `gold_anchor` | rho identical (+0.418 / +0.528 / +0.529) |
-| `encoder_verify` | rho within 1e-4; tie verdict unchanged |
+| `encoder_us` | ens6L identical; the d64 stability arm 0.500 -> 0.501 |
+| `encoder_verify` | rho within 2e-4; tie verdict unchanged |
 | `hybrid_prereg` | point estimates within 0.0004; significance verdicts unchanged |
-| `cat_ups` | Random and Ours rows identical; oracle row 32.7 -> 32.9 routes |
-| `cat_up` | 2PL information and random-strat identical; Tier C rows differ: 1PL information theta-err 0.345 -> 0.249, bhat-spread 48.2 -> 46.6 routes, tinyAnchor 51.0 -> 52.2 |
+| `cat_ups` | Random and Ours rows identical; btilde-hybrid third-decimal drift; oracle row 32.7 -> 32.9 routes |
+| `cat_up` | 2PL information and random-strat identical (srMAE/theta-err third-decimal drift); Tier C rows differ: 1PL information theta-err 0.345 -> 0.249, bhat-spread 48.2 -> 46.6 routes, tinyAnchor 51.0 -> 52.2 |
 
 Both reported Table II rows survive: 2PL information stays at **25.6 routes**
 (IES 8.6x) and the shrunk-information row at **31.5**. Pinning the device is what
@@ -115,4 +116,5 @@ evaluation package, and deliberately so:
   `--even_windows` for the coverage variant.
 - **Verified chain.** `assemble_ensemble.py` rebuilds
   `data/interact/interact_b2d_w2a_final.npz` bit-identically from the original
-  six run files (all keys, including both rank ensembles and the gold anchor).
+  six run files on every numeric key (both rank ensembles and the gold anchor;
+  the `routes` string key is prefix-normalised by the released trainer).

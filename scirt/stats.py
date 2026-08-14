@@ -4,16 +4,6 @@ import numpy as np
 from scipy.stats import spearmanr
 
 
-def spearman(x, y):
-    """Spearman rank correlation as a plain float."""
-    return spearmanr(x, y).correlation
-
-
-def pct_ci(v, lo=2.5, hi=97.5):
-    """Percentile confidence interval over bootstrap replicates."""
-    return np.percentile(v, [lo, hi])
-
-
 def mean_se(v):
     """Mean and standard error over folds.
 

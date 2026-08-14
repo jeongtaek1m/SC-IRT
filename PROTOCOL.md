@@ -58,12 +58,16 @@ concatenated *inside* the model through an MLP. The output is a scalar difficult
 
 Training minimises the cell-level BCE
 `-sum_ij log P(y_ij | sigmoid(theta_j - b_tilde(x_i)))`, with `theta` fitted by a
-within-fold Rasch calibration and then frozen. Checkpoints are selected on
-validation NLL, never on an evaluation metric. Three seeds are reported plus the
-ensemble; Table I uses the 6-seed logit mean (ens6L).
+within-fold Rasch calibration and then frozen. Six runs are reported (two widths
+x three seeds) plus their ensemble; Table I uses the 6-seed logit mean (ens6L).
+The shipped artifact's original training selected checkpoints on an inner
+validation NLL; the released reference trainer runs a fixed epoch budget and is
+not claimed to regenerate the artifact bit-for-bit (GPU tier, REPRODUCIBILITY.md).
 
-This repository ships the encoder's frozen out-of-fold predictions
-(`data/interact/interact_b2d_w2a_final.npz`), not its training code.
+This repository ships both the encoder's frozen out-of-fold predictions
+(`data/interact/interact_b2d_w2a_final.npz`, the reference artifact every
+number in RESULTS.md is computed from) and a reference training pipeline
+(`train/`).
 
 ### 2.3 Baseline — two-stage explanatory IRT
 
@@ -179,7 +183,7 @@ Spearman-Brown:   reliability = 2 r_half / (1 + r_half)
 Ceiling        =  sqrt(reliability)
 ```
 
-B2D: r_half 0.692 -> reliability 0.818 -> **ceiling 0.904**. Attenuation-corrected
+B2D: r_half 0.691 -> reliability 0.817 -> **ceiling 0.904**. Attenuation-corrected
 values `rho* = rho / ceiling` may be reported alongside raw rho.
 
 This estimate runs on the full 220-route collection, not the 219-route evaluation

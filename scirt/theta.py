@@ -37,12 +37,3 @@ def map_theta(bs, ys, aa, it):
         h = -(aa * aa * p * (1 - p)).sum() - 1.0
         t -= g / h
     return float(np.clip(t, -6, 6))
-
-
-def theta_se(info):
-    """Posterior SE of the ability estimate given summed item information.
-
-    The +1 is the standard-normal prior's contribution; it is what makes the SE
-    finite before any item has been administered.
-    """
-    return 1 / np.sqrt(info + 1)

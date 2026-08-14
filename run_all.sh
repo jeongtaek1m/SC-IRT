@@ -3,7 +3,7 @@
 #
 #   bash run_all.sh [outdir] [python]
 #
-# Step 1 writes the frozen gold anchor that five later steps read, so the order
+# Step 1 writes the frozen gold anchor that three later steps read, so the order
 # is a hard contract rather than a convenience.
 #
 # The runtime is pinned (CPU, single-threaded) because the published numbers are

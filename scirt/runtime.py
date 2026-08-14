@@ -48,11 +48,3 @@ def set_global_seeds(seed=0):
     """
     np.random.seed(seed)
     torch.manual_seed(seed)
-
-
-def describe():
-    """One-line environment summary, printed into run logs for provenance."""
-    return (
-        f"device={DEVICE} threads={torch.get_num_threads()} "
-        f"torch={torch.__version__} numpy={np.__version__}"
-    )

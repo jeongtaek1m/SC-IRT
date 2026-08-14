@@ -13,7 +13,6 @@ here; `data/interact/interact_b2d_w2a_final.npz` holds the six training runs
 Reported arm is ens6L, the logit-mean of the six runs.
 """
 
-import csv
 import json
 import sys
 import os
@@ -36,9 +35,13 @@ types = [str(t) for t in d["types"]]
 
 runs = [np.array(d[k], dtype=np.float64)
         for k in ["d64_s0", "d64_s1", "d64_s2", "d96_s0", "d96_s1", "d96_s2"]]
+# ens_d64 is a *rank*-scale ensemble (assemble_ensemble.py rank-averages the
+# seeds), so it cannot be fed to sigmoid(theta - b): probability metrics would
+# be meaningless (this bug shipped in a legacy trace as AUROC 0.556/MAE 0.509).
+# The d64 stability arm is therefore rebuilt here as a logit mean of its seeds.
 ARMS = {
     "ens6L (6-seed logit mean)": np.mean(runs, 0),
-    "ens_d64": np.array(d["ens_d64"], dtype=np.float64),
+    "ens_d64L (3-seed logit mean)": np.mean(runs[:3], 0),
 }
 
 panel = data.read_response_panel()

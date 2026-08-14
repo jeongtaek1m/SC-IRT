@@ -34,15 +34,6 @@ def cluster_bootstrap_idx(clusters, B=10000, seed=0):
         yield np.concatenate([clusters[i] for i in pick])
 
 
-def bootstrap_rho(gold, pred, clusters, B=10000, seed=0):
-    """Percentile CI of Spearman rho against gold."""
-    vals = [
-        spearmanr(gold[idx], pred[idx]).correlation
-        for idx in cluster_bootstrap_idx(clusters, B, seed)
-    ]
-    return np.percentile(vals, [2.5, 97.5])
-
-
 def paired_delta_rho(gold, a, b, clusters, B=10000, seed=0):
     """Paired CI and exceedance probability for rho(a) - rho(b).
 
