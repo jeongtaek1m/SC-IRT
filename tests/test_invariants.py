@@ -1,0 +1,142 @@
+"""Structural facts the reported numbers depend on.
+
+Cheap assertions that fail loudly if a future edit quietly changes the evaluation
+bank, the dtype, the device policy, or an iteration count. Each corresponds to a
+way the numbers moved, or nearly moved, during the refactor.
+"""
+
+import os
+import re
+import sys
+
+import numpy as np
+import torch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scirt import data, features, irt, runtime, stage2  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+runtime.configure()
+
+
+def _bank():
+    panel = data.read_response_panel()
+    types = data.read_route_types()
+    CK = features.load_st("eval_cmdkin_stats")
+    CRF = features.load_st("eval_camrisk")
+    return panel, types, data.route_universe(panel.route_ids, types, CK, CRF)
+
+
+def test_evaluation_bank_is_219_routes():
+    """One route failed collection; the bank is 219, not the 220 collected."""
+    panel, types, allr = _bank()
+    data.assert_canonical_universe(allr)
+    assert len(panel.route_ids) == 220
+    assert "11755" not in types
+
+
+def test_panel_is_16_planners():
+    panel = data.read_response_panel()
+    assert panel.n_planners == 16
+    assert data.EXCLUDED_PLANNER not in panel.planners
+
+
+def test_cluster_structure_is_44_types():
+    """43 types of five routes plus one of four - the bootstrap's resampling unit."""
+    _, types, allr = _bank()
+    sizes = sorted(len(c) for c in data.type_clusters(allr, types))
+    assert len(sizes) == 44
+    assert sizes == [4] + [5] * 43
+    assert sum(sizes) == 219
+
+
+def test_noise_ceiling_bank_is_220():
+    """The reliability estimate runs on the full collection, not the 219 bank.
+
+    Its filter is 'at least eight observed responses', which excludes nothing.
+    Unifying it with the 219-route universe moves the published 0.904 ceiling.
+    """
+    Y = data.read_response_panel().dense_all()
+    assert sum((~np.isnan(Y[i])).sum() >= 8 for i in range(Y.shape[0])) == 220
+
+
+def test_features_and_fits_are_float32():
+    """Promotion to float64 moves every reported value in the third decimal."""
+    CK = features.load_st("eval_cmdkin_stats")
+    assert next(iter(CK.values())).dtype == np.float32
+    assert torch.get_default_dtype() == torch.float32
+
+    panel = data.read_response_panel()
+    M = panel.dense(panel.route_ids[:40], list(range(panel.n_planners)))
+    fit = irt.fit_irt_map(M, ~np.isnan(M), model="2pl", it=50)
+    assert fit.b.dtype == np.float32
+    # The centering constant must stay in the fit's dtype: computing it as a
+    # Python float promotes the subtraction to float64 and shifts every
+    # difficulty by ~6e-8.
+    assert np.asarray(fit.theta_mean).dtype == np.float32
+    assert irt.center_b(fit).dtype == np.float32
+
+
+def test_no_module_auto_selects_a_device():
+    """Device is pinned in runtime.py; nothing else may probe for a GPU."""
+    offenders = []
+    for sub in ("scirt", "experiments"):
+        for name in sorted(os.listdir(os.path.join(ROOT, sub))):
+            if name.endswith(".py") and name != "runtime.py":
+                src = open(os.path.join(ROOT, sub, name), encoding="utf-8").read()
+                if "cuda.is_available" in src:
+                    offenders.append(f"{sub}/{name}")
+    assert offenders == []
+
+
+def test_every_fit_call_names_its_iteration_count():
+    """400, 600 and 800 are all live; a defaulted it= would silently rewrite one."""
+    missing = []
+    call = re.compile(r"(fit_irt_map|calibrate_panel|map_theta)\s*\(")
+    for name in sorted(os.listdir(os.path.join(ROOT, "experiments"))):
+        if not name.endswith(".py"):
+            continue
+        src = open(os.path.join(ROOT, "experiments", name), encoding="utf-8").read()
+        for m in call.finditer(src):
+            depth, i = 0, m.end() - 1
+            while i < len(src):
+                depth += src[i] == "("
+                depth -= src[i] == ")"
+                if depth == 0:
+                    break
+                i += 1
+            if "it=" not in src[m.end():i]:
+                missing.append(f"{name}:{src[:m.start()].count(chr(10)) + 1}")
+    assert missing == [], f"calls without an explicit it=: {missing}"
+
+
+def test_ridge_predict_mode_is_explicit():
+    """per_row and batch differ by ~1e-7, which the CAT selectors amplify."""
+    CK = features.load_st("eval_cmdkin_stats")
+    routes = sorted(CK)[:60]
+    rg = stage2.fit_ridge_b(CK, routes, list(np.linspace(-1, 1, len(routes))),
+                            alpha=100.0)
+    assert set(rg.predict(CK, routes, predict="per_row")) == set(
+        rg.predict(CK, routes, predict="batch")
+    )
+    try:
+        rg.predict(CK, routes, predict="whatever")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("predict mode must be validated")
+
+
+def test_descriptor_registry_is_the_reported_eight():
+    """Six Table I baselines plus the two Table IV reference rows, in print order."""
+    assert list(features.build_descriptors()) == [
+        "routegeom(16)",
+        "agentjepa(12)",
+        "bl-cmdkin(25)",
+        "GT:ck+gtrisk",
+        "bl-kin+den(18)",
+        "risk-field(17)",
+        "minTTC(1)",
+        "smart-ent(1)",
+    ]

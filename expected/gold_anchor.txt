@@ -1,0 +1,5 @@
+=== 219 route · 44-type LOTO · pooled Spearman vs frozen gold ===
+ck                         ρ=+0.418
+ck+camrisk-full            ρ=+0.528
+GT:ck+gtrisk               ρ=+0.529
+saved results/gold_anchor.json

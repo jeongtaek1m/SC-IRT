@@ -1,0 +1,10 @@
+# Generated artifacts. run_all.sh regenerates all of these from data/.
+results/
+expected_local/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
