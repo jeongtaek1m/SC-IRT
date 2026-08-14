@@ -22,7 +22,7 @@ because the ones that carry no information about *this* planner need not be run.
 ## Install
 
 ```bash
-git clone <repo-url> && cd scirt
+git clone https://github.com/jeongtaek1m/SC-IRT.git && cd SC-IRT
 pip install -e .
 ```
 
@@ -45,6 +45,7 @@ disagreement that would otherwise move every number.
 ```
 scirt/            the library
   runtime.py      pinned device, threads, dtype, seeds
+  encoder.py      the interaction encoder + its a==1 training calibration
   data.py         response panel, route types, evaluation bank
   features.py     scene descriptors and the reported registry
   irt.py          MAP calibration kernel + identification policies
@@ -64,6 +65,11 @@ experiments/      one entry point per reported table
   cat_up.py            Table II(a) calibrated-bank CAT
   cat_ups.py           Table II(b) amortised-calibration CAT
 
+train/            the encoder training pipeline (GPU; see "Training the encoder")
+  build_tensors_b2d.py   rollout annotations -> interaction tensors
+  train_encoder_b2d.py   44-fold LOTO training -> out-of-fold difficulty
+  assemble_ensemble.py   six runs -> the released ensemble artifact
+
 data/             1.4 MB — response matrix, route types, 9 descriptor files,
                   frozen encoder predictions
 expected/         reference outputs from this code, pinned configuration
@@ -74,6 +80,38 @@ tools/            baseline freezing, output comparison
 
 `gold_anchor.py` must run first: it writes the frozen difficulty anchor that five
 other experiments read. `run_all.sh` encodes the order.
+
+## Training the encoder
+
+Every evaluation above reads the frozen out-of-fold predictions in
+`data/interact/`; nothing retrains by default. The pipeline that produced that
+artifact ships in `train/` and runs in three steps:
+
+```bash
+# 1. Interaction tensors from the expert-rollout annotations (not redistributed
+#    here — Bench2Drive assets; the builder documents the exact schema).
+python train/build_tensors_b2d.py --anno_root <rollout_root> \
+    --cmd_feats <per-route feats dir> --out b2d_tensors.npz
+
+# 2. Six LOTO runs: two widths x three seeds. ~45 min each on one GPU.
+for cfg in "64 30" "96 60"; do set -- $cfg
+  for s in 0 1 2; do
+    python train/train_encoder_b2d.py --tensors b2d_tensors.npz \
+        --d $1 --epochs $2 --seed $s --out runs/kcat_d${1}e${2}s${s}.npz
+  done
+done
+
+# 3. Assemble the released-artifact layout (rank ensembles included).
+python train/assemble_ensemble.py runs/kcat_*.npz --out interact_b2d_w2a_final.npz
+```
+
+Inputs are only what the paper claims: GT agent box-tracks, the ego track, and
+the driving command — no camera, no map, no scenario parameters. Training is
+GPU-tier reproducibility (see REPRODUCIBILITY.md): seeds move the pooled rho by
+~0.01 and cross-device bit-identity is not promised, but the assembler was
+verified to rebuild `interact_b2d_w2a_final.npz` bit-for-bit from the original
+six runs, and a fresh smoke run reproduces the original development trace
+exactly on the original hardware.
 
 ## Method in one page
 

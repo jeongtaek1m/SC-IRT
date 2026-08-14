@@ -96,3 +96,23 @@ numbers or published claims:
    and G2 fail — their intervals include zero — and the only interval excluding
    zero belongs to the comparison the script itself labels a reference. This is
    an authoring decision and is left for the authors to resolve.
+
+## Encoder training tier (train/)
+
+The training pipeline in `train/` sits in a laxer tier than the CPU-pinned
+evaluation package, and deliberately so:
+
+- **GPU, cuDNN kernels, dropout.** Retraining is statistically but not bitwise
+  reproducible across devices: the measured 3-seed spread of the pooled
+  Spearman is ~0.009 for the kin-embedded d64 configuration (and ~0.04 without
+  the kin fusion — the fusion is also a variance stabiliser).
+- **Seed semantics.** `rasch()` resets the torch RNG, so per-fold weight init is
+  common across seeds; a seed enters through data order and dropout draws. This
+  mirrors the exact runs behind the released artifact rather than a cleaner
+  design that would not reproduce them.
+- **Window truncation.** The artifact predates the whole-route even-spacing
+  study; the trainer therefore defaults to first-`W_MAX` truncation and exposes
+  `--even_windows` for the coverage variant.
+- **Verified chain.** `assemble_ensemble.py` rebuilds
+  `data/interact/interact_b2d_w2a_final.npz` bit-identically from the original
+  six run files (all keys, including both rank ensembles and the gold anchor).
