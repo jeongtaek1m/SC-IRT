@@ -1,22 +1,16 @@
-matched 219/219 | gold agreement ρ=0.9973
+matched 219/219 | training-side gold agreement ρ=0.9973
 
-=== 1) rescored against the canonical 2PL gold ===
-  ens6       ρ=+0.5240
-  ens_d64    ρ=+0.5005
+=== rescored against the canonical 2PL gold ===
+  ens6       ρ=+0.5241
+  ens_d64    ρ=+0.5006
   d64_s0     ρ=+0.4898
-  d64_s1     ρ=+0.4969
-  d64_s2     ρ=+0.4804
+  d64_s1     ρ=+0.4970
+  d64_s2     ρ=+0.4805
   d96_s0     ρ=+0.4989
-  d96_s1     ρ=+0.4538
-  d96_s2     ρ=+0.5100
-  individual 6 seeds: mean +0.4883  std 0.0196
+  d96_s1     ρ=+0.4539
+  d96_s2     ρ=+0.5101
+  individual 6 runs: mean +0.4884  std 0.0196
 
-=== 2) 44-type cluster paired bootstrap, 10k ===
-  ens6     − GT:ck+gtrisk    : Δρ=-0.005  CI[-0.145,+0.135]  P(Δ>0)=0.463
-  ens6     − ck              : Δρ=+0.106  CI[-0.038,+0.258]  P(Δ>0)=0.920
-  ens_d64  − GT:ck+gtrisk    : Δρ=-0.029  CI[-0.156,+0.101]  P(Δ>0)=0.320
-  ens6     − ck+camrisk-full : Δρ=-0.004  CI[-0.144,+0.124]  P(Δ>0)=0.470
-
-=== 3) between/within decomposition ===
+=== between/within decomposition ===
   ens6     between ρ=+0.667 | mean within ρ=+0.214
   ens_d64  between ρ=+0.655 | mean within ρ=+0.175

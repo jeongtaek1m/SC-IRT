@@ -69,17 +69,11 @@ This repository ships both the encoder's frozen out-of-fold predictions
 number in RESULTS.md is computed from) and a reference training pipeline
 (`train/`).
 
-### 2.3 Baseline — two-stage explanatory IRT
-
-Stage 1 is the calibration above, on training routes only. Stage 2 regresses the
-resulting item parameters on z-scored scene features, with standardisation
-statistics taken from the training fold:
-
-```
-Ridge(alpha = 100 if d > 10 else 10)
-b_tilde = w_b^T z,    a_tilde = exp(w_a^T z)
-cell probability p = sigmoid( a_tilde (theta - b_tilde) )
-```
+### 2.3 Baselines (not part of this release)
+Hand-crafted descriptor stacks (two-stage explanatory IRT), rank fusion and the
+adaptive-testing experiments are comparisons made in the paper. Their code and
+data ship on the `full-reproduction` branch of this repository; this branch
+contains only the method and its evaluation against the frozen anchor.
 
 ## 3. Splits
 

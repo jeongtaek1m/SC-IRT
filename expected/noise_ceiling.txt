@@ -1,7 +1,7 @@
-split-half ρ (8 vs 8 planners, 20 splits): 0.691 ± 0.033  [range 0.581~0.739]
-Spearman-Brown reliability of the full 16-planner gold: 0.817
-→ expected ceiling ρ for a perfect predictor = √0.817 = 0.904
+split-half ρ (8 vs 8 planners, 20 splits): 0.692 ± 0.033  [range 0.582~0.741]
+Spearman-Brown reliability of the full 16-planner gold: 0.818
+→ expected ceiling ρ for a perfect predictor = √0.818 = 0.904
   cmdkin                   ρ=+0.418 → 46% of ceiling   (attenuation-corrected ρ=0.462)
   cmdkin+camrisk-full      ρ=+0.528 → 58% of ceiling   (attenuation-corrected ρ=0.584)
-  GT ck+gtrisk             ρ=+0.529 → 59% of ceiling   (attenuation-corrected ρ=0.585)
+  GT ck+gtrisk             ρ=+0.529 → 58% of ceiling   (attenuation-corrected ρ=0.585)
   cmdkin+scenparamz-glob   ρ=+0.554 → 61% of ceiling   (attenuation-corrected ρ=0.613)

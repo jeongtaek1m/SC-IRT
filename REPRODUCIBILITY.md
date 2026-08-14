@@ -24,6 +24,12 @@ nothing anyway.
 
 ## Stability tiers
 
+> Scope note: this branch ships only the method (`gold_anchor`, `noise_ceiling`,
+> `encoder_us`, `encoder_verify`). Rows below that reference the comparison
+> experiments (`descriptor_table`, `hybrid_prereg`, `cat_up`, `cat_ups`) describe
+> the `full-reproduction` branch, where their code and reference outputs live.
+
+
 | Tier | Meaning | Lines |
 |---|---|---|
 | **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` ens6 and the 6-seed mean/sd; `cat_ups` Random / shrunk-information rows; `cat_up` random-strat and btilde-spread; the 0.904 ceiling |

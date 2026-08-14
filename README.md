@@ -17,7 +17,7 @@ because the ones that carry no information about *this* planner need not be run.
 |---|---|
 | Difficulty recovery | rho **+0.520** for the learned encoder, against **+0.191** for the best simple descriptor and **+0.418** for the kinematic reference that is also the encoder's own auxiliary input (ceiling +0.904; the GT channel stack, +0.529, ties the encoder — Table IV) |
 | Evaluation efficiency | success rate to ±4.4% in **25.6 routes** instead of 219 — **8.6x** fewer |
-| Unseen scenarios | with no calibration available at all, adaptive selection on predicted difficulty matches the unattainable oracle (31.5 vs 32.9 routes) |
+| Unseen scenarios | with no calibration available at all, adaptive selection on predicted difficulty matches the unattainable oracle (31.5 vs 32.9 routes; experiment code on the `full-reproduction` branch) |
 
 ## Install
 
@@ -50,35 +50,29 @@ scirt/            the library
   features.py     scene descriptors and the reported registry
   irt.py          MAP calibration kernel + identification policies
   theta.py        ability estimation for adaptive testing
-  stage2.py       feature -> item-parameter ridge regressions
-  selection.py    CAT item-selection strategies
   resample.py     scenario-type cluster bootstrap
   stats.py        summary statistics
 
 experiments/      one entry point per reported table
   gold_anchor.py       frozen gold difficulty        (run first)
   noise_ceiling.py     Appendix A3
-  descriptor_table.py  Table I    hand-crafted descriptors
   encoder_us.py        Table I    "Ours"
   encoder_verify.py    Table IV   ablation and tie test
-  hybrid_prereg.py     Table IV   rank fusion
-  cat_up.py            Table II(a) calibrated-bank CAT
-  cat_ups.py           Table II(b) amortised-calibration CAT
 
 train/            the encoder training pipeline (GPU; see "Training the encoder")
   build_tensors_b2d.py   rollout annotations -> interaction tensors
   train_encoder_b2d.py   44-fold LOTO training -> out-of-fold difficulty
   assemble_ensemble.py   six runs -> the released ensemble artifact
 
-data/             ~0.5 MB — response matrix, route types, 10 descriptor files (9 npz + 1 csv),
+data/             ~0.3 MB — response matrix, route types, the kinematic input,
                   frozen encoder predictions
 expected/         reference outputs from this code, pinned configuration
 tests/            kernel-equivalence and invariant tests
 tools/            numeric output comparison (compare_outputs.py)
 ```
 
-`gold_anchor.py` must run first: it writes the frozen difficulty anchor that three
-other experiments read (encoder_us, encoder_verify, hybrid_prereg). `run_all.sh` encodes the order.
+`gold_anchor.py` must run first: it writes the frozen difficulty anchor that the two
+encoder steps read. `run_all.sh` encodes the order.
 
 ## Training the encoder
 
@@ -171,7 +165,7 @@ included here.
   descriptor family, not against the best stack.
 - Aggregate MAE saturates around 0.05 for every descriptor, which is why
   difficulty recovery, not MAE, is the discriminating metric.
-- Three adaptive-selection rows are chaotic across environments. See
+- Three adaptive-selection rows (full-reproduction branch) are chaotic across environments. See
   [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 ## Documents

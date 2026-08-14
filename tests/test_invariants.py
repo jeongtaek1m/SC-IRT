@@ -14,7 +14,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scirt import data, features, irt, runtime, stage2  # noqa: E402
+from scirt import data, features, irt, runtime  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 runtime.configure()
@@ -24,8 +24,7 @@ def _bank():
     panel = data.read_response_panel()
     types = data.read_route_types()
     CK = features.load_st("eval_cmdkin_stats")
-    CRF = features.load_st("eval_camrisk")
-    return panel, types, data.route_universe(panel.route_ids, types, CK, CRF)
+    return panel, types, data.route_universe(panel.route_ids, types, CK)
 
 
 def test_evaluation_bank_is_219_routes():
@@ -109,34 +108,3 @@ def test_every_fit_call_names_its_iteration_count():
             if "it=" not in src[m.end():i]:
                 missing.append(f"{name}:{src[:m.start()].count(chr(10)) + 1}")
     assert missing == [], f"calls without an explicit it=: {missing}"
-
-
-def test_ridge_predict_mode_is_explicit():
-    """per_row and batch differ by ~1e-7, which the CAT selectors amplify."""
-    CK = features.load_st("eval_cmdkin_stats")
-    routes = sorted(CK)[:60]
-    rg = stage2.fit_ridge_b(CK, routes, list(np.linspace(-1, 1, len(routes))),
-                            alpha=100.0)
-    assert set(rg.predict(CK, routes, predict="per_row")) == set(
-        rg.predict(CK, routes, predict="batch")
-    )
-    try:
-        rg.predict(CK, routes, predict="whatever")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("predict mode must be validated")
-
-
-def test_descriptor_registry_is_the_reported_eight():
-    """Six Table I baselines plus the two Table IV reference rows, in print order."""
-    assert list(features.build_descriptors()) == [
-        "routegeom(16)",
-        "agentjepa(12)",
-        "bl-cmdkin(25)",
-        "GT:ck+gtrisk",
-        "bl-kin+den(18)",
-        "risk-field(17)",
-        "minTTC(1)",
-        "smart-ent(1)",
-    ]

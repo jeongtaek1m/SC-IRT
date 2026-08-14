@@ -14,9 +14,6 @@ Layout::
     features   scene descriptors and the reported registry
     irt        MAP calibration kernel and identification policies
     theta      ability estimation for adaptive testing
-    stage2     feature -> item-parameter ridge regressions
-    selection  CAT item-selection strategies
-    resample   scenario-type cluster bootstrap
     stats      summary statistics
 
 Experiment entry points live in `experiments/`, one per reported table.
@@ -27,10 +24,7 @@ from . import (  # noqa: F401
     features,
     irt,
     paths,
-    resample,
     runtime,
-    selection,
-    stage2,
     stats,
     theta,
 )
