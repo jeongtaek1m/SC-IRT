@@ -153,7 +153,9 @@ def main():
     ok = ~np.isnan(pred)
     print(f"RESULT d={a.d} ep={a.epochs} seed={a.seed} kin={a.kin} "
           f"rho {spearmanr(pred[ok], gold[ok]).correlation:+.4f}", flush=True)
-    np.savez(a.out, pred_m=pred, gold=gold, routes=np.array(["route_"+r for r in keep])  # 배포 artifact와 동일 표기(접두사 포함), types=types)
+    # route ids carry the route_ prefix, matching the released artifact layout.
+    np.savez(a.out, pred_m=pred, gold=gold,
+             routes=np.array(["route_" + r for r in keep]), types=types)
 
 
 if __name__ == "__main__":
