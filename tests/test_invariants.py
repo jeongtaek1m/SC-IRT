@@ -108,3 +108,14 @@ def test_every_fit_call_names_its_iteration_count():
             if "it=" not in src[m.end():i]:
                 missing.append(f"{name}:{src[:m.start()].count(chr(10)) + 1}")
     assert missing == [], f"calls without an explicit it=: {missing}"
+
+
+def test_api_matches_reference_outputs():
+    """scirt.evaluate on the shipped artifact reproduces the published row."""
+    import scirt
+
+    r = scirt.evaluate(scirt.encoder_predictions())
+    assert abs(r["auroc"] - 0.762) < 2e-3
+    assert abs(r["mae"] - 0.173) < 2e-3
+    assert abs(r["rho"] - 0.520) < 2e-3
+    assert r["n_routes"] == 219

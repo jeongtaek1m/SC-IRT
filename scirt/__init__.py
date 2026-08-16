@@ -30,3 +30,7 @@ from . import (  # noqa: F401
 )
 
 __version__ = "1.0.0"
+
+from .api import gold, encoder_predictions, evaluate, noise_ceiling  # noqa: F401,E402
+
+__version__ = "1.0.0"

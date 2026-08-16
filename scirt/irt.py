@@ -1,30 +1,13 @@
-"""The IRT calibration kernel and its three identification policies.
+"""The 2PL/1PL calibration kernel.
 
-Every calibration in this package is the same MAP fit of a 1PL or 2PL model::
+    P(y_ij=1) = sigmoid( a_i * (theta_j - b_i) ),  a_i = exp(loga_i)
+    loss = masked NLL + MAP priors on theta, b, log a   (Adam, zero init)
 
-    P(y_ij = 1) = sigmoid( a_i * (theta_j - b_i) ),   a_i = exp(loga_i)
-
-    loss = masked-mean NLL
-         + reg_theta * mean(theta^2)
-         + reg_b     * mean(b^2)
-         + reg_loga  * mean(loga^2)
-
-optimised by Adam from a zero initialisation for a fixed number of steps.
-
-The original code inlined this loop in ten places with three different step
-counts, two model variants, two regulariser sets and three post-hoc
-identification rules. Those differences are load-bearing, so this module
-deliberately does **not** hide them behind defaults: `model` and `it` are
-required keyword arguments, and identification is applied by a separate named
-helper rather than inside the fit.
-
-**Why one kernel is safe.** The originals also differ in how the loss terms are
-parenthesised, which is a different float32 summation order in the forward pass.
-It cannot change the result: a sum node's backward pass hands `grad_output` to
-each operand unchanged, and every leaf accumulates from exactly two paths, so
-gradient accumulation is a two-term addition and commutative under IEEE 754.
-`tests/test_kernel_equiv.py` asserts this empirically at max|delta| == 0.0
-rather than relying on the argument.
+`model` and `it` are required keyword arguments on purpose: the live values
+differ per call site and a default would silently rewrite one of them.
+Numerical-fidelity notes (why one kernel can replace the original ten inlined
+copies, and why the centering constant is computed in the fit's dtype) are in
+REPRODUCIBILITY.md.
 """
 
 from dataclasses import dataclass
@@ -64,22 +47,11 @@ def fit_irt_map(
     eps=1e-7,
     device=None,
 ):
-    """Fit a 1PL/2PL IRT model by MAP and return raw parameters.
+    """Fit by MAP and return raw (uncentred) parameters.
 
-    Args:
-        M: (n_items, n_raters) responses; missing entries may be NaN.
-        W: (n_items, n_raters) observation mask, truthy where M is observed.
-        model: '1pl' (discrimination fixed at 1) or '2pl' (discrimination fitted).
-        it: number of Adam steps. Required — the live values are 400, 600 and 800
-            and a shared default would silently rewrite whichever site omits it.
-        freeze_b: optional difficulty vector to hold fixed, making b data rather
-            than a parameter. Used by the encoder evaluation, which fits theta
-            against a frozen predicted difficulty.
-        reg_theta, reg_b, reg_loga: MAP prior weights. The frozen-b site passes
-            reg_b=0 and reg_loga=0.
-
-    Returns:
-        IrtFit with uncentred estimates.
+    it: Adam steps — required (live values: 400/600/800). freeze_b: hold the
+    difficulty vector fixed and fit theta only (the encoder-evaluation path;
+    pass reg_b=0, reg_loga=0 there).
     """
     if model not in ("1pl", "2pl"):
         raise ValueError(f"model must be '1pl' or '2pl', got {model!r}")

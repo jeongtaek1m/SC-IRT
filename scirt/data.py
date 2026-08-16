@@ -1,17 +1,8 @@
-"""B2D response panel and route metadata.
+"""B2D response panel (16 planners x 220 routes) and the route->type map.
 
-The response matrix is 16 end-to-end planners x 220 collected routes, with
-missing cells where a planner has no logged result. One route (11755) failed
-collection and has no scenario type, which is what reduces the evaluation bank
-from 220 to 219.
-
-Two views of the same data are needed, and they are not interchangeable:
-
-* the **sparse** dict view keyed by (route_id, planner_index), used by every
-  experiment that selects items by route id;
-* the **dense** (route x planner) array, used by the noise-ceiling estimate,
-  which slices *planner columns* rather than route rows and runs on the full
-  220-route bank.
+Route 11755 failed collection (no type, NaN descriptors) which leaves the
+219-route evaluation bank. Sparse dict view for item selection by route id;
+dense array view for the noise-ceiling's planner-column splits.
 """
 
 import csv

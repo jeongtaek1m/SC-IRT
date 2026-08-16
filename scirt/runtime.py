@@ -1,18 +1,8 @@
-"""Pinned runtime configuration.
+"""Pinned runtime: CPU + 1 thread + float32.
 
-Every reported number in this package is a float32 optimisation result, so the
-execution environment is part of the experiment. Two settings are pinned here
-rather than discovered at run time:
-
-* **Device.** The original scripts selected `cuda if torch.cuda.is_available()
-  else cpu`, which makes every published number a property of the runner's
-  hardware: CPU and CUDA float32 Adam reductions disagree by up to 2.1e-3 in the
-  fitted difficulty vector. On a 219x16 panel the GPU also buys nothing. The
-  device is therefore pinned to CPU unless `SCIRT_DEVICE` says otherwise.
-* **Thread count.** Multi-threaded CPU reductions sum in nondeterministic order.
-  One thread is slower in principle and not measurably so at this problem size.
-
-See REPRODUCIBILITY.md for the measured cross-device deltas.
+Published numbers are float32 optimisation results, so device and thread count
+are part of the experiment (CPU vs CUDA disagree in the third decimal).
+Override with SCIRT_DEVICE / SCIRT_THREADS. Details: REPRODUCIBILITY.md.
 """
 
 import os

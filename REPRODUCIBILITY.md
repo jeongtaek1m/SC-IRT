@@ -124,3 +124,20 @@ evaluation package, and deliberately so:
   `data/interact/interact_b2d_w2a_final.npz` bit-identically from the original
   six run files on every numeric key (both rank ensembles and the gold anchor;
   the `routes` string key is prefix-normalised by the released trainer).
+
+## Numerical fidelity notes (moved from code comments)
+
+- **One kernel is safe.** The original scripts inlined the calibration loop in
+  ten places with differently-parenthesised loss sums. A sum node's backward
+  pass hands grad_output to each operand unchanged and every leaf accumulates
+  from exactly two paths, so gradient accumulation is a two-term addition and
+  commutative under IEEE 754 — `tests/test_kernel_equiv.py` asserts max|delta|
+  == 0.0 empirically rather than relying on the argument.
+- **Centering dtype.** The identification constant mean(theta) is computed
+  inside the fit in float32. Recomputing it later as a Python float promotes
+  the subtraction to float64 and moves every difficulty by ~6e-8 — enough to
+  change a printed CI edge or reorder CAT items.
+- **Identification is a per-experiment choice.** `center_b` (anchor on the
+  panel mean) is the convention everywhere except the frozen-difficulty theta
+  fit, where the supplied prediction *is* the scale anchor and re-centering
+  would move Table I's row from 0.762/0.173 to 0.765/0.171.
