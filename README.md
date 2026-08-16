@@ -102,9 +102,6 @@ emitting scalar difficulty — trained with cell-level BCE through
 `P(planner j passes scene i) = sigmoid(theta_j − b(scene_i))`, theta frozen
 per fold. Details and every equation: [PROTOCOL.md](PROTOCOL.md).
 
-Comparison experiments from the paper (hand-crafted descriptor table, adaptive
-testing, rank fusion, NavSim scale-up) live on the `full-reproduction` branch.
-
 ## Honest caveats
 
 - Difficulty is calibrated against *this* panel; a different planner population
@@ -113,6 +110,9 @@ testing, rank fusion, NavSim scale-up) live on the `full-reproduction` branch.
   0.904 ceiling, and reported rho should be read against it.
 - Training supervision is Rasch (a=1): discrimination has split-half
   reliability 0.08 on this panel — noise, not signal. Calibration stays 2PL.
+- This branch is the method only. Ablations and baseline comparisons — the
+  descriptor table, kin-fusion and window variants, adaptive testing, rank
+  fusion, the NavSim scale-up — live on `full-reproduction`.
 
 ## Citation
 

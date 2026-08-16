@@ -14,7 +14,6 @@ Layout::
     features   scene descriptors and the reported registry
     irt        MAP calibration kernel and identification policies
     theta      ability estimation for adaptive testing
-    stats      summary statistics
 
 Experiment entry points live in `experiments/`, one per reported table.
 """
@@ -25,7 +24,6 @@ from . import (  # noqa: F401
     irt,
     paths,
     runtime,
-    stats,
     theta,
 )
 

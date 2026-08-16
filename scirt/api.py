@@ -51,19 +51,16 @@ def gold(recompute=False):
     return g
 
 
-def encoder_predictions(ensemble="logit6"):
+def encoder_predictions():
     """The released encoder's out-of-fold difficulty, as {route_id: b_tilde}.
 
-    ensemble: 'logit6' (the Table I arm — mean of the six runs' logits) or a
-    run key such as 'd64_s0'.
+    The mean of the six released runs' logits; every value is a prediction made
+    by a model that never saw that route's scenario type.
     """
     d = np.load(f"{paths.INTERACT}/interact_b2d_w2a_final.npz", allow_pickle=True)
     routes = [str(r).replace("route_", "") for r in d["routes"]]
-    if ensemble == "logit6":
-        keys = ["d64_s0", "d64_s1", "d64_s2", "d96_s0", "d96_s1", "d96_s2"]
-        v = np.mean([np.array(d[k], dtype=np.float64) for k in keys], 0)
-    else:
-        v = np.array(d[ensemble], dtype=np.float64)
+    keys = ["d64_s0", "d64_s1", "d64_s2", "d96_s0", "d96_s1", "d96_s2"]
+    v = np.mean([np.array(d[k], dtype=np.float64) for k in keys], 0)
     return dict(zip(routes, v.tolist()))
 
 

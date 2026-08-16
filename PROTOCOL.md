@@ -69,11 +69,11 @@ This repository ships both the encoder's frozen out-of-fold predictions
 number in RESULTS.md is computed from) and a reference training pipeline
 (`train/`).
 
-### 2.3 Baselines (not part of this release)
-Hand-crafted descriptor stacks (two-stage explanatory IRT), rank fusion and the
-adaptive-testing experiments are comparisons made in the paper. Their code and
-data ship on the `full-reproduction` branch of this repository; this branch
-contains only the method and its evaluation against the frozen anchor.
+### 2.3 Baselines and ablations (not part of this release)
+Hand-crafted descriptor stacks, kin-fusion and window variants, rank fusion and
+the adaptive-testing experiments are comparisons and ablations reported in the
+paper. Their code and data ship on the `full-reproduction` branch; this branch
+contains the method and its evaluation against the frozen anchor, nothing else.
 
 ## 3. Splits
 

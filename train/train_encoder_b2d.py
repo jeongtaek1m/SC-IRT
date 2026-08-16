@@ -15,10 +15,9 @@ of six such runs:
 
 Reproducibility tier: GPU training. Unlike the CPU-pinned evaluation package,
 retraining is NOT bit-reproducible across devices/cuDNN builds; the measured
-seed spread of the pooled Spearman is ~0.01 (kin-embedded) and the shipped npz
-remains the reference artifact. Window handling defaults to the first-W_MAX
-truncation the artifact was produced with; --even_windows enables the
-whole-route even-spaced variant studied in the coverage ablation.
+seed spread of the pooled Spearman is ~0.01 and the shipped npz remains the
+reference artifact. Windows are the first W_MAX of each route, as in the runs
+that produced the artifact.
 """
 
 import argparse
@@ -35,7 +34,7 @@ from scirt.encoder import build, rasch     # noqa: E402
 W_MAX = 22
 
 
-def load_panel(matrix_csv, types_csv, tensors, drop=()):
+def load_panel(matrix_csv, types_csv, tensors):
     d = np.load(tensors, allow_pickle=True)
     routes = [str(x) for x in d["route"]]
     rid2w = {}
@@ -50,7 +49,7 @@ def load_panel(matrix_csv, types_csv, tensors, drop=()):
             if row[1 + j] != "":
                 Y[pi, j] = 1.0 - float(row[1 + j])          # fail = 1
     types = dict(csv.reader(open(types_csv)))
-    keep = [r for r in sorted(rid2w) if r in types and r in rids and r not in set(drop)]
+    keep = [r for r in sorted(rid2w) if r in types and r in rids]
     col = {rid: j for j, rid in enumerate(rids)}
     return (d, rid2w, keep, Y[:, [col[r] for r in keep]],
             np.array([types[r] for r in keep]))
@@ -67,22 +66,15 @@ def main():
     ap.add_argument("--d", type=int, default=64)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--kin", choices=["cat", "none"], default="cat")
     ap.add_argument("--batch", type=int, default=64)
-    ap.add_argument("--even_windows", action="store_true",
-                    help="even-spaced whole-route windows instead of first-W_MAX")
-    ap.add_argument("--drop", default="", help="comma-separated route ids to exclude")
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--max_folds", type=int, default=0, help="smoke-test only")
     a = ap.parse_args()
     import torch
     import torch.nn as nn
     from scipy.stats import spearmanr
 
     dev = a.device
-    d, rid2w, keep, Y, types = load_panel(
-        a.matrix, a.route_types, a.tensors,
-        drop=[x for x in a.drop.split(",") if x])
+    d, rid2w, keep, Y, types = load_panel(a.matrix, a.route_types, a.tensors)
     _, gold = rasch(Y, it=800)
     R = len(keep)
     AG = np.zeros((R, W_MAX, 48, 12, 8), np.float16)
@@ -93,21 +85,18 @@ def main():
     for ri, r in enumerate(keep):
         ws = rid2w[r]
         if len(ws) > W_MAX:
-            ws = ([ws[round(i * (len(ws) - 1) / (W_MAX - 1))] for i in range(W_MAX)]
-                  if a.even_windows else ws[:W_MAX])
+            ws = ws[:W_MAX]
         AG[ri, :len(ws)] = d["agents"][ws]; AM[ri, :len(ws)] = d["amask"][ws]
         EG[ri, :len(ws)] = d["ego"][ws]; CM[ri, :len(ws)] = d["cmd"][ws]
         WM[ri, :len(ws)] = True
     z = np.load(a.kin_feats, allow_pickle=True)
     nm = {str(x).replace("route_", ""): i for i, x in enumerate(z["names"])}
     CK = np.stack([z["stats"][nm[r]] for r in keep])
-    kin_dim = CK.shape[1] if a.kin == "cat" else 0
+    kin_dim = CK.shape[1]
     pred = np.full(R, np.nan)
     torch.manual_seed(a.seed)
     np.random.seed(a.seed)
     utypes = sorted(set(types))
-    if a.max_folds:
-        utypes = utypes[:a.max_folds]
     for fi, t in enumerate(utypes):
         te = types == t; tr = ~te
         th_f, _ = rasch(Y[:, tr])

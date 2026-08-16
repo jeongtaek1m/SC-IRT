@@ -5,8 +5,8 @@ box-tracks and the ego track in the window-anchor frame. Per window, agent
 tracks and the ego track are GRU-encoded into tokens and mixed by a small
 transformer; the ego token is read out, a learned attention pool aggregates
 windows to one route embedding, ego kinematic statistics are embedded and
-concatenated (the "kin-embedded" fusion that every ablation favours over
-post-hoc stacking), and a linear head emits scalar difficulty b_tilde.
+concatenated (the "kin-embedded" fusion), and a linear head emits scalar
+difficulty b_tilde.
 
 Training signal: P(planner j fails scene i) = sigmoid(b_tilde_i - theta_j),
 BCE over the full response panel, theta fitted per training fold by the a==1
@@ -50,7 +50,7 @@ def rasch(Y, it=400, seed=0):
 
 
 def build(torch, nn, d=64, heads=4, depth=2, kin_dim=25, dropout=0.15):
-    """The encoder. kin_dim=0 disables the kin-embedded fusion (ablation)."""
+    """The encoder. kin_dim is the width of the route-level kinematic input."""
 
     class Net(nn.Module):
         def __init__(self):
@@ -62,13 +62,9 @@ def build(torch, nn, d=64, heads=4, depth=2, kin_dim=25, dropout=0.15):
                 d, heads, d * 2, dropout=dropout, batch_first=True, norm_first=True)
             self.trunk = nn.TransformerEncoder(layer, depth)
             self.wq = nn.Linear(d, 1)                     # window attention pool
-            if kin_dim:
-                self.kin_in = nn.Sequential(
-                    nn.Linear(kin_dim, d), nn.ReLU(), nn.Linear(d, d))
-                self.head = nn.Sequential(nn.LayerNorm(2 * d), nn.Linear(2 * d, 1))
-            else:
-                self.head = nn.Sequential(nn.LayerNorm(d), nn.Linear(d, 1))
-            self.kin_dim = kin_dim
+            self.kin_in = nn.Sequential(
+                nn.Linear(kin_dim, d), nn.ReLU(), nn.Linear(d, d))
+            self.head = nn.Sequential(nn.LayerNorm(2 * d), nn.Linear(2 * d, 1))
 
         def forward(self, ag, am, eg, cm, wmask, kf=None):
             R, W = wmask.shape
@@ -84,8 +80,7 @@ def build(torch, nn, d=64, heads=4, depth=2, kin_dim=25, dropout=0.15):
             z = self.trunk(toks, src_key_padding_mask=pad)[:, 0].reshape(R, W, -1)
             att = self.wq(z).squeeze(-1).masked_fill(~wmask, -1e9).softmax(-1)
             zr = (z * att[..., None]).sum(1)
-            if self.kin_dim:
-                zr = torch.cat([zr, self.kin_in(kf)], -1)
+            zr = torch.cat([zr, self.kin_in(kf)], -1)
             return self.head(zr).squeeze(-1), att
 
     return Net()
