@@ -140,7 +140,7 @@ def main():
         if (fi + 1) % 8 == 0:
             print(f"  ...fold {fi+1}/{len(utypes)}", flush=True)
     ok = ~np.isnan(pred)
-    print(f"RESULT d={a.d} ep={a.epochs} seed={a.seed} kin={a.kin} "
+    print(f"RESULT d={a.d} ep={a.epochs} seed={a.seed} "
           f"rho {spearmanr(pred[ok], gold[ok]).correlation:+.4f}", flush=True)
     # route ids carry the route_ prefix, matching the released artifact layout.
     np.savez(a.out, pred_m=pred, gold=gold,
