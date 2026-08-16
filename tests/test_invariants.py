@@ -119,3 +119,17 @@ def test_api_matches_reference_outputs():
     assert abs(r["mae"] - 0.173) < 2e-3
     assert abs(r["rho"] - 0.520) < 2e-3
     assert r["n_routes"] == 219
+
+
+def test_estimate_planner_recovers_a_panel_row():
+    """Replaying a full panel row must recover its success rate almost exactly."""
+    import scirt
+    from scirt import data
+
+    panel = data.read_response_panel()
+    j = 3
+    truth = {r: panel.y[(r, j)] for r in panel.route_ids if panel.observed(r, j)}
+    est = scirt.estimate_planner(truth)          # administer everything
+    true_sr = sum(truth.values()) / len(truth)
+    assert abs(est["sr_hat"] - true_sr) < 0.02   # p-IRT keeps observed outcomes
+    assert est["se"] < 0.2

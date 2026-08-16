@@ -1,6 +1,6 @@
 # SC-IRT: Scene-Conditioned Item Response Theory
 
-[[Paper (coming soon)]](#citation) · [[Protocol]](PROTOCOL.md) · [[Results]](RESULTS.md) · [[Reproducibility]](REPRODUCIBILITY.md)
+[[Paper (coming soon)]](#citation) · [[Tutorial]](tutorials/quickstart.ipynb) · [[Protocol]](PROTOCOL.md) · [[Results]](RESULTS.md) · [[Reproducibility]](REPRODUCIBILITY.md)
 
 **How hard is a driving scene — before any planner has driven it?**
 
@@ -41,6 +41,19 @@ reconstruction) and Spearman rho against the frozen anchor.
 gold = scirt.gold()                     # the frozen 2PL anchor itself
 scirt.noise_ceiling()                   # {'split_half': 0.69, ..., 'ceiling': 0.90}
 ```
+
+And the tinyBenchmarks use case, for driving — evaluate a **new planner** from a
+handful of closed-loop rollouts instead of the full bank:
+
+```python
+responses = {}                          # {route_id: 0|1} as you roll out
+for _ in range(25):
+    r = scirt.next_route(responses)     # most informative next route (2PL Fisher)
+    responses[r] = run_my_planner(r)    # your closed-loop rollout
+scirt.estimate_planner(responses)       # {'theta':…, 'se':…, 'sr_hat':…}  (p-IRT)
+```
+
+A runnable walk-through of all of the above: [tutorials/quickstart.ipynb](tutorials/quickstart.ipynb).
 
 ## Reproducing the paper numbers
 

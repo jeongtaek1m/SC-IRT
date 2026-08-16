@@ -28,7 +28,8 @@ data.assert_canonical_universe(allr)
 fit, _ = irt.calibrate_panel(panel, allr, planner_mask=[True] * panel.n_planners,
                              model="2pl", it=800)
 GOLD = {r: float(b) for r, b in zip(allr, irt.center_b(fit))}
+DISC = {r: float(v) for r, v in zip(allr, fit.a)}
 
 print(f"=== frozen 2PL gold anchor · {len(allr)} routes ===")
-json.dump({"gold": GOLD}, open(paths.result("gold_anchor.json"), "w"))
+json.dump({"gold": GOLD, "a": DISC}, open(paths.result("gold_anchor.json"), "w"))
 print("saved results/gold_anchor.json")

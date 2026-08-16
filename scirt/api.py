@@ -45,8 +45,9 @@ def gold(recompute=False):
     fit, _ = irt.calibrate_panel(panel, allr, planner_mask=[True] * panel.n_planners,
                                  model="2pl", it=800)
     g = {r: float(b) for r, b in zip(allr, irt.center_b(fit))}
+    a = {r: float(v) for r, v in zip(allr, fit.a)}
     paths.ensure_results()
-    json.dump({"gold": g}, open(cached, "w"))
+    json.dump({"gold": g, "a": a}, open(cached, "w"))
     return g
 
 
@@ -132,3 +133,53 @@ def noise_ceiling(n_splits=20, seed=0):
     r = float(np.mean(halves))
     rel = 2 * r / (1 + r)
     return {"split_half": r, "reliability": rel, "ceiling": float(np.sqrt(rel))}
+
+
+def _anchor_params():
+    _setup()
+    cached = paths.result("gold_anchor.json")
+    if not os.path.exists(cached):
+        gold(recompute=True)
+    d = json.load(open(cached))
+    if "a" not in d:                      # anchor written by an older version
+        gold(recompute=True)
+        d = json.load(open(cached))
+    return d["gold"], d["a"]
+
+
+def estimate_planner(responses, it=50):
+    """Estimate a new planner from a handful of closed-loop rollouts.
+
+    The tinyBenchmarks use case, for driving: run a planner on a few routes,
+    pass the observed {route_id: 0|1} outcomes, and get back its ability, the
+    measurement's standard error, and a p-IRT estimate of its success rate over
+    the full 219-route bank (observed outcomes kept as-is, IRT probabilities
+    fill in the rest).
+    """
+    from .theta import map_theta, sig as _sig
+    b, a = _anchor_params()
+    admin = [r for r in responses if r in b]
+    bs = np.array([b[r] for r in admin])
+    aa = np.array([a[r] for r in admin])
+    ys = np.array([float(responses[r]) for r in admin])
+    th = map_theta(bs, ys, aa, it=it)
+    p_admin = _sig(aa * (th - bs))
+    se = 1.0 / np.sqrt((aa**2 * p_admin * (1 - p_admin)).sum() + 1.0)
+    rest = [r for r in b if r not in responses]
+    p_rest = [_sig(a[r] * (th - b[r])) for r in rest]
+    sr = (ys.sum() + float(np.sum(p_rest))) / (len(admin) + len(rest))
+    return {"theta": float(th), "se": float(se), "sr_hat": float(sr),
+            "n_administered": len(admin), "n_bank": len(admin) + len(rest)}
+
+
+def next_route(responses):
+    """The most informative unadministered route (2PL Fisher information)."""
+    from .theta import map_theta, sig as _sig
+    b, a = _anchor_params()
+    admin = [r for r in responses if r in b]
+    th = map_theta(np.array([b[r] for r in admin]),
+                   np.array([float(responses[r]) for r in admin]),
+                   np.array([a[r] for r in admin]), it=50) if admin else 0.0
+    rest = [r for r in b if r not in responses]
+    info = [a[r] ** 2 * _sig(a[r] * (th - b[r])) * (1 - _sig(a[r] * (th - b[r]))) for r in rest]
+    return rest[int(np.argmax(info))]
