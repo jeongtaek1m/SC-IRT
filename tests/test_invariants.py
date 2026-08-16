@@ -98,6 +98,8 @@ def test_every_fit_call_names_its_iteration_count():
             continue
         src = open(os.path.join(ROOT, "scirt", name), encoding="utf-8").read()
         for m in call.finditer(src):
+            if src[max(0, m.start() - 4):m.start()].endswith("def "):
+                continue                     # definitions declare it=, calls must name it
             depth, i = 0, m.end() - 1
             while i < len(src):
                 depth += src[i] == "("
