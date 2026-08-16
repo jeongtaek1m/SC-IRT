@@ -1,2 +1,0 @@
-ens6L (6-seed logit mean) US AUROC=0.762  US MAE=0.173  ρ=+0.520
-ens_d64L (3-seed logit mean) US AUROC=0.758  US MAE=0.179  ρ=+0.498

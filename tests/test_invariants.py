@@ -80,7 +80,7 @@ def test_features_and_fits_are_float32():
 def test_no_module_auto_selects_a_device():
     """Device is pinned in runtime.py; nothing else may probe for a GPU."""
     offenders = []
-    for sub in ("scirt", "experiments"):
+    for sub in ("scirt", "train", "tutorials"):
         for name in sorted(os.listdir(os.path.join(ROOT, sub))):
             if name.endswith(".py") and name != "runtime.py":
                 src = open(os.path.join(ROOT, sub, name), encoding="utf-8").read()
@@ -93,10 +93,10 @@ def test_every_fit_call_names_its_iteration_count():
     """400, 600 and 800 are all live; a defaulted it= would silently rewrite one."""
     missing = []
     call = re.compile(r"(fit_irt_map|calibrate_panel|map_theta)\s*\(")
-    for name in sorted(os.listdir(os.path.join(ROOT, "experiments"))):
+    for name in sorted(os.listdir(os.path.join(ROOT, "scirt"))):
         if not name.endswith(".py"):
             continue
-        src = open(os.path.join(ROOT, "experiments", name), encoding="utf-8").read()
+        src = open(os.path.join(ROOT, "scirt", name), encoding="utf-8").read()
         for m in call.finditer(src):
             depth, i = 0, m.end() - 1
             while i < len(src):

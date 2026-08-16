@@ -24,10 +24,10 @@ nothing anyway.
 
 ## Stability tiers
 
-> Scope note: this branch ships only the method (`gold_anchor`, `noise_ceiling`,
-> `encoder_us`, `encoder_verify`). Rows below that reference the comparison
-> experiments (`descriptor_table`, `hybrid_prereg`, `cat_up`, `cat_ups`) describe
-> the `full-reproduction` branch, where their code and reference outputs live.
+> Scope note: this branch ships the library, the trainer and the tutorial.
+> The pinned experiment scripts, their reference outputs and the comparison
+> experiments live on the `full-reproduction` branch; tier rows naming them
+> describe that branch.
 
 
 | Tier | Meaning | Lines |
@@ -59,7 +59,7 @@ with regenerated tables, not a refactor.
 Compare a run with the numeric-aware differ, not with `diff`:
 
 ```bash
-python tools/compare_outputs.py expected my_run --tol 0.002
+pytest        # (this branch)  |  full-reproduction branch: tools/compare_outputs.py
 ```
 
 ### Measured drift, legacy vs this release

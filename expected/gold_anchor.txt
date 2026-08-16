@@ -1,2 +1,0 @@
-=== frozen 2PL gold anchor · 219 routes ===
-saved results/gold_anchor.json

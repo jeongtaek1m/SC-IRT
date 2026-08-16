@@ -55,18 +55,16 @@ scirt.estimate_planner(responses)       # {'theta':…, 'se':…, 'sr_hat':…} 
 
 A runnable walk-through of all of the above: [tutorials/quickstart.ipynb](tutorials/quickstart.ipynb).
 
-## Reproducing the paper numbers
+## Verifying the numbers
 
 ```bash
-bash run_all.sh                         # ~10 min on CPU, fully deterministic
-python tools/compare_outputs.py expected expected_local
+pytest            # pins the kernel, the headline row (0.762 / 0.173 / +0.520),
+                  # and the few-rollout estimator against the shipped artifact
 ```
 
-Four steps, in a fixed order: freeze the gold anchor -> measure the panel's
-noise ceiling -> score the encoder -> seed stability and rank decomposition.
-Reference outputs ship in `expected/`; the runtime is pinned to CPU/1 thread
-because the published numbers are float32 optimisation results
-(see [REPRODUCIBILITY.md](REPRODUCIBILITY.md)).
+The pinned per-experiment scripts, reference outputs and the paper's comparison
+experiments (descriptor table, adaptive testing, rank fusion) live on the
+[`full-reproduction`](../../tree/full-reproduction) branch.
 
 ## Training the encoder yourself
 
@@ -91,11 +89,10 @@ reference; the assembler rebuilds it bit-for-bit on every numeric key.
 
 ```
 scirt/         the library — 2PL calibration kernel, encoder, ability MAP, API
-experiments/   the four pinned scripts behind the released numbers
 train/         tensor builder, LOTO trainer, ensemble assembler
+tutorials/     runnable quickstart notebook
 data/          response matrix, route->type map, kin input, encoder artifact (~0.3 MB)
-expected/      reference outputs for diffing
-tests/         kernel-equivalence and invariant tests
+tests/         kernel-equivalence and number-pinning tests
 ```
 
 Model in one line: per-agent bidirectional GRUs over 6-second GT box tracks,
