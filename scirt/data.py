@@ -1,7 +1,7 @@
 """B2D response panel (16 planners x 220 routes) and the route->type map.
 
 Route 11755 failed collection (no type, NaN descriptors) which leaves the
-219-route evaluation bank. Sparse dict view for item selection by route id;
+220-route evaluation bank. Sparse dict view for item selection by route id;
 dense array view for the noise-ceiling's planner-column splits.
 """
 
@@ -12,9 +12,9 @@ import numpy as np
 
 from . import paths
 
-#: SHA1 of the canonical 219-route evaluation bank, in response-matrix column
+#: SHA1 of the canonical 220-route evaluation bank, in response-matrix column
 #: order. Guards against a reordered or silently re-filtered universe, which
-#: would move the frozen gold difficulty and therefore every downstream number.
+#: would move the reference difficulty and therefore every downstream number.
 CANONICAL_UNIVERSE_SHA1 = None  # populated on first call; see assert_canonical_universe
 
 #: Planner excluded from the panel. Present as a defensive filter in every
@@ -76,7 +76,7 @@ def read_response_panel(path=None):
 
 
 def read_route_types(path=None):
-    """Load the route -> scenario-type map (44 types over 219 routes, no header)."""
+    """Load the route -> scenario-type map (44 types over 220 routes, no header)."""
     path = path or f"{paths.MATRICES}/b2d_route_types.csv"
     return {
         line.split(",")[0]: line.split(",")[1].strip()
@@ -99,12 +99,12 @@ def route_universe(route_ids, types, *feature_dicts):
     ]
 
 
-def assert_canonical_universe(routes, expect_n=219):
+def assert_canonical_universe(routes, expect_n=220):
     """Assert the evaluation bank is the canonical one.
 
     Three separate intersection paths in the original code converge on the same
-    219 ids in the same order. Any change to the feature set or the filter order
-    would move the frozen gold difficulty silently, so it is checked explicitly.
+    220 ids in the same order. Any change to the feature set or the filter order
+    would move the reference difficulty silently, so it is checked explicitly.
     """
     global CANONICAL_UNIVERSE_SHA1
     digest = hashlib.sha1(",".join(routes).encode()).hexdigest()

@@ -10,7 +10,7 @@ difficulty b_tilde.
 
 Training signal: P(planner j fails scene i) = sigmoid(b_tilde_i - theta_j),
 BCE over the full response panel, theta fitted per training fold by the a==1
-calibration below and then frozen. The encoder never sees the gold anchor.
+calibration below and then frozen. The encoder never sees the full-panel reference.
 
 Torch is imported lazily so the CPU-pinned evaluation package does not pay for
 it; training runs on GPU and is *not* bit-reproducible across devices — see
@@ -45,8 +45,10 @@ def rasch(Y, it=400, seed=0):
         (nll + 1e-2 * th.pow(2).mean() + 1e-3 * bb.pow(2).mean()).backward()
         opt.step()
         opt.zero_grad()
-    c = float(bb.detach().mean())
-    return th.detach().numpy() + c, bb.detach().numpy() - c
+    # 식별성: logit = b_i - theta_j 이므로 theta 와 b 를 **같은 c 만큼** 이동해야 우도가 보존된다.
+    # (구판은 theta 에 +c, b 에 -c 를 적용해 로짓이 -2c 만큼 이동하는 버그가 있었다.)
+    c = float(th.detach().mean())                       # PROTOCOL 2.1: mean(theta) = 0
+    return th.detach().numpy() - c, bb.detach().numpy() - c
 
 
 def build(torch, nn, d=64, heads=4, depth=2, kin_dim=25, dropout=0.15):

@@ -9,9 +9,9 @@ Scope: Bench2Drive only.
 
 ## 1. Data
 
-**Bench2Drive (B2D).** 16 end-to-end planners x 219 routes. 220 routes were
-collected; one (`11755`) failed collection and is excluded, which is what makes
-the evaluation bank 219. The response is the success flag, `y_ij` in {0, 1}. Routes
+**Bench2Drive (B2D).** 16 end-to-end planners x 220 routes. Route `11755` was re-collected after an
+initial collection crash; its scenario type (EnterActorFlow) is confirmed across 79
+artifacts, so all 44 types hold exactly five routes. The response is the success flag, `y_ij` in {0, 1}. Routes
 carry one of 44 scenario types (`data/matrices/b2d_route_types.csv`); 43 types have
 five routes and one has four.
 
@@ -20,22 +20,35 @@ below masks the missing cells rather than imputing them.
 
 ## 2. Models
 
-### 2.1 IRT calibration (2PL throughout)
+### 2.1 IRT calibration (two regimes)
 
 ```
-P(y_ij = 1) = sigmoid( a_i (theta_j - b_i) ),    a_i = exp(loga_i)
+unseen scene (US/UPS)    P(y_ij = 1) = sigmoid( theta_j - b_i )            Rasch
+calibrated bank (UP)     P(y_ij = 1) = sigmoid( a_i (theta_j - b_i) )      2PL
+                         with b_i ~ N(b_hat_i, s_i^2) marginalised out
 
 MAP, Adam lr 0.05:
-  NLL  +  1e-2 * mean(theta^2)  +  1e-3 * mean(b^2)  +  0.5 * mean(loga^2)
+  NLL  +  1e-2 * mean(theta^2)  +  1e-3 * mean(b^2)  [ + 0.5 * mean(loga^2) for 2PL ]
 
-Identification:  theta <- theta - mean(theta)
+Identification (location, one degree of freedom):
+  c = mean(theta);   theta_j <- theta_j - c,   b_i <- b_i - c
+  Both shift by the *same* c, so (theta_j - c) - (b_i - c) = theta_j - b_i and
+  every probability is unchanged. Shifting theta alone changes the likelihood.
 ```
+
+Discrimination is used **only where it is response-calibrated**. A held-out
+scene has no responses, so `a_i` is not estimable there and the model reverts to
+the identifiable Rasch form. On the bank it earns its place: with selection,
+scoring and stopping held fixed, adding `a_i` cuts rollouts by 5.12 [-7.31,
+-2.94] at +-10% and 3.12 [-5.38, -1.25] at +-5% (paired bootstrap over the 16
+held-out planners), while every dMAE interval covers zero. Marginalising `b`
+costs rollouts and buys coverage: 0.88 -> 0.94 at +-10%, 0.81 -> 0.88 at +-5%.
 
 Adam step counts are **not** uniform, and the code names each one explicitly:
 
 | Site | steps |
 |---|---|
-| Gold anchor, noise ceiling, `cat_up` bank | 800 |
+| Reference difficulty, noise ceiling, `cat_up` bank | 800 |
 | `cat_ups` calibration and full bank | 600 |
 | Leave-one-type-out folds, descriptor table | 400 |
 
@@ -44,7 +57,7 @@ the correct choice differs per experiment (`scirt/irt.py`). The encoder evaluati
 in particular must **not** re-centre: its difficulty is frozen input and is itself
 the scale anchor.
 
-**Gold difficulty.** One calibration on the full panel and the full item bank,
+**Full-panel reference difficulty (b_hat_full).** One calibration on the full panel and the full item bank,
 then frozen. It is used only as an evaluation anchor and enters no training
 procedure of any kind.
 
@@ -91,11 +104,17 @@ training all happen strictly within the training fold.
 Notation: `i` indexes scenes, `j` planners, `p_ij` the model probability, `y_ij` the
 observation, `N` the bank size, `J` the panel size.
 
-### 4.1 rho — difficulty recovery (Table I headline)
+### 4.1 rho_scene — difficulty recovery (Table I headline)
 
 ```
-rho = Spearman( {b_tilde_i} over all out-of-fold scenes , {b_gold_i} )
+rho_scene = Spearman( {b_tilde_i}, {observed failure rate_i} )     primary
+rho_ref   = Spearman( {b_tilde_i}, {b_reference_i} )               diagnostic
 ```
+
+The primary form ranks against an *observable* quantity, so it does not treat
+the latent difficulty as truth. The two agree to within 0.001 on this panel
+(0.5598 vs 0.5589 for the released encoder), which is why the reference is kept
+only as a diagnostic.
 
 Pooled across folds, **not** averaged per fold: a per-fold average would be a
 within-type correlation, which is a different quantity.
@@ -145,15 +164,22 @@ Stop when SE(theta) = 1 / sqrt( sum_S a_i^2 p_i (1-p_i) + 1 ) < tau
           tau = 0.35 in the main text; 0.40 and 0.30 in the appendix
 
 items n : routes administered before stopping (fold mean ± SE)
-IES     : N / n, with N = 219 for UP and the new-type bank (~110) for UPS.
+IES     : ATLAS-style, **lower is better**, reference stated in the caption:
+              IES = (MAE_M / MAE_Random40) * (B_M / 40)
+          Report alongside the matched-precision rollout ratio (27.4/42.2 = 0.65 at +-10%),
+          which stays defined when the reference budget does not exist. N = 220 for UP;
+          for UPS use a bank-proportional reference (0.2 * N_new) or omit.
           Undefined for the oracle row, which is not deployable.
 theta err : | theta_hat - theta_full |, against the full-response MAP estimate
 ```
 
 Selection rules:
 
-- **UP** — `argmax a^2 p (1-p)`, classical 2PL Fisher information. Available only
-  because the bank is calibrated.
+- **UP** — target-EIG `h(E_theta[m_i]) - E_theta[h(m_i)]` with difficulty
+  marginalised inside `m_i`, so the score is information about *ability*.
+  Classical 2PL Fisher `argmax a^2 p (1-p)` is within noise of it on rollouts
+  (27.7 vs 27.4 at +-10%) but reaches lower coverage (0.88 vs 0.94). Both are
+  available only because the bank is calibrated.
 - **UPS (ours)** — shrunk information. Greedy Fisher selection on *predicted*
   difficulty fails by a winner's curse: it favours routes whose difficulty was
   over-predicted, buying prediction error rather than information. Marginalising
@@ -177,11 +203,12 @@ Spearman-Brown:   reliability = 2 r_half / (1 + r_half)
 Ceiling        =  sqrt(reliability)
 ```
 
-B2D: r_half 0.691 -> reliability 0.817 -> **ceiling 0.904**. Attenuation-corrected
+B2D (1PL, the shipped geometry): r_half 0.679 -> reliability 0.809 -> **ceiling 0.899**.
+(The retired 2PL fit gave 0.691/0.817/0.904.) Attenuation-corrected
 values `rho* = rho / ceiling` may be reported alongside raw rho.
 
-This estimate runs on the full 220-route collection, not the 219-route evaluation
-bank; its inclusion filter is "at least eight observed responses", which excludes
+This estimate runs on the same 220-route bank as every other number; its inclusion
+filter excludes nothing. bank; its inclusion filter is "at least eight observed responses", which excludes
 nothing.
 
 ## 5. Reproduction

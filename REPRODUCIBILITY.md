@@ -19,7 +19,7 @@ seeds    numpy 0, torch 0, all sampling via local RandomState
 because it is the single largest source of drift: CPU and CUDA float32 Adam
 reductions disagree by up to **2.1e-3** in the fitted difficulty vector
 (Spearman between the two 0.99999657). Auto-detection makes every published
-number a property of the runner's hardware. On a 219x16 panel the GPU buys
+number a property of the runner's hardware. On a 220x16 panel the GPU buys
 nothing anyway.
 
 ## Stability tiers
@@ -32,14 +32,14 @@ nothing anyway.
 
 | Tier | Meaning | Lines |
 |---|---|---|
-| **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` ens6 and the 6-seed mean/sd; `cat_ups` Random / shrunk-information rows; `cat_up` random-strat and btilde-spread; the 0.904 ceiling |
-| **B — ±0.002** | Third decimal moves with device or library version | `noise_ceiling` split-half and reliability; most `descriptor_table` rows; `gold_anchor` rho; `hybrid_prereg` point estimates; per-seed rho and bootstrap CIs; `cat_ups` btilde-hybrid |
+| **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` ens6 and the 6-seed mean/sd; `cat_ups` Random / shrunk-information rows; `cat_up` random-strat and btilde-spread; the 0.899 ceiling |
+| **B — ±0.002** | Third decimal moves with device or library version | `noise_ceiling` split-half and reliability; most `descriptor_table` rows; `reference_anchor` rho; `hybrid_prereg` point estimates; per-seed rho and bootstrap CIs; `cat_ups` btilde-hybrid |
 | **C — chaotic** | Trajectory-level divergence from ~1e-7 input noise | `cat_up` fisher-1PL, bhat-spread, tinyAnchor (all tau blocks); `cat_ups` ORACLE-fisher |
 
 Tier C is not stochasticity in the usual sense — every generator is explicitly
 seeded and every run on a fixed configuration is bit-identical. It is
 **deterministic chaos**. On a 1PL bank the fitted difficulties take only about
-thirty distinct values across 219 routes, with adjacent gaps around 1e-7. Greedy
+thirty distinct values across 220 routes, with adjacent gaps around 1e-7. Greedy
 `argmax` selection therefore resolves near-ties at float noise, and a single
 flipped early choice sends the whole adaptive trajectory somewhere else. Sorting
 by difficulty (`bhat-spread`) and k-means anchoring (`tinyAnchor`, inertia ~2e-12)
@@ -72,17 +72,17 @@ both headline Table II rows and all significance calls survive unchanged:
 
 | Experiment | vs legacy |
 |---|---|
-| `noise_ceiling` | split-half 0.692 -> 0.691, reliability 0.818 -> 0.817, **ceiling 0.904 unchanged** |
+| `noise_ceiling` | split-half 0.679, reliability 0.809, **ceiling 0.899** (1PL; the retired 2PL fit gave 0.904) |
 | `descriptor_table` | AUROC/MAE identical; Agent-JEPA rho -0.275 -> -0.276; kin+den rho +0.191 -> +0.190 |
-| `gold_anchor` | rho identical (+0.418 / +0.528 / +0.529) |
+| `reference_anchor` | rho identical (+0.427 / +0.528 / +0.557) |
 | `encoder_us` | ens6L identical; the d64 stability arm 0.500 -> 0.501 |
 | `encoder_verify` | rho within 2e-4; tie verdict unchanged |
 | `hybrid_prereg` | point estimates within 0.0004; significance verdicts unchanged |
 | `cat_ups` | Random and Ours rows identical; btilde-hybrid third-decimal drift; oracle row 32.7 -> 32.9 routes |
 | `cat_up` | 2PL information and random-strat identical (srMAE/theta-err third-decimal drift); Tier C rows differ: 1PL information theta-err 0.345 -> 0.249, bhat-spread 48.2 -> 46.6 routes, tinyAnchor 51.0 -> 52.2 |
 
-Both reported Table II rows survive: 2PL information stays at **25.6 routes**
-(IES 8.6x) and the shrunk-information row at **31.5**. Pinning the device is what
+Both reported Table II rows survive: the target-EIG row stays at **27.4 rollouts**
+at +-10% (77.2 at +-5%) and the UPS row at **34.7** (H_s=22). Pinning the device is what
 recovers them — the same experiment on CUDA gives 25.8 instead, which is how the
 chaotic rows were identified in the first place.
 
@@ -95,7 +95,7 @@ numbers or published claims:
    denominator as `1.7^2 = 2.89`; the code that produced the numbers uses `2.9`
    (`scirt.selection.SHRINK_SCALE_SQ`). The code value is kept.
 2. **Iteration counts.** PROTOCOL section 2.1 states 400 Adam steps. The live
-   values are 400 (LOTO folds, descriptor table), 600 (`cat_ups`) and 800 (gold
+   values are 400 (LOTO folds, descriptor table), 600 (`cat_ups`) and 800 (reference
    anchor, noise ceiling, `cat_up`). The code is authoritative; every call site
    names `it=` explicitly for this reason.
 3. **Table IV rank-fusion row** pairs `hybrid-gt`'s point estimate (+.592) with
@@ -122,7 +122,7 @@ evaluation package, and deliberately so:
   `--even_windows` for the coverage variant.
 - **Verified chain.** `assemble_ensemble.py` rebuilds
   `data/interact/interact_b2d_w2a_final.npz` bit-identically from the original
-  six run files on every numeric key (both rank ensembles and the gold anchor;
+  six run files on every numeric key (both rank ensembles and the reference anchor;
   the `routes` string key is prefix-normalised by the released trainer).
 
 ## Numerical fidelity notes (moved from code comments)
@@ -140,4 +140,4 @@ evaluation package, and deliberately so:
 - **Identification is a per-experiment choice.** `center_b` (anchor on the
   panel mean) is the convention everywhere except the frozen-difficulty theta
   fit, where the supplied prediction *is* the scale anchor and re-centering
-  would move Table I's row from 0.762/0.173 to 0.765/0.171.
+  would move Table I's row from 0.771/0.167 to 0.773/0.165.

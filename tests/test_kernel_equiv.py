@@ -33,7 +33,7 @@ def panel_matrix():
 
 
 def _original_2pl(M, mk, it):
-    """Verbatim body shared by gold_anchor, descriptor_table, hybrid_prereg."""
+    """Verbatim body shared by the reference anchor, descriptor table, hybrid prereg."""
     Mt = torch.tensor(np.nan_to_num(M), dtype=torch.float32).to(DEV)
     Wt = torch.tensor(mk, dtype=torch.float32).to(DEV)
     n, J = M.shape
@@ -125,8 +125,8 @@ def test_frozen_b_kernel_matches_original(panel_matrix):
 def test_frozen_b_is_not_recentred(panel_matrix):
     """Guard R3: the encoder site must not have theta centred.
 
-    Centering here would move Table I's headline row from 0.762/0.173 to
-    0.765/0.171, and the edit that does it looks like a protocol-compliance fix.
+    Centering here would move Table I's headline row from 0.771/0.167 to
+    0.773/0.165, and the edit that does it looks like a protocol-compliance fix.
     """
     M, mk = panel_matrix
     rng = np.random.RandomState(0)

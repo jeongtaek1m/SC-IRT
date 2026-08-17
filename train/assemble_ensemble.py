@@ -18,10 +18,10 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     zs = [np.load(f, allow_pickle=True) for f in a.runs]
-    gold, routes, types = zs[0]["gold"], zs[0]["routes"], zs[0]["types"]
+    reference, routes, types = zs[0]["reference"], zs[0]["routes"], zs[0]["types"]
     preds = [z["pred_m"] for z in zs]
     ens = np.mean([rankdata(p) for p in preds], 0)
-    out = {"gold": gold, "routes": routes, "types": types, "ens6": ens}
+    out = {"reference": reference, "routes": routes, "types": types, "ens6": ens}
     names = ["d64_s0", "d64_s1", "d64_s2", "d96_s0", "d96_s1", "d96_s2"]
     for n, p in zip(names, preds):
         out[n] = p
@@ -29,7 +29,7 @@ def main():
         out["ens_d64"] = np.mean([rankdata(p) for p in preds[:3]], 0)
     for k in ("ens6", "ens_d64"):
         if k in out:
-            print(f"{k}: rho {spearmanr(out[k], gold).correlation:+.4f}")
+            print(f"{k}: rho {spearmanr(out[k], reference).correlation:+.4f}")
     np.savez(a.out, **out)
 
 

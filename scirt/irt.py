@@ -111,7 +111,7 @@ def fit_irt_map(
 # be applied before difficulties are compared across fits. They are separate
 # named functions because the choice differs per experiment and getting it wrong
 # is silent: routing the encoder evaluation through center_both moves Table I's
-# headline row from 0.762/0.173 to 0.765/0.171.
+# headline row from 0.771/0.167 to 0.773/0.165.
 
 
 def center_b(fit):

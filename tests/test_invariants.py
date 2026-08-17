@@ -27,12 +27,12 @@ def _bank():
     return panel, types, data.route_universe(panel.route_ids, types, CK)
 
 
-def test_evaluation_bank_is_219_routes():
-    """One route failed collection; the bank is 219, not the 220 collected."""
+def test_evaluation_bank_is_220_routes():
+    """Route 11755 was re-collected; the bank covers all 220 routes."""
     panel, types, allr = _bank()
     data.assert_canonical_universe(allr)
     assert len(panel.route_ids) == 220
-    assert "11755" not in types
+    assert "11755" in types      # recovered: type EnterActorFlow, confirmed across 79 artifacts
 
 
 def test_panel_is_16_planners():
@@ -42,19 +42,23 @@ def test_panel_is_16_planners():
 
 
 def test_cluster_structure_is_44_types():
-    """43 types of five routes plus one of four - the bootstrap's resampling unit."""
+    """44 types of exactly five routes - the bootstrap's resampling unit.
+
+    Recovering route 11755 completes EnterActorFlow, the one type that had four:
+    the design is balanced, and the earlier 4+5*43 shape was the missing route.
+    """
     _, types, allr = _bank()
     sizes = sorted(len(c) for c in data.type_clusters(allr, types))
     assert len(sizes) == 44
-    assert sizes == [4] + [5] * 43
-    assert sum(sizes) == 219
+    assert sizes == [5] * 44
+    assert sum(sizes) == 220
 
 
 def test_noise_ceiling_bank_is_220():
-    """The reliability estimate runs on the full collection, not the 219 bank.
+    """The reliability estimate runs on the full collection, not the filtered bank.
 
     Its filter is 'at least eight observed responses', which excludes nothing.
-    Unifying it with the 219-route universe moves the published 0.904 ceiling.
+    Every route clears it, so the ceiling (0.899, 1PL) uses the same 220 bank.
     """
     Y = data.read_response_panel().dense_all()
     assert sum((~np.isnan(Y[i])).sum() >= 8 for i in range(Y.shape[0])) == 220
@@ -117,10 +121,21 @@ def test_api_matches_reference_outputs():
     import scirt
 
     r = scirt.evaluate(scirt.encoder_predictions())
-    assert abs(r["auroc"] - 0.762) < 2e-3
-    assert abs(r["mae"] - 0.173) < 2e-3
-    assert abs(r["rho"] - 0.520) < 2e-3
-    assert r["n_routes"] == 219
+    assert abs(r["rho_scene"] - 0.560) < 2e-3
+    assert abs(r["auroc"] - 0.771) < 2e-3
+    assert abs(r["scene_mae"] - 0.167) < 2e-3
+    assert r["n_routes"] == 220
+
+
+def test_scene_metrics_beat_the_planner_only_null():
+    """The floor is the planner-only model, not chance."""
+    import scirt
+
+    r = scirt.evaluate(scirt.encoder_predictions())
+    assert r["d_auroc"] > 0            # 0.771 vs 0.706
+    assert r["d_nll"] > 0              # scene information improves calibrated likelihood
+    assert 0 < r["oracle_gap_recovery"] < 1
+    assert r["scene_mae_oracle"] < r["scene_mae"] < r["scene_mae_theta_only"]
 
 
 def test_estimate_planner_recovers_a_panel_row():

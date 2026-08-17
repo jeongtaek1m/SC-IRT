@@ -75,7 +75,7 @@ def main():
 
     dev = a.device
     d, rid2w, keep, Y, types = load_panel(a.matrix, a.route_types, a.tensors)
-    _, gold = rasch(Y, it=800)
+    _, reference = rasch(Y, it=800)
     R = len(keep)
     AG = np.zeros((R, W_MAX, 48, 12, 8), np.float16)
     AM = np.zeros((R, W_MAX, 48, 12), bool)
@@ -141,9 +141,9 @@ def main():
             print(f"  ...fold {fi+1}/{len(utypes)}", flush=True)
     ok = ~np.isnan(pred)
     print(f"RESULT d={a.d} ep={a.epochs} seed={a.seed} "
-          f"rho {spearmanr(pred[ok], gold[ok]).correlation:+.4f}", flush=True)
+          f"rho {spearmanr(pred[ok], reference[ok]).correlation:+.4f}", flush=True)
     # route ids carry the route_ prefix, matching the released artifact layout.
-    np.savez(a.out, pred_m=pred, gold=gold,
+    np.savez(a.out, pred_m=pred, reference=reference,
              routes=np.array(["route_" + r for r in keep]), types=types)
 
 
