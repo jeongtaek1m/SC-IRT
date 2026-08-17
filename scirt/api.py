@@ -163,7 +163,8 @@ def evaluate(b_tilde, anchor=None):
 
     Every headline number is reported against the planner-only null
     `P = sigmoid(theta_j)` — the model that says all scenes are equally hard.
-    Random (0.5 AUROC) is not the right floor and is not reported.
+    Random (0.5 AUROC) is not the right comparison and is not reported. The null is a
+    reference point, not a mathematical floor: a harmful descriptor can score below it.
 
     Returns:
         rho_scene   Spearman(prediction, observed failure rate)   -- primary

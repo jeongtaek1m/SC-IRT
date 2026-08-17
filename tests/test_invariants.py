@@ -128,7 +128,7 @@ def test_api_matches_reference_outputs():
 
 
 def test_scene_metrics_beat_the_planner_only_null():
-    """The floor is the planner-only model, not chance."""
+    """The comparison point is the planner-only null, not chance (not a strict floor)."""
     import scirt
 
     r = scirt.evaluate(scirt.encoder_predictions())
