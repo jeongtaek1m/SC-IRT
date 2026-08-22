@@ -122,7 +122,7 @@ evaluation package, and deliberately so:
   `--even_windows` for the coverage variant.
 - **Verified chain.** `bundle_runs.py` rebuilds
   `data/interact/interact_b2d_w2a_final.npz` bit-identically from the original
-  six run files on every numeric key (both rank ensembles and the reference anchor;
+  six run files on every numeric key (per-run vectors and the reference anchor;
   the `routes` string key is prefix-normalised by the released trainer).
 
 ## Numerical fidelity notes (moved from code comments)
