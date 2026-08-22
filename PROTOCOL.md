@@ -44,6 +44,16 @@ scoring and stopping held fixed, adding `a_i` cuts rollouts by 5.12 [-7.31,
 held-out planners), while every dMAE interval covers zero. Marginalising `b`
 costs rollouts and buys coverage: 0.88 -> 0.94 at +-10%, 0.81 -> 0.88 at +-5%.
 
+> **Update (2026-08-22).** The paper's main specification has since been
+> unified to a single equation: all three regimes use Rasch
+> `sigmoid(theta - b)` with per-item difficulty uncertainty marginalised.
+> The 2PL bank above is retained as the *posterior-a* appendix variant. On the
+> paper's unified split (13/3 planners x 36/8 types, R=16) the paired price of
+> dropping `a_i` is +4.0 rollouts at +-10% and +1.4 at +-5%; the -5.12/-3.12
+> figures above are the same contrast measured under this repo's LOPO-16
+> protocol. This snapshot implements the 2PL-bank protocol its pinned numbers
+> were produced with.
+
 Adam step counts are **not** uniform, and the code names each one explicitly:
 
 | Site | steps |

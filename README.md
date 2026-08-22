@@ -128,6 +128,11 @@ per fold. Details and every equation: [PROTOCOL.md](PROTOCOL.md).
   this panel (so it is unpredictable from a scene), yet on the calibrated bank
   it still cuts rollouts by 3.1-5.1 with a 95% CI excluding zero
   (-5.12 [-7.31,-2.94] at +-10%, -3.12 [-5.38,-1.25] at +-5%).
+  *Update (2026-08-22): the paper's main specification now unifies all regimes
+  on the single Rasch equation `sigmoid(theta - b)`; the 2PL bank is kept as a
+  posterior-a appendix variant (paired price of dropping `a_i` on the paper's
+  unified split: +4.0 / +1.4 rollouts). This repo snapshot implements the
+  2PL-bank protocol its pinned numbers were produced with.*
 - Adaptive selection wins at small budgets and *loses* at large ones. Below
   ~40 rollouts it roughly halves the error against random sampling; past ~60,
   random gives the better success-rate estimate, because a representative
