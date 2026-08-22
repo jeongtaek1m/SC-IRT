@@ -11,7 +11,7 @@ GT agent tracks in, one scalar out, supervised directly by the panel's failures.
 No feature engineering, no scenario labels, no camera required.
 
 The headline: the learned encoder recovers held-out-type difficulty at
-**rho +0.56** against a noise ceiling of 0.90, where the best simple descriptor
+**rho +0.50** (single run) against a noise ceiling of 0.90, where the best simple descriptor
 reaches +0.19 — and the same difficulty scores drive adaptive testing that
 evaluates a new planner in **~27 closed-loop rollouts instead of 220**.
 
@@ -29,7 +29,7 @@ import scirt
 
 bt = scirt.encoder_predictions()        # {route_id: difficulty}, all out-of-fold
 print(scirt.evaluate(bt))
-# {'rho_scene': 0.560, 'auroc': 0.771, 'scene_mae': 0.167, 'n_routes': 220, ...}
+# {'rho_scene': 0.503, 'auroc': 0.759, 'scene_mae': 0.177, 'n_routes': 220, ...}
 ```
 
 Bring your own descriptor: any `{route_id: score}` dict works —
@@ -64,7 +64,7 @@ A runnable walk-through of all of the above: [tutorials/quickstart.ipynb](tutori
 ## Verifying the numbers
 
 ```bash
-pytest            # pins the kernel, the headline row (0.771 / 0.167 / +0.560),
+pytest            # pins the kernel, the headline row (0.759 / 0.177 / +0.503),
                   # and the few-rollout estimator against the shipped artifact
 ```
 
@@ -89,7 +89,7 @@ for d_ep in "64 30" "96 60"; do set -- $d_ep
     python train/train_encoder_b2d.py --tensors b2d_tensors.npz --d $1 --epochs $2 --seed $s --out runs/k_d${1}e${2}s${s}.npz
   done
 done
-python train/assemble_ensemble.py runs/k_*.npz --out interact_b2d_w2a_final.npz
+python train/bundle_runs.py runs/k_*.npz --out interact_b2d_w2a_final.npz
 ```
 
 Training is GPU-tier reproducibility: seeds move pooled rho by ~0.01 and
@@ -100,7 +100,7 @@ reference; the assembler rebuilds it bit-for-bit on every numeric key.
 
 ```
 scirt/         the library — calibration kernel, encoder, ability posterior, API
-train/         tensor builder, LOTO trainer, ensemble assembler
+train/         tensor builder, LOTO trainer, run bundler (no ensembling)
 tutorials/     runnable quickstart notebook
 data/          response matrix, route->type map, kin input, encoder artifact (~0.3 MB)
 tests/         kernel-equivalence and number-pinning tests

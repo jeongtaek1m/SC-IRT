@@ -120,10 +120,10 @@ def test_api_matches_reference_outputs():
     """scirt.evaluate on the shipped artifact reproduces the published row."""
     import scirt
 
-    r = scirt.evaluate(scirt.encoder_predictions())
-    assert abs(r["rho_scene"] - 0.560) < 2e-3
-    assert abs(r["auroc"] - 0.771) < 2e-3
-    assert abs(r["scene_mae"] - 0.167) < 2e-3
+    r = scirt.evaluate(scirt.encoder_predictions())      # canonical single run d64_s0
+    assert abs(r["rho_scene"] - 0.503) < 2e-3
+    assert abs(r["auroc"] - 0.759) < 2e-3
+    assert abs(r["scene_mae"] - 0.177) < 2e-3
     assert r["n_routes"] == 220
 
 

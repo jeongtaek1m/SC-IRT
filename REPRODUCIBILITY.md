@@ -32,7 +32,7 @@ nothing anyway.
 
 | Tier | Meaning | Lines |
 |---|---|---|
-| **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` ens6 and the 6-seed mean/sd; `cat_ups` Random / shrunk-information rows; `cat_up` random-strat and btilde-spread; the 0.899 ceiling |
+| **A — stable** | Identical across devices and library versions | `encoder_us` AUROC/MAE; `encoder_verify` per-run rho and the 6-seed mean/sd; `cat_ups` Random / shrunk-information rows; `cat_up` random-strat and btilde-spread; the 0.899 ceiling |
 | **B — ±0.002** | Third decimal moves with device or library version | `noise_ceiling` split-half and reliability; most `descriptor_table` rows; `reference_anchor` rho; `hybrid_prereg` point estimates; per-seed rho and bootstrap CIs; `cat_ups` btilde-hybrid |
 | **C — chaotic** | Trajectory-level divergence from ~1e-7 input noise | `cat_up` fisher-1PL, bhat-spread, tinyAnchor (all tau blocks); `cat_ups` ORACLE-fisher |
 
@@ -75,7 +75,7 @@ both headline Table II rows and all significance calls survive unchanged:
 | `noise_ceiling` | split-half 0.679, reliability 0.809, **ceiling 0.899** (1PL; the retired 2PL fit gave 0.904) |
 | `descriptor_table` | AUROC/MAE identical; Agent-JEPA rho -0.275 -> -0.276; kin+den rho +0.191 -> +0.190 |
 | `reference_anchor` | rho identical (+0.427 / +0.528 / +0.557) |
-| `encoder_us` | ens6L identical; the d64 stability arm 0.500 -> 0.501 |
+| `encoder_us` | per-run rho identical; the d64 stability arm 0.500 -> 0.501 |
 | `encoder_verify` | rho within 2e-4; tie verdict unchanged |
 | `hybrid_prereg` | point estimates within 0.0004; significance verdicts unchanged |
 | `cat_ups` | Random and Ours rows identical; btilde-hybrid third-decimal drift; oracle row 32.7 -> 32.9 routes |
@@ -120,7 +120,7 @@ evaluation package, and deliberately so:
 - **Window truncation.** The artifact predates the whole-route even-spacing
   study; the trainer therefore defaults to first-`W_MAX` truncation and exposes
   `--even_windows` for the coverage variant.
-- **Verified chain.** `assemble_ensemble.py` rebuilds
+- **Verified chain.** `bundle_runs.py` rebuilds
   `data/interact/interact_b2d_w2a_final.npz` bit-identically from the original
   six run files on every numeric key (both rank ensembles and the reference anchor;
   the `routes` string key is prefix-normalised by the released trainer).

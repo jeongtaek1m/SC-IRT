@@ -98,17 +98,17 @@ def calibrated_bank(recompute=False):
     return bank
 
 
-def encoder_predictions():
-    """The released encoder's out-of-fold difficulty, as {route_id: b_tilde}.
+def encoder_predictions(run="d64_s0"):
+    """One released encoder run's out-of-fold difficulty, as {route_id: b_tilde}.
 
-    The mean of the six released runs' logits; every value is a prediction made
-    by a model that never saw that route's scenario type.
+    A single training run — no prediction ensembling anywhere in this project
+    (runs are reported individually; multi-seed numbers are means of *metrics*).
+    The canonical run is d64_s0 (default width, first seed, declared a priori);
+    the artifact also carries d64_s1/s2 and d96_s0/s1/s2 for seed-spread reporting.
     """
     d = np.load(f"{paths.INTERACT}/interact_b2d_w2a_final.npz", allow_pickle=True)
     routes = [str(r).replace("route_", "") for r in d["routes"]]
-    keys = ["d64_s0", "d64_s1", "d64_s2", "d96_s0", "d96_s1", "d96_s2"]
-    v = np.mean([np.array(d[k], dtype=np.float64) for k in keys], 0)
-    return dict(zip(routes, v.tolist()))
+    return dict(zip(routes, np.array(d[run], dtype=np.float64).tolist()))
 
 
 def _fold_predictions(bt, panel, types, keep, J):

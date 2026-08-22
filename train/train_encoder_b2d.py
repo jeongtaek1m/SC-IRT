@@ -4,14 +4,14 @@
 One invocation = one (width, epochs, seed) run: 44 scenario-type folds, a fresh
 encoder per fold, theta frozen per fold by the a==1 calibration, BCE over the
 16-planner response cells, out-of-fold b_tilde written for every route. The
-released artifact data/interact/interact_b2d_w2a_final.npz is the seed-ensemble
+released artifact data/interact/interact_b2d_w2a_final.npz is the per-run bundle
 of six such runs:
 
   for d,ep in (64,30) (96,60):
     for s in 0 1 2:
       python train/train_encoder_b2d.py --tensors <b2d_tensors.npz> \
           --d $d --epochs $ep --seed $s --out runs/kcat_d${d}e${ep}s${s}.npz
-  python train/assemble_ensemble.py runs/kcat_*.npz --out interact_b2d_w2a_final.npz
+  python train/bundle_runs.py runs/kcat_*.npz --out interact_b2d_w2a_final.npz
 
 Reproducibility tier: GPU training. Unlike the CPU-pinned evaluation package,
 retraining is NOT bit-reproducible across devices/cuDNN builds; the measured

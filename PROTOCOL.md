@@ -72,7 +72,8 @@ concatenated *inside* the model through an MLP. The output is a scalar difficult
 Training minimises the cell-level BCE
 `-sum_ij log P(y_ij | sigmoid(theta_j - b_tilde(x_i)))`, with `theta` fitted by a
 within-fold Rasch calibration and then frozen. Six runs are reported (two widths
-x three seeds) plus their ensemble; Table I uses the 6-seed logit mean (ens6L).
+x three seeds). **No prediction ensembling** (banned 2026-08-19): Table I reports the
+canonical single run d64_s0, with the seed spread of metrics alongside.
 The shipped artifact's original training selected checkpoints on an inner
 validation NLL; the released reference trainer runs a fixed epoch budget and is
 not claimed to regenerate the artifact bit-for-bit (GPU tier, REPRODUCIBILITY.md).
