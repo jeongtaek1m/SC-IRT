@@ -1,4 +1,4 @@
-# Generated artifacts. run_all.sh regenerates all of these from data/.
+# Generated artifacts: the experiments/run_*.py entry points rewrite results/.
 results/
 expected_local/
 

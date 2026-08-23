@@ -1,155 +1,116 @@
-# SC-IRT: Scene-Conditioned Item Response Theory
+# SC-IRT — Scene-Conditioned Item Response Theory for Closed-Loop Driving Evaluation
 
-[[Paper (coming soon)]](#citation) · [[Tutorial]](tutorials/quickstart.ipynb) · [[Protocol]](PROTOCOL.md) · [[Results]](RESULTS.md) · [[Reproducibility]](REPRODUCIBILITY.md)
+Official code release. Treat a driving scenario as a test item and a planner
+as an examinee: fitting an IRT model to the pass/fail panel recovers a
+per-scenario difficulty, learning to predict that difficulty from the scene
+makes it available for scenarios no planner has driven, and an
+uncertainty-aware adaptive tester certifies a new planner's benchmark success
+rate to a chosen precision at a fraction of the rollouts.
 
-**How hard is a driving scene — before any planner has driven it?**
+Everything in the paper runs from this repository: the data ships in
+`data/` (~7 MB, no external downloads), and every experiment entry point ends
+by asserting the published numbers (`anchors OK`).
 
-SC-IRT calibrates per-scene *difficulty* from the pass/fail record of a panel of
-end-to-end driving planners (Bench2Drive, 16 planners x 220 routes), then trains
-an interaction encoder that predicts that difficulty from the scene alone —
-GT agent tracks in, one scalar out, supervised directly by the panel's failures.
-No feature engineering, no scenario labels, no camera required.
+- [[Protocol]](PROTOCOL.md) — the unified specification: generative model,
+  split, acquisition, stopping, metrics.
+- [[Results]](RESULTS.md) — the numbers of record, one section per table.
+- [[Reproducibility]](REPRODUCIBILITY.md) — anchors ledger, RNG registry,
+  environment, determinism notes.
 
-The headline: the learned encoder recovers held-out-type difficulty at
-**rho +0.50** (single run) against a noise ceiling of 0.90, where the best simple descriptor
-reaches +0.19 — and the same difficulty scores drive adaptive testing that
-evaluates a new planner in **~27 closed-loop rollouts instead of 220**.
+## The one model and the one split
+
+```
+theta_j ~ N(0, 1)                         planner ability
+b_i | x_i ~ N(b_tilde(x_i), sigma^2)      scenario difficulty given the scene
+P(pass)   = sigmoid(theta_j - b_i)        all-1PL, single equation
+```
+
+Split: 13/3 planners x 36/8 scenario types, 16 Monte-Carlo draws
+(`scirt/splits.py`). Within a draw the three regimes share the partition:
+
+|                    | train planners (13) | held-out planners (3) |
+|--------------------|---------------------|-----------------------|
+| train types (36)   | A: calibration      | **UP** evaluation     |
+| held-out types (8) | **US** evaluation   | **UPS** target        |
+
+**US** predicts difficulty for unseen scenes (Tables 1-2). **UP** certifies a
+new planner's full-bank success rate to +-eps on the calibrated bank
+(Tables 3-4), selecting the next rollout by the SR-variance acquisition —
+the item whose observation most shrinks the posterior variance of the very
+quantity the stopping rule certifies. **UPS** composes the two: predict a new
+planner on scenes with zero calibration responses (Table 6). Table 5 is the
+paper's central claim — *CAT under calibration scarcity*: published
+2PL/3PL adaptive testers silently break when the item bank is calibrated
+from a handful of examinees, while the Rasch-plus-marginalisation design
+degrades gracefully.
 
 ## Getting started
 
 ```bash
-git clone https://github.com/jeongtaek1m/SC-IRT.git
-cd SC-IRT && pip install -e .
+pip install -e .            # numpy, scipy, scikit-learn, torch (see pyproject)
+pytest tests/ -q            # fast invariants, no GPU needed for the unified ones
+
+# Reproduce the paper, one table per script (GPU, minutes each):
+python experiments/run_up_main.py        # Table 3   (~8 min)
+python experiments/run_up_baselines.py   # Table 4ab (~35 min)
+python experiments/run_atlas_bridge.py   # Table 4e  (~10 min)
+python experiments/run_scarcity.py       # Table 5   (~25 min)
+python experiments/run_us.py             # Tables 1-2 (~40 min)
+python experiments/run_ups.py            # Table 6   (~25 min)
+python experiments/run_sel_diversity.py  # adaptivity diagnostic (~8 min)
 ```
 
-Score the released encoder — or any difficulty predictor — in four lines:
-
-```python
-import scirt
-
-bt = scirt.encoder_predictions()        # {route_id: difficulty}, all out-of-fold
-print(scirt.evaluate(bt))
-# {'rho_scene': 0.503, 'auroc': 0.759, 'scene_mae': 0.177, 'n_routes': 220, ...}
-```
-
-Bring your own descriptor: any `{route_id: score}` dict works —
-`scirt.evaluate` refits planner ability per held-out scenario type with your
-difficulty frozen, and pools every metric across the 44 folds. Each headline
-number comes with its floor: the **planner-only null** `P = sigmoid(theta_j)`,
-the model that says all scenes are equally hard. Chance (0.5 AUROC) is not the
-right comparison and is not reported.
-
-```python
-scirt.reference()                       # full-panel reference difficulty (Rasch)
-scirt.noise_ceiling()                   # {'split_half': 0.68, ..., 'ceiling': 0.90}
-```
-
-And the tinyBenchmarks use case, for driving — evaluate a **new planner** from a
-handful of closed-loop rollouts instead of the full bank:
-
-```python
-responses = {}                          # {route_id: 0|1} as you roll out
-for _ in range(25):
-    r = scirt.next_route(responses)     # most informative next route (target-EIG)
-    responses[r] = run_my_planner(r)    # your closed-loop rollout
-scirt.estimate_planner(responses)       # {'theta':…, 'sr_hat':…, 'ci95':…}  (p-IRT)
-```
-
-Reaching +-10% on the success rate takes ~27 rollouts instead of 220, and the
-95% interval is a posterior-predictive quantile that covers 15 of 16 held-out
-planners.
-
-A runnable walk-through of all of the above: [tutorials/quickstart.ipynb](tutorials/quickstart.ipynb).
-
-## Verifying the numbers
-
-```bash
-pytest            # pins the kernel, the headline row (0.759 / 0.177 / +0.503),
-                  # and the few-rollout estimator against the shipped artifact
-```
-
-The pinned per-experiment scripts, reference outputs and the paper's comparison
-experiments (descriptor table, adaptive testing, rank fusion) live on the
-[`full-reproduction`](../../tree/full-reproduction) branch.
-
-> **Caveat**: `full-reproduction` still reflects the pre-2026-08-17 protocol
-> (219-route bank, 2PL calibration throughout, the retired 0.762/0.173/+0.520
-> headline). `main` is the current protocol; treat the branch as historical
-> until it is re-ported.
-
-## Training the encoder yourself
-
-The evaluation above needs nothing but this repository. Retraining needs the
-Bench2Drive rollout annotations (not redistributed) and a GPU:
-
-```bash
-python train/build_tensors_b2d.py --anno_root <rollouts> --cmd_feats <kin npz dir> --out b2d_tensors.npz
-for d_ep in "64 30" "96 60"; do set -- $d_ep
-  for s in 0 1 2; do
-    python train/train_encoder_b2d.py --tensors b2d_tensors.npz --d $1 --epochs $2 --seed $s --out runs/k_d${1}e${2}s${s}.npz
-  done
-done
-python train/bundle_runs.py runs/k_*.npz --out interact_b2d_w2a_final.npz
-```
-
-Training is GPU-tier reproducibility: seeds move pooled rho by ~0.01 and
-cross-device bit-identity is not promised. The shipped artifact is the
-reference; the assembler rebuilds it bit-for-bit on every numeric key.
+Each script prints its table and finishes with `anchors OK` — an assertion
+against the published numbers, so a silent environment drift fails loudly.
 
 ## What is in the box
 
 ```
-scirt/         the library — calibration kernel, encoder, ability posterior, API
-train/         tensor builder, LOTO trainer, run bundler (no ensembling)
-tutorials/     runnable quickstart notebook
-data/          response matrix, route->type map, kin input, encoder artifact (~0.3 MB)
-tests/         kernel-equivalence and number-pinning tests
+scirt/          the library (see PROTOCOL.md for the maths)
+experiments/    one entry point per paper table + build_data.py (provenance)
+data/
+  matrices/     16 x 220 pass/fail response panel; route -> scenario type
+  features/     six scene-descriptor sets (cmdkin, scenparamz, gtrisk, ...)
+  b2d/          traffic-feature table and kin/density baselines
+  encoder/      per-run encoder predictions for the unified split (d64/d96,
+                3 seeds each — single runs; prediction ensembling is banned)
+                + the trajectory tensors to retrain from scratch
+tests/          fast invariants (unified + legacy)
+train/          encoder training (Bench2Drive annotations -> tensors -> runs)
 ```
 
-Model in one line: per-agent bidirectional GRUs over 6-second GT box tracks,
-a 2-layer transformer mixing agents with an ego query, attention pooling over
-windows, kinematic statistics embedded *inside* the model, and a linear head
-emitting scalar difficulty — trained with cell-level BCE through
-`P(planner j passes scene i) = sigmoid(theta_j − b(scene_i))`, theta frozen
-per fold. Details and every equation: [PROTOCOL.md](PROTOCOL.md).
+The response panel: 16 open-source end-to-end planners x 220 Bench2Drive
+routes (3,476 of 3,520 cells observed). Scenario types: 44. All derived data
+was packaged by `experiments/build_data.py`, which re-verifies each artifact
+against its source (the route->type map is checked against the raw CARLA
+checkpoint JSONs it came from).
 
 ## Honest caveats
 
-- Difficulty is calibrated against *this* panel; a different planner population
-  defines a (correlated but not identical) difficulty.
-- The reference difficulty is itself a 16-rater estimate, so it is a diagnostic
-  anchor and not truth: the primary metric ranks predictions against observed
-  failure rates, and no predictor can exceed the 0.899 reliability ceiling.
-- **Two regimes, two parameterisations.** Unseen scenes use Rasch
-  `sigmoid(theta - b)`; the calibrated bank uses 2PL `sigmoid(a_i(theta - b_i))`.
-  Discrimination is used only where it is response-calibrated — a held-out scene
-  has no responses, so `a_i` cannot be estimated there at all. This is not a
-  free choice per table: log-discrimination has split-half reliability 0.08 on
-  this panel (so it is unpredictable from a scene), yet on the calibrated bank
-  it still cuts rollouts by 3.1-5.1 with a 95% CI excluding zero
-  (-5.12 [-7.31,-2.94] at +-10%, -3.12 [-5.38,-1.25] at +-5%).
-  *Update (2026-08-22): the paper's main specification now unifies all regimes
-  on the single Rasch equation `sigmoid(theta - b)`; the 2PL bank is kept as a
-  posterior-a appendix variant (paired price of dropping `a_i` on the paper's
-  unified split: +4.0 / +1.4 rollouts). This repo snapshot implements the
-  2PL-bank protocol its pinned numbers were produced with.*
-- Adaptive selection wins at small budgets and *loses* at large ones. Below
-  ~40 rollouts it roughly halves the error against random sampling; past ~60,
-  random gives the better success-rate estimate, because a representative
-  sample reconstructs a mean better than an informative one.
-- This branch is the method only. Ablations and baseline comparisons — the
-  descriptor table, kin-fusion and window variants, adaptive testing, rank
-  fusion, the NavSim scale-up — live on `full-reproduction`.
+- The calibration panel is 13 planners per draw. That scarcity is the point
+  of the paper, and Table 5 measures what it does to every method — including
+  ours, which degrades too (gracefully; see the J_cal = 4 row before quoting
+  headline numbers).
+- Difficulty is calibrated against *this* planner population; a different
+  population defines a correlated but not identical difficulty.
+- Coverage is reported as count/48 next to every fraction; with 48 evaluation
+  runs the resolution is ~2%.
+- Adaptive selection wins at small budgets; at large fixed budgets a
+  representative random sample estimates the mean better. The fixed-budget
+  panel of Table 4 shows both regimes.
+- The encoder rows use single runs; seeds are summarised as metric mean +- SD.
+  Prediction ensembling is banned project-wide (including the ablations).
+
+## Legacy layer
+
+The pre-unified snapshot (220-route bank, leave-one-planner-out, 2PL bank,
+target-EIG) is retained as `scirt/api.py` + friends with its own tests — it
+produced the paper's robustness appendix and stays reproducible. New work
+should use the unified layer. The even older 219-route pipeline lives on the
+`full-reproduction` branch.
 
 ## Citation
 
 ```bibtex
-@article{scirt2026,
-  title   = {Scene-Conditioned Item Response Theory for End-to-End Driving Evaluation},
-  author  = {<authors>},
-  journal = {<venue, under review>},
-  year    = {2026}
-}
+(to appear)
 ```
-
-Released under the [MIT License](LICENSE).

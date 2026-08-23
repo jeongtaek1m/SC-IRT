@@ -1,231 +1,167 @@
-# SC-IRT protocol
+# Protocol — the unified specification
 
-Metric definitions, split construction and the estimator settings behind every
-number in [RESULTS.md](RESULTS.md). Where this document and the code disagree,
-the code is authoritative and the discrepancy is listed in
+This document is normative for the release: every experiment in
+`experiments/` implements exactly this. The numbers of record are in
+[RESULTS.md](RESULTS.md); the anchors ledger and RNG registry are in
 [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
-
-Scope: Bench2Drive only.
 
 ## 1. Data
 
-**Bench2Drive (B2D).** 16 end-to-end planners x 220 routes. Route `11755` was re-collected after an
-initial collection crash; its scenario type (EnterActorFlow) is confirmed across 79
-artifacts, so all 44 types hold exactly five routes. The response is the success flag, `y_ij` in {0, 1}. Routes
-carry one of 44 scenario types (`data/matrices/b2d_route_types.csv`); 43 types have
-five routes and one has four.
+16 open-source end-to-end planners x 220 Bench2Drive closed-loop routes;
+y_ij = 1 iff planner j completes route i (`data/matrices/`). 3,476 of 3,520
+cells observed. Each route carries one of 44 scenario types. Scene
+descriptors x_i (`data/features/`): the SC-IRT stack is cmdkin (25d) +
+scenparamz (31d); the baseline descriptors of Table 1 ship alongside.
+Route order is the response-matrix CSV column order — it is part of the
+reproduction contract.
 
-The panel is incomplete — 3476 of 3520 cells are observed — and every estimator
-below masks the missing cells rather than imputing them.
-
-## 2. Models
-
-### 2.1 IRT calibration (two regimes)
+## 2. Generative model (one equation for every regime)
 
 ```
-unseen scene (US/UPS)    P(y_ij = 1) = sigmoid( theta_j - b_i )            Rasch
-calibrated bank (UP)     P(y_ij = 1) = sigmoid( a_i (theta_j - b_i) )      2PL
-                         with b_i ~ N(b_hat_i, s_i^2) marginalised out
-
-MAP, Adam lr 0.05:
-  NLL  +  1e-2 * mean(theta^2)  +  1e-3 * mean(b^2)  [ + 0.5 * mean(loga^2) for 2PL ]
-
-Identification (location, one degree of freedom):
-  c = mean(theta);   theta_j <- theta_j - c,   b_i <- b_i - c
-  Both shift by the *same* c, so (theta_j - c) - (b_i - c) = theta_j - b_i and
-  every probability is unchanged. Shifting theta alone changes the likelihood.
+theta_j ~ N(0, 1)
+b_i | x_i ~ N(b_tilde_phi(x_i), sigma^2)
+y_ij ~ Bernoulli( sigmoid(theta_j - b_i) )          all-1PL
 ```
 
-Discrimination is used **only where it is response-calibrated**. A held-out
-scene has no responses, so `a_i` is not estimable there and the model reverts to
-the identifiable Rasch form. On the bank it earns its place: with selection,
-scoring and stopping held fixed, adding `a_i` cuts rollouts by 5.12 [-7.31,
--2.94] at +-10% and 3.12 [-5.38, -1.25] at +-5% (paired bootstrap over the 16
-held-out planners), while every dMAE interval covers zero. Marginalising `b`
-costs rollouts and buys coverage: 0.88 -> 0.94 at +-10%, 0.81 -> 0.88 at +-5%.
+The three regimes differ only in the *state* of the item parameters:
 
-> **Update (2026-08-22).** The paper's main specification has since been
-> unified to a single equation: all three regimes use Rasch
-> `sigmoid(theta - b)` with per-item difficulty uncertainty marginalised.
-> The 2PL bank above is retained as the *posterior-a* appendix variant. On the
-> paper's unified split (13/3 planners x 36/8 types, R=16) the paired price of
-> dropping `a_i` is +4.0 rollouts at +-10% and +1.4 at +-5%; the -5.12/-3.12
-> figures above are the same contrast measured under this repo's LOPO-16
-> protocol. This snapshot implements the 2PL-bank protocol its pinned numbers
-> were produced with.
+| regime | item difficulty state                       | inferred |
+|--------|---------------------------------------------|----------|
+| US     | the prior itself is learned (x -> b~, sigma)| scene    |
+| UP     | posterior from responses: N(b^_i, s_i^2)    | planner  |
+| UPS    | no responses -> posterior = prior           | planner  |
 
-Adam step counts are **not** uniform, and the code names each one explicitly:
+The inference engine is shared: item curves m_i(theta) = E_b[sigmoid(theta-b)]
+(21-node Gauss-Hermite), a 241-point theta grid on [-6, 6] with N(0,1) prior,
+the SR-variance acquisition (section 4.0), and the realised-SR
+posterior-predictive quantile stop. **UPS = the UP engine + the prior US
+supplies.**
 
-| Site | steps |
-|---|---|
-| Reference difficulty, noise ceiling, `cat_up` bank | 800 |
-| `cat_ups` calibration and full bank | 600 |
-| Leave-one-type-out folds, descriptor table | 400 |
+Discrimination: with the panel's measured sigma_log a = 0.089, marginalising
+a changes cell probabilities by at most 0.0009 — the 1PL is not a separate
+model but the same model with a marginalised. A fitted-discrimination
+variant (2PL bank + marginalisation) is retained as the appendix row of
+Table 3; log-discrimination has split-half reliability 0.08 on this panel,
+which is why no unseen-scene path ever predicts a.
 
-Identification is applied *after* the fit, by one of three named policies, because
-the correct choice differs per experiment (`scirt/irt.py`). The encoder evaluation
-in particular must **not** re-centre: its difficulty is frozen input and is itself
-the scale anchor.
-
-**Full-panel reference difficulty (b_hat_full).** One calibration on the full panel and the full item bank,
-then frozen. It is used only as an evaluation anchor and enters no training
-procedure of any kind.
-
-### 2.2 Ours — difficulty-supervised interaction encoder
-
-Ego-relative ground-truth agent tracks (up to 48 agents x 12 steps x 8 channels)
-plus the ego trajectory and the navigation command. A per-agent BiGRU feeds a
-2-3 layer transformer to a route embedding; kinematic summary statistics are
-concatenated *inside* the model through an MLP. The output is a scalar difficulty
-`b_tilde`.
-
-Training minimises the cell-level BCE
-`-sum_ij log P(y_ij | sigmoid(theta_j - b_tilde(x_i)))`, with `theta` fitted by a
-within-fold Rasch calibration and then frozen. Six runs are reported (two widths
-x three seeds). **No prediction ensembling** (banned 2026-08-19): Table I reports the
-canonical single run d64_s0, with the seed spread of metrics alongside.
-The shipped artifact's original training selected checkpoints on an inner
-validation NLL; the released reference trainer runs a fixed epoch budget and is
-not claimed to regenerate the artifact bit-for-bit (GPU tier, REPRODUCIBILITY.md).
-
-This repository ships both the encoder's frozen out-of-fold predictions
-(`data/interact/interact_b2d_w2a_final.npz`, the reference artifact every
-number in RESULTS.md is computed from) and a reference training pipeline
-(`train/`).
-
-### 2.3 Baselines and ablations (not part of this release)
-Hand-crafted descriptor stacks, kin-fusion and window variants, rank fusion and
-the adaptive-testing experiments are comparisons and ablations reported in the
-paper. Their code and data ship on the `full-reproduction` branch; this branch
-contains the method and its evaluation against the frozen anchor, nothing else.
-
-## 3. Splits
-
-Every reported number is out-of-fold. Standardisation, calibration and encoder
-training all happen strictly within the training fold.
-
-| Regime | Axis cut | Construction |
-|---|---|---|
-| **US** — unseen scenario | scene | 44-type leave-one-type-out; sibling routes of the held-out type are removed with it |
-| **UP** — unseen planner | planner | leave-one-planner-out over 16; the held-out planner's responses are excluded from calibration entirely |
-| **UPS** — both | scene and planner | 3 seeds x [random half of types held out] x leave-one-planner-out; held-out-type routes have no response-based calibration at all |
-
-## 4. Metrics
-
-Notation: `i` indexes scenes, `j` planners, `p_ij` the model probability, `y_ij` the
-observation, `N` the bank size, `J` the panel size.
-
-### 4.1 rho_scene — difficulty recovery (Table I headline)
+### 2.1 The canonical descriptor estimator — one-stage LLTM+e
 
 ```
-rho_scene = Spearman( {b_tilde_i}, {observed failure rate_i} )     primary
-rho_ref   = Spearman( {b_tilde_i}, {b_reference_i} )               diagnostic
+z_ij = theta_j - (w^T x~_i + eps_i),   eps_i ~ N(0, sigma^2)
 ```
 
-The primary form ranks against an *observable* quantity, so it does not treat
-the latent difficulty as truth. The two agree to within 0.001 on this panel
-(0.5598 vs 0.5589 for the released encoder), which is why the reference is kept
-only as a diagnostic.
+(theta, w, log sigma) fitted jointly by MAP on the calibration block, eps
+marginalised by Gauss-Hermite (`scirt/lltm.py`; Fischer 1973; Janssen et al.
+2004; De Boeck 2008). This instantiates the generative model's difficulty
+prior directly; sigma-hat (~0.59) is the model's own estimate of the
+difficulty share features cannot explain. The two-stage alternative
+(Rasch b-hat then Ridge) is reported as a comparison row; the paired delta
+and the plausible-values decomposition (Mislevy 1991; Rubin 1987 — the
+13-rater calibration-noise share of US rho uncertainty, 16.4%) are in
+`experiments/run_us.py`.
 
-Pooled across folds, **not** averaged per fold: a per-fold average would be a
-within-type correlation, which is a different quantity.
+The encoder path predicts b_tilde with a trajectory encoder instead of
+w^T x~; evaluation treats both identically. Single runs only; seeds are
+summarised as metric mean +- SD.
 
-Uncertainty is a **cluster bootstrap** over the 44 scenario types, 10,000
-replicates, percentile interval. Comparisons are **paired** — both predictors are
-scored on the same resampled index set within a replicate — giving an interval on
-the difference and an exceedance probability. A comparison is called significant
-only when the 95% interval excludes zero.
+## 3. The split
 
-### 4.2 AUROC — response ranking
+13/3 planners x 36/8 scenario types, R = 16 Monte-Carlo draws
+(`scirt/splits.py`, RandomState(1000 + draw)). One draw partitions both axes
+at once, so US / UP / UPS share it (blocks A, C, UP-eval, D as in README).
+Sample sizes: UP and UPS 16 x 3 = 48 planner evaluations; US pooled
+16 x ~40 = 640 route evaluations. Types are held out as whole types — route-
+level splits leak near-duplicates of the same scenario into training.
 
-```
-US : micro — one pooled AUC over all held-out cells
-UP : macro — per-planner AUC, averaged over the 16 folds (± fold SE)
-```
+## 4. Adaptive testing (UP)
 
-Threshold-free, and deliberately not a calibration claim: it says nothing about
-absolute probability level, which is why MAE is reported alongside it.
+### 4.0 Acquisition — SR-variance (canonical, 2026-08-22)
 
-### 4.3 MAE — performance reconstruction, aggregate level only
-
-```
-US (scene pass rate):
-    MAE = (1/N_test) * sum_i | mean_j p_ij  -  mean_j y_ij |
-
-UP / CAT (p-IRT):
-    predSR = ( sum_{administered} y  +  sum_{not administered} p ) / N_bank
-    MAE    = | predSR - SR_bank |,   averaged over planners (± SE)
-```
-
-The p-IRT form follows the tinyBenchmarks convention: observed responses enter as
-themselves, unobserved ones as their predicted probability. Because the observed
-terms cancel, this is numerically identical to the held-out-only definition scaled
-by the unobserved fraction.
-
-Per-cell `|p - y|` is an improper score — its reference floor is 0.293 and its
-ceiling 0.499 — and is never reported. It is retained for diagnostics only.
-
-### 4.4 Adaptive testing (Table II)
+The evaluand is the realised full-bank success rate
+S = (1/N)(sum_observed y + sum_unobserved Y). Select the item whose
+observation most reduces its posterior variance:
 
 ```
-Ability:  Newton MAP,  g = sum_S a_i (y_i - p_i) - theta
-                       h = -sum_S a_i^2 p_i (1 - p_i) - 1
+A_i = Var(S | D) - E_{Y_i}[ Var(S | D, Y_i) ]
 
-Stop when SE(theta) = 1 / sqrt( sum_S a_i^2 p_i (1-p_i) + 1 ) < tau
-          tau = 0.35 in the main text; 0.40 and 0.30 in the appendix
-
-items n : routes administered before stopping (fold mean ± SE)
-IES     : ATLAS-style, **lower is better**, reference stated in the caption:
-              IES = (MAE_M / MAE_Random40) * (B_M / 40)
-          Report alongside the matched-precision rollout ratio (27.4/42.2 = 0.65 at +-10%),
-          which stays defined when the reference budget does not exist. N = 220 for UP;
-          for UPS use a bank-proportional reference (0.2 * N_new) or omit.
-          Undefined for the oracle row, which is not deployable.
-theta err : | theta_hat - theta_full |, against the full-response MAP estimate
+Var(N S | D) = E_q[ sum_{j in U} m_j (1 - m_j) ]   (per-response uncertainty)
+             + Var_q( sum_{j in U} m_j )           (ability uncertainty)
 ```
 
-Selection rules:
+Closed form on the theta grid — for each candidate update q_y ~ q m_i^y
+(1-m_i)^(1-y), drop i from U, re-evaluate; argmin expected posterior
+variance (`scirt/acquisition.srvar_pick`). Early on the ability term
+dominates (Fisher-like behaviour); as q narrows the direct-removal term
+takes over and targets the residual-uncertainty items. Selection and
+stopping now optimise the same quantity; the paired price/benefit against
+the theta-EIG rule it replaced is in RESULTS Table 3.
 
-- **UP** — target-EIG `h(E_theta[m_i]) - E_theta[h(m_i)]` with difficulty
-  marginalised inside `m_i`, so the score is information about *ability*.
-  Classical 2PL Fisher `argmax a^2 p (1-p)` is within noise of it on rollouts
-  (27.7 vs 27.4 at +-10%) but reaches lower coverage (0.88 vs 0.94). Both are
-  available only because the bank is calibrated.
-- **UPS (ours)** — shrunk information. Greedy Fisher selection on *predicted*
-  difficulty fails by a winner's curse: it favours routes whose difficulty was
-  over-predicted, buying prediction error rather than information. Marginalising
-  the logistic over a Gaussian difficulty posterior gives
+**Scope.** UP and UPS-standalone certify S, so they use SR-variance.
+The UPS-extend bank probes exist to learn theta for transport — there the
+theta-EIG rule remains correct. The principle is: *the acquisition target is
+the quantity being certified.*
 
-  ```
-  info_i = p~ (1 - p~),   p~ = sigmoid( (theta_hat - b_tilde_i) / sqrt(1 + s^2 / c) )
-  ```
+### 4.1 Stopping and the certificate
 
-  with `s^2` the Stage-2 in-fold residual variance and `c` the probit-logit
-  matching constant. **The code uses `c = 2.9`**; the value implied by the usual
-  1.7 scaling is 2.89. The code value is what produced the published numbers.
+Stop when the 95% posterior-predictive interval of S has width <= 2 eps
+(eps in {0.10, 0.05}). The interval is a quantile interval from theta draws
++ Bernoulli fills (`scirt/bayes.sr_ci`) — a normal approximation changes
+measured coverage and is not used. Coverage is always reported as count/48.
+The second variance term above is *unobserved-response predictive
+uncertainty* (not "binomial noise" — the simulator is deterministic; the
+uncertainty is that unrun responses are unknown).
 
-### 4.5 Noise ceiling (Appendix A3)
+### 4.2 Published-baseline fidelity (Table 4)
+
+Native-vs-native is the main comparison: every method runs in its published
+operating mode on the same bank and the same 13-planner calibration —
+tinyBenchmarks (K-means anchors + p-IRT, fixed K), metabench-lite
+(information-grid subset, fixed K), Fluid-style (2PL Fisher argmax, fixed
+budget; the paper defines no stopping rule), ATLAS-style (3PL + top-5
+randomesque + EAP, SE(theta) <= tau in {0.1, 0.2, 0.3}, min 30 items), ours
+(SR +- eps). Panel (a) is the selection-isolation ablation (common stopping
+machine, rules swapped); panel (b) the equal-cost fixed-budget snapshot;
+panel (c) the ATLAS-format IES with a declared Random-100 reference (valid
+only within a matched-cost tier); panel (e) the tau <-> eps bridge.
+"-style/-lite" marks reimplementations from the method descriptions.
+
+### 4.3 CAT under calibration scarcity (Table 5)
+
+Subsample J_cal in {4, 7, 10, 13} of the calibration planners and
+*re-calibrate the bank from scratch* with only those responses (1PL / 2PL /
+3PL each); held-out planners fixed across J_cal. Each arm runs its native
+item model end to end. Two subsample replicates at J_cal < 13 give the
+selection-stability (Jaccard of first-30 selections) and the parameter
+reliability chain (corr of log a-hat vs b-hat across replicates). Read the
+rollout column together with coverage: a point-parameter posterior that
+mistakes small-panel noise for certainty stops *earlier* while its error
+grows past the target — premature stops are a symptom, not efficiency.
+
+## 5. UPS — composition
 
 ```
-Split the 16-planner panel into halves, calibrate each independently,
-correlate the two difficulty vectors  ->  r_half  (mean of 20 random splits)
-
-Spearman-Brown:   reliability = 2 r_half / (1 + r_half)
-Ceiling        =  sqrt(reliability)
+P(y | B, x) = int int sigmoid(theta - b) dp(theta | B) dp(b | x)
 ```
 
-B2D (1PL, the shipped geometry): r_half 0.679 -> reliability 0.809 -> **ceiling 0.899**.
-(The retired 2PL fit gave 0.691/0.817/0.904.) Attenuation-corrected
-values `rho* = rho / ceiling` may be reported alongside raw rho.
+theta posterior from B = 30 bank probes (theta-EIG), difficulty prior from
+the feature path. Main = extend (zero rollouts on the target routes), with
+the common-scale decomposition separating the amortisation gap (swap
+b_tilde for response-calibrated b-hat, same theta) from the theta-transport
+gap (swap the bank theta for the target-domain theta) — transport dominates
+by ~20x. Hybrid adds D probes on top of the warm-start posterior;
+standalone treats the ~40 target routes as their own bank (SR-variance
+acquisition, cold-start stress test).
 
-This estimate runs on the same 220-route bank as every other number; its inclusion
-filter excludes nothing. bank; its inclusion filter is "at least eight observed responses", which excludes
-nothing.
+## 6. Metrics
 
-## 5. Reproduction
-
-`bash run_all.sh` regenerates every number from `data/`, in dependency order,
-under a pinned runtime (CPU, single-threaded, pinned library versions). Compare
-with `tools/compare_outputs.py`, not `diff`. Tolerances: rho and MAE ±0.002,
-interval bounds ±0.005, counts exact — except for the three chaotic
-adaptive-selection rows documented in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+- **US**: pooled cell AUROC vs the planner-only null (b = 0 — a reference,
+  not a floor), Scene-MAE with relative reduction, rho_scene = Spearman of
+  predicted difficulty vs observed fail rate. Oracle = response-calibrated
+  b on the evaluation block (in-sample ceiling).
+- **UP**: rollouts to certification, SR-MAE at stop, coverage (count/48).
+- **UPS**: |SR error| at zero target rollouts; pool-exhaustion fraction for
+  the standalone.
+- **IES** (ATLAS-style) = (MAE / MAE_Random100) x (Items / 100), reference
+  declared, matched-cost tiers only.
+- Resampling: paired cluster bootstrap — (seed) 16 clusters for planner-side
+  deltas, (draw, type) 128 clusters for US pooled deltas.
