@@ -93,6 +93,28 @@ Jaccard(S30) drops -50%/-61%/-34% (Fluid/ATLAS/ours). Ours matches Random's
 accuracy at ~35% fewer rollouts at every panel size — and degrades too
 (J4 coverage 0.79): the claim is graceful degradation, not immunity.
 
+### Table 5(b) — the causal ablation: toggle only uncertainty propagation — `run_plugin_ablation.py`
+
+Same 1PL, same SR-variance acquisition, same stopping; the only change is
+plug-in curves sigmoid(theta - b_hat) vs marginalised curves
+int sigmoid(theta - b) N(b; b_hat, s^2) db. Subsample streams shared with
+Table 5 (paired); +-10% target.
+
+| J_cal | plug-in (roll / MAE / cov) | marginalised | dcov [CI] | dMAE [CI] |
+|---|---|---|---|---|
+| 4 | 18.8 / .0869 / 0.62 | 25.5 / .0630 / 0.79 | +0.167 [+0.06,+0.29] | -0.0239 [-0.036,-0.010] |
+| 7 | 22.8 / .0694 / 0.75 | 27.0 / .0510 / 0.96 | +0.208 [+0.10,+0.31] | -0.0184 [-0.025,-0.012] |
+| 10 | 26.2 / .0589 / 0.79 | 28.4 / .0450 / 0.94 | +0.146 [+0.04,+0.27] | -0.0139 [-0.025,-0.005] |
+| 13 | 27.2 / .0611 / 0.85 | 29.0 / .0463 / 1.00 | +0.146 [+0.06,+0.25] | -0.0148 [-0.026,-0.002] |
+
+Propagating calibration uncertainty is significant at every panel size, and
+the failure it prevents — premature, overconfident stopping — amplifies as
+panels shrink (the plug-in stops 1.7 -> 6.8 rollouts earlier as J_cal drops).
+It also decomposes Table 5: ~73% of the Fluid J=4 collapse is explained by
+non-propagation (shared by any point-parameter model), ~27% by 2PL a-hat
+noise amplification. The extra rollouts of the marginalised arm are the
+honest price: it does not stop less — it stops when it should.
+
 ## Table 6 — UPS — `run_ups.py`
 
 - **(a) decomposition** (B=30, zero target rollouts, common Rasch scale):
