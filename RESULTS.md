@@ -46,6 +46,30 @@ fixes coverage. Posterior-a variant (2PL bank, EIG era): 24.7/.0451/44 and
 Jaccard(S30) 0.14 (chance 0.09), overlap governed by ability proximity
 (Spearman -0.77) — `run_sel_diversity.py`.
 
+### Table 3(b) — the 2x2 factorial: align selection x stopping — `run_factorial_2x2.py`
+
+Same 1PL + marginalisation + posterior in every cell; {theta-EIG, SRVar} x
+{SE(theta) <= tau, SR-CI}; tau swept over {0.5..0.2}, matched point
+tau = 0.4 ~ 29 rollouts (cells B and D reproduce Table 3 — anchors).
+
+| | theta-SE stop (tau=0.4) | SR-CI stop (+-10%) |
+|---|---|---|
+| theta-EIG | A: 28.7 / .0557 / 0.88 / hw .100+-.019 | B: 28.7 / .0533 / 0.90 / .098+-.002 |
+| SRVar | C: 28.9 / .0432 / 0.94 / .099+-.020 | D: 29.0 / .0463 / **1.00** / **.098+-.002** |
+
+Paired effects (seed clusters): the acquisition effect holds in both
+stopping worlds (C-A dMAE -0.0125 [-0.0212,-0.0049]; D-B -0.0070 with
+dcov +0.104 [+0.042,+0.188]). The stopping effect is MAE-neutral but decides
+the certificate: under one tau the delivered SR half-width ranges .046-.125
+across planners (+-.019-.020) — the tau -> SR-precision map is
+planner-dependent — while the SR-CI stop delivers the contract uniformly
+(.092-.100, +-.002, a 10x tightening); theta-SE coverage also decays as tau
+tightens and no tau fixes it. Full alignment (D-A): dcov +0.125
+[+0.042,+0.229]. Honest nuance: C has the lowest matched-budget MAE (.0432,
+ns vs D) — the claim is not that alignment minimises MAE but that selection
+alignment buys accuracy, stopping alignment buys a uniform valid
+certificate, and delivering '+-eps as contracted' needs both.
+
 ## Table 4 — Published baselines (UP) — `run_up_baselines.py`, `run_atlas_bridge.py`
 
 **(main) native-vs-native, each method in its published operating mode:**
