@@ -63,12 +63,25 @@ dcov +0.104 [+0.042,+0.188]). The stopping effect is MAE-neutral but decides
 the certificate: under one tau the delivered SR half-width ranges .046-.125
 across planners (+-.019-.020) — the tau -> SR-precision map is
 planner-dependent — while the SR-CI stop delivers the contract uniformly
-(.092-.100, +-.002, a 10x tightening); theta-SE coverage also decays as tau
-tightens and no tau fixes it. Full alignment (D-A): dcov +0.125
+(.092-.100, +-.002, a 10x tightening). The safe form of the stopping claim:
+a fixed theta-SE threshold does not map uniformly to a fixed SR precision
+across planners — the dispersion above proves it directly. Uncapped check
+(--max-steps 999): the low coverage of the capped tau = 0.2 row was a
+truncation artifact — without the cap it recovers to 0.96, but at 159.5
+rollouts (~89% of the bank, delivered half-width +-0.9%: near-enumeration,
+unrelated to any +-eps contract; this reproduces the native-3PL bridge's
+"tau = 0.2 consumes 91% of the bank"). The tau = 0.3 dip (cov 0.79 at 56
+rollouts) is truncation-free and intrinsic. So the strong claim, correctly
+stated: theta-SE has no useful operating point on this bank — dispersed
+precision and sub-nominal coverage at comparable budgets, with coverage
+recoverable only by near-enumeration. (And 48/48 with n = 48 may simply be
+conservative relative to nominal 95% — say "more reliable and uniform", not
+"valid".) Full alignment (D-A): dcov +0.125
 [+0.042,+0.229]. Honest nuance: C has the lowest matched-budget MAE (.0432,
 ns vs D) — the claim is not that alignment minimises MAE but that selection
-alignment buys accuracy, stopping alignment buys a uniform valid
-certificate, and delivering '+-eps as contracted' needs both.
+alignment buys accuracy, stopping alignment buys a more reliable and
+uniform SR-precision certificate, and delivering '+-eps as contracted'
+needs both.
 
 ## Table 4 — Published baselines (UP) — `run_up_baselines.py`, `run_atlas_bridge.py`
 

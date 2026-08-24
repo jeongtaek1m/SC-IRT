@@ -38,19 +38,19 @@ EPSS = [0.10, 0.05]
 OUT = Path(__file__).resolve().parents[1] / 'results'
 
 
-def trajectory(Mf, yy, pick, rng_draw):
+def trajectory(Mf, yy, pick, rng_draw, max_steps=120):
     """One selection trajectory; record every tau and eps first-crossing."""
     n = Mf.shape[1]
     SR = yy.mean()
     S, q = [], PRIOR.copy()
     tau_rec, eps_rec = {}, {}
-    for _ in range(min(120, n)):
+    for _ in range(min(max_steps, n)):
         rem = [i for i in range(n) if i not in S]
         S.append(pick(q, rem))
         q = post_from(Mf, yy, S)
         lo, hi, m = sr_ci(Mf, yy, S, q, rng_draw)
         sd = theta_sd(q)
-        exhausted = len(S) >= min(120, n)
+        exhausted = len(S) >= min(max_steps, n)
         rec = (len(S), abs(m - SR), 1.0 if lo <= SR <= hi else 0.0, (hi - lo) / 2)
         for t in TAUS:
             if t not in tau_rec and (sd <= t or exhausted):
@@ -64,6 +64,13 @@ def trajectory(Mf, yy, pick, rng_draw):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--max-steps', type=int, default=120,
+                    help='trajectory cap; pass 999 to let the bank itself be '
+                         'the only cap (separates truncation from intrinsic '
+                         'theta-SE failure at tight tau)')
+    args = ap.parse_args()
     panel = Panel()
     ACQ = ('EIG', 'SRVar')
     TAUR = {a: {t: {'n': [], 'err': [], 'cov': [], 'hw': []} for t in TAUS} for a in ACQ}
@@ -84,7 +91,8 @@ def main():
                 return srvar_pick(_M, q, rem)
 
             for a, pick, rs in (('EIG', pk_eig, 7), ('SRVar', pk_sv, 13)):
-                tr, er = trajectory(Mf, yy, pick, np.random.RandomState(rs))
+                tr, er = trajectory(Mf, yy, pick, np.random.RandomState(rs),
+                                    max_steps=args.max_steps)
                 for t in TAUS:
                     for k, v in zip(('n', 'err', 'cov', 'hw'), tr[t]):
                         TAUR[a][t][k].append(v)
@@ -117,7 +125,8 @@ def main():
                            for t in TAUS} for a in ACQ},
                'eps': {a: {str(e): {k: list(map(float, EPSR[a][e][k])) for k in EPSR[a][e]}
                            for e in EPSS} for a in ACQ}},
-              open(OUT / 'factorial_2x2.json', 'w'))
+              open(OUT / ('factorial_2x2.json' if args.max_steps == 120
+                          else f'factorial_2x2_cap{args.max_steps}.json'), 'w'))
 
     assert abs(np.mean(EPSR['SRVar'][0.10]['n']) - 29.0) < 0.2   # cell D
     assert abs(np.mean(EPSR['EIG'][0.10]['n']) - 28.7) < 0.2     # cell B
