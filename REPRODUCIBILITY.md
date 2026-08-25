@@ -15,6 +15,11 @@ computation, the run fails loudly instead of drifting silently.
 | `run_us.py` | null 0.710/.207; LLTM+e 0.764/+0.510; two-stage 0.760/+0.487; sigma-hat 0.593; PV share 16.4%; hc +0.486; kin +0.428; encoder d64 AUROC .753, rho +0.469 |
 | `run_ups.py` | posterior-a variant 24.7; standalone SRVar 21.0 / EIG 21.2; decomposition .1034/.0350; hybrid D=20 .0470; composition ours .1035 |
 | `run_sel_diversity.py` | SRVar Jaccard(S30) 0.141 (+-.01); Spearman(theta gap, overlap) < -0.7 |
+| `run_plugin_ablation.py` | marginalised arm = Table 5 ours rows (J13 29.0/.0463/48-48; J4 .0630) |
+| `run_factorial_2x2.py` | cells B/D = Table 3 (EIG 28.7; SRVar 29.0/.0463/48-48); `--max-steps` default 120 |
+| `run_random_fpc.py` | IRT-free reference (no anchor: pure numpy, deterministic given the split streams) |
+| `run_budget_frontier.py` | SRVar@29 .0443; Fluid@29 .0375; Random+IRT@29 .0584; metabench@69 .0285 |
+| `run_model_adequacy.py` | diagnostic (no anchor); 1PL/2PL/3PL held-out NLL + split-half rel(log a) |
 
 `tests/test_unified_anchors.py` pins everything cheap and CPU-deterministic
 (panel invariants, the draw-0 split, grid constants, kernel determinism).
@@ -40,6 +45,8 @@ arms, so run order between arms is irrelevant.
 | UPS decomposition draws | 500 + 20*draw + planner | decomposition + hybrid |
 | UPS random-B | 700 + 20*draw + planner | composition baseline |
 | plausible values | 400 + draw | b-hat posterior draws (M = 20) |
+| plug-in ablation draws | 19 (plug-in) / 13 (marginalised) | SR-CI stop draws |
+| adequacy held-out cells | 2000 + draw | 10% held-out cells + planner halves |
 | global | numpy 0 / torch 0 | set at the top of every entry point |
 
 Calibration kernels are RNG-free: zeros initialisation, Adam lr 0.05,

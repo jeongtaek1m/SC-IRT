@@ -71,7 +71,8 @@ truncation artifact — without the cap it recovers to 0.96, but at 159.5
 rollouts (~89% of the bank, delivered half-width +-0.9%: near-enumeration,
 unrelated to any +-eps contract; this reproduces the native-3PL bridge's
 "tau = 0.2 consumes 91% of the bank"). The tau = 0.3 dip (cov 0.79 at 56
-rollouts) is truncation-free and intrinsic. So the strong claim, correctly
+rollouts) is truncation-free and intrinsic (tau = 0.25 is mildly cap-affected:
+90 -> 93 rollouts uncapped, coverage unchanged). So the strong claim, correctly
 stated: theta-SE has no useful operating point on this bank — dispersed
 precision and sub-nominal coverage at comparable budgets, with coverage
 recoverable only by near-enumeration. (And 48/48 with n = 48 may simply be
@@ -110,6 +111,76 @@ the ~30% saving over Random (40.7 / 98.9) and static orders
 Bayesian SR-stop, which no published method provides. IES panel
 (ref Random-100 = .0217): tier-29 best Fluid 0.50, ours 0.59 (fixed) /
 0.62 (adaptive); tier-69 best metabench 0.91, ours 0.94.
+
+### Table 4(f) — Certification: methods with a stopping rule — `run_random_fpc.py`, `run_up_main.py`, `run_atlas_bridge.py`
+
+Fixed-budget accuracy (panel g) and certification (this panel) are
+different questions and are reported separately. Columns: rollouts /
+SR-MAE / **achieved SR half-width mean +- SD** / coverage. The IRT-free row
+(uniform random + Wilson interval with finite-population correction) is the
+reference for "is IRT needed at all".
+
+| method | stop | +-10%: roll / MAE / half-width / cov | +-5%: roll / MAE / half-width / cov |
+|---|---|---|---|
+| Random, no IRT | Wilson+FPC width <= 2 eps | 51.9 +-1.3 / .0444 / .099 +-.001 / 0.98 (47) | 111.2 +-1.6 / .0165 / .050 +-.000 / 0.96 (46) |
+| Random + IRT posterior | SR-CI | 40.7 +-0.9 / .0459 / .099 +-.002 / 0.96 (46) | 98.9 +-1.4 / .0213 / .049 +-.001 / 0.94 (45) |
+| theta-EIG + IRT | SR-CI | 28.7 +-1.0 / .0533 / .098 +-.002 / 0.90 (43) | 69.0 +-2.1 / .0289 / .049 +-.001 / 0.85 (41) |
+| ATLAS-style (3PL) | SE(theta)<=0.3, min30 | 63.7 +-5.3 / .0355 / .056 +-.023 [0, .081] / 0.77 (37) | (tau=0.2: 163.5, 91% of bank / .0045 / .000 / 0.96 (46)) |
+| **SC-IRT (SRVar)** | SR-CI | **29.0 +-1.0** / .0463 / .098 +-.002 / **1.00 (48)** | **69.1 +-2.2** / .0294 / .049 +-.001 / 0.83 (40) |
+
+The classical interval keeps the contract well (coverage 0.98 / 0.96): the
+claim is not that IRT is required, but that IRT plus aligned selection
+delivers the same +-eps certificate at 44% / 38% lower cost (51.9 -> 29.0,
+111.2 -> 69.1) — the IRT posterior buys 21% / 11% (+-10% / +-5%), aligned
+selection a further 29% / 30%. ATLAS's theta-scale stop has no precision contract (half-width
+dispersion +-.023, range 0-.081). Fluid-style defines no stopping rule and
+appears only on the frontier. Per-planner required-rollout distributions:
+`figs/fig_rollout_distribution.pdf`.
+
+### Table 4(g) — Efficiency frontier on one budget grid — `run_budget_frontier.py`
+
+B in {10, 20, 29, 30, 40, 60, 69, 80, 100, 120}; native scoring per
+method. Added baselines: DISCO-adapted (inter-planner disagreement
+p(1-p) top-B + 2PL p-IRT; binary adaptation of arXiv:2510.07959),
+AnchorPoints-adapted (K-means on item response vectors, cluster-weighted
+anchor mean), Total/Marginal-Fisher static, Random-strat, Random (IRT-free
+mean). Figure: `figs/fig_budget_frontier.pdf`. SR-MAE:
+
+| B | 10 | 20 | 29 | 40 | 60 | 69 | 80 | 100 | 120 |
+|---|---|---|---|---|---|---|---|---|---|
+| Random (IRT-free) | .0916 | .0752 | .0634 | .0500 | .0385 | .0359 | .0266 | .0249 | .0184 |
+| Random + IRT | .0902 | .0676 | .0584 | .0466 | .0345 | .0324 | .0264 | .0217 | .0154 |
+| DISCO-adapted | .0949 | .0633 | .0453 | .0463 | .0372 | .0379 | .0332 | .0282 | .0225 |
+| AnchorPoints-adapted | .0778 | .0721 | .0620 | .0508 | **.0296** | **.0248** | .0231 | .0212 | .0159 |
+| Total-Fisher static | .0831 | .0627 | .0490 | .0411 | .0317 | .0292 | .0306 | .0258 | .0201 |
+| tinyBenchmarks | .1047 | .0683 | .0477 | .0432 | .0373 | .0297 | .0275 | .0197 | .0155 |
+| metabench-lite | .0975 | .0602 | .0507 | **.0387** | .0321 | .0285 | **.0217** | **.0152** | **.0136** |
+| Fluid-style | **.0601** | **.0480** | **.0375** | .0427 | .0390 | .0357 | .0288 | .0218 | .0182 |
+| ours-EIG | .0827 | .0678 | .0519 | .0458 | .0323 | .0291 | .0260 | .0203 | .0187 |
+| ours-SRVar | .0780 | .0574 | .0443 | .0448 | .0360 | .0297 | .0259 | .0198 | .0174 |
+
+(Marginal-Fisher and Random-strat rows in the json.) Honest reading: at
+small budgets (<= 30) Fluid's discrimination-aware selection has the best
+MAE, at large budgets (>= 40) representative static subsets (metabench,
+AnchorPoints) do; SRVar is second for 20 <= B <= 30 (third at B = 10) and mid-pack later. Fixed-
+budget MAE is not the design target: *SC-IRT is not designed to minimise
+MAE at a fixed budget; it minimises evaluation cost subject to a requested
+precision on the reported quantity.* Rank agreement (pooled Spearman over
+the 48 evaluations): SRVar is best at B = 29 (0.960; Fluid .957, metabench
+.899), and every method saturates >= 0.95 beyond B ~ 60 — the true-SR spread of
+the 48 evaluations (.114-.786) makes rank metrics weakly discriminative
+(appendix only).
+
+### Appendix — psychometric adequacy — `run_model_adequacy.py`
+
+Held-out cell NLL on the calibration block (10% of cells, 16 draws):
+**1PL .5303 +-.0119 / 2PL .5292 +-.0120 / 3PL .5340 +-.0117**; 2PL - 1PL =
+-0.0012 +-0.0008 (ns), 3PL - 1PL = +0.0037. Split-half reliability of
+log a-hat across 6/7-planner halves: **+0.095 +-0.021**. Discrimination
+neither predicts held-out responses better nor is reliably estimable on a
+13-planner panel: the Rasch model is the adequate model here, not a
+simplification (with the a-marginalisation identity, max cell-probability
+change 0.0009, this is the PROTOCOL section 2 justification).
 
 ## Table 5 — CAT under calibration scarcity — `run_scarcity.py`
 

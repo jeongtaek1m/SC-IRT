@@ -58,6 +58,11 @@ python experiments/run_scarcity.py       # Table 5   (~25 min)
 python experiments/run_us.py             # Tables 1-2 (~40 min)
 python experiments/run_ups.py            # Table 6   (~25 min)
 python experiments/run_sel_diversity.py  # adaptivity diagnostic (~8 min)
+python experiments/run_plugin_ablation.py # Table 5b: uncertainty-propagation toggle (~15 min)
+python experiments/run_factorial_2x2.py   # Table 3b: selection x stopping factorial (~20 min)
+python experiments/run_random_fpc.py      # IRT-free certification reference (seconds, CPU)
+python experiments/run_budget_frontier.py # Table 4g: efficiency frontier, 12 methods (~45 min)
+python experiments/run_model_adequacy.py  # psychometric adequacy diagnostic (~10 min)
 ```
 
 Each script prints its table and finishes with `anchors OK` — an assertion
