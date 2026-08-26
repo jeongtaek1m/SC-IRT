@@ -182,6 +182,21 @@ neither predicts held-out responses better nor is reliably estimable on a
 simplification (with the a-marginalisation identity, max cell-probability
 change 0.0009, this is the PROTOCOL section 2 justification).
 
+### Appendix — calibration stability: full 16 x 220 fit vs the per-draw A block — `run_calibration_stability.py`
+
+On the shared routes, b-hat from the 13 x ~180 calibration block vs the
+full-panel fit: Pearson 0.978 (min 0.955 over 16 draws), Spearman 0.976;
+mean-aligned RMSE 0.355 logit against sd(b-hat) = 1.63 and a per-route
+posterior SD s_i = 0.81 — only 1.5% of routes move by more than their own
+s_i (max 3.9%). theta-hat on the 13 shared planners: Pearson 0.997,
+aligned RMSE 0.095 against sd(theta-hat) = 1.17 (max single shift 0.32).
+Raw offsets (b -0.02, theta -0.01 on average, up to +-0.3 in a draw) are the
+theta-mean-centring convention applied to 16 vs 13 planners, not
+estimation change. Dropping three planners and the held-out types
+therefore moves the bank by well under its own calibration uncertainty —
+the regime is stable, and the residual s_i is exactly what the marginalised
+curves carry.
+
 ## Table 5 — CAT under calibration scarcity — `run_scarcity.py`
 
 | J_cal | SC-IRT (1PL+SRVar) | Fluid-style (2PL) | ATLAS-style (3PL) | Random |
