@@ -238,6 +238,23 @@ non-propagation (shared by any point-parameter model), ~27% by 2PL a-hat
 noise amplification. The extra rollouts of the marginalised arm are the
 honest price: it does not stop less — it stops when it should.
 
+### Appendix — rejected: pairwise-CML (item-vs-item) bank estimator — `run_cml_calibration.py`
+
+The Rasch model contains a pure difficulty-vs-difficulty sub-model
+(P(passed k, failed i | exactly one) = sigmoid(b_i - b_k), theta cancels);
+estimating b from those pairwise votes is the conditional estimator,
+consistent in the number of items however few planners there are. Swapping
+only the bank estimator (then theta by ML given b, same s_i, curves, SRVar
+and stop) across J_cal in {4, 7, 10, 13}: worse at every panel size —
+J7 dMAE +0.0141 [+0.0006, +0.0281], dcov -0.250 [-0.354, -0.146]; J13 dcov
+-0.083 [-0.146, -0.021]; others ns; CML stops 1-2 rollouts earlier
+(overconfident). b-hat orderings agree (corr >= 0.993) but CML disperses b
+6-10% more (sd 2.84 vs 2.67 at J4): the joint MAP's priors are useful
+regularisation with few raters, and CML's consistency needs denser pairwise
+votes than 4-13 planners provide. Joint MAP remains canonical; the
+within-group relativity survives as the conditional decomposition of Rasch
+(specific objectivity), not as an estimator.
+
 ## Table 6 — UPS — `run_ups.py`
 
 - **(a) decomposition** (B=30, zero target rollouts, common Rasch scale):
