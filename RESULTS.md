@@ -255,6 +255,34 @@ votes than 4-13 planners provide. Joint MAP remains canonical; the
 within-group relativity survives as the conditional decomposition of Rasch
 (specific objectivity), not as an estimator.
 
+### Appendix — multidimensional (residual-interaction) IRT, dimension sweep — `run_mirt_dsweep.py`
+
+logit = theta_j - mu_i + u_j^T v_i, d in {1, 2, 4, 8} x prior lam in
+{.05, .1, .2, .4}, unified split, cell level (scalar reference: oracle
+AUROC .8761, amortised .7604). Columns: in-bank sd(u.v) / Procrustes
+split-half excess reliability of U (minus a row-shuffle null) / oracle
+dAUROC / **amortised dAUROC** / Spearman(v~, v_oracle).
+
+| d | lam | sd(u.v) | excess rel. (null) | oracle d | **amort d** | G2 |
+|---|---|---|---|---|---|---|
+| 1 | .05 | .252 | +.32 (.20) | +.023 | +.000 | +.04 |
+| 1 | >= .1 | .000 (collapse) | ~0 | 0 | 0 | — |
+| 2 | .05 | .850 | +.28 (.31) | +.055 | -.001 | +.08 |
+| **2** | **.1 (canonical)** | .323 | +.29 (.31) | +.033 | +.001 | +.08 |
+| 2 | >= .2 | .000 (collapse) | ~0 | 0 | 0 | — |
+| 4 | .05 / .1 / .2 | 1.79 / 1.07 / .36 | +.14 / +.18 / +.23 (.44-.47) | +.098 / +.081 / +.033 | -.002 / +.002 / +.002 | +.08-.10 |
+| 4 | .4 | .000 (collapse) | ~0 | 0 | 0 | — |
+| 8 | .05 / .1 / .2 / .4 | 2.64 / 1.85 / 1.11 / .36 | +.12 / +.09 / +.08 / +.21 (.49-.65) | +.087 / +.119 / +.088 / +.021 | -.001 / +.002 / +.004 / +.003 | +.08-.09 |
+
+Deployable gain is zero at every dimension (amortised dAUROC within
++-.004; x -> v predictability <= .10). The oracle column is an in-sample
+fit of d+1 parameters per scene on <= 13 responses, so its growth with d
+(to +.119 at d = 8) is a degrees-of-freedom artifact, not a ceiling — and
+the split-half excess reliability of U falls with d (+.29 -> +.09) while
+the Procrustes null rises (.31 -> .65). The prior cliff (collapse to zero
+vs overfit within a factor-2 window) reproduces at every d. The scalar
+backbone stays; the d = 2, lam = .1 anchors reproduce (.9094 / .7610).
+
 ## Table 6 — UPS — `run_ups.py`
 
 - **(a) decomposition** (B=30, zero target rollouts, common Rasch scale):
