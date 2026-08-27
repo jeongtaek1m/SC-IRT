@@ -78,9 +78,19 @@ matrix; nothing in `data/` is a model output except `data/encoder/*` —
 per-run out-of-fold difficulty predictions of the trajectory encoder on the
 unified split (d64/d96 x seeds 0-2, single runs — prediction ensembling is
 banned project-wide), shipped so Tables 1-2 reproduce without retraining.
-Full retraining: `train/train_encoder_b2d.py` with
-`data/encoder/b2d_tensors.npz` (Bench2Drive rollout annotations themselves
-are not redistributed).
+Full retraining on the unified split: `train/train_encoder_unified.py`
+(verbatim port of the research script that produced the shipped
+artifacts; recipe constants in its docstring) with
+`data/encoder/b2d_tensors.npz`; `train/train_encoder_b2d.py` is the legacy
+LOTO trainer. Bench2Drive rollout annotations themselves are not
+redistributed. Measured fidelity of the port: a full seed-0 / d64 retrain
+on the development GPU reproduced the shipped artifact bit-for-bit
+(max |delta b_tilde| = 0 over all 640 held-out routes; identical route
+order), because every draw re-seeds torch/numpy and the recipe is fixed.
+On other hardware / driver stacks expect the same values up to training
+noise (rho within about +-0.01), not bit-equality. Score any run with
+`experiments/eval_us_predictions.py`, which reproduces the published
+encoder summaries (0.753 / .189 / +0.469) from the shipped artifacts.
 
 ## Known gaps
 

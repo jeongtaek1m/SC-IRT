@@ -81,7 +81,8 @@ data/
                 3 seeds each — single runs; prediction ensembling is banned)
                 + the trajectory tensors to retrain from scratch
 tests/          fast invariants (unified + legacy)
-train/          encoder training (Bench2Drive annotations -> tensors -> runs)
+train/          encoder training: train_encoder_unified.py (the paper's
+                unified-split recipe) and the legacy LOTO trainer
 ```
 
 The response panel: 16 open-source end-to-end planners x 220 Bench2Drive
