@@ -86,23 +86,17 @@ needs both.
 
 ## Table 4 — Published baselines (UP) — `run_up_baselines.py`, `run_atlas_bridge.py`
 
-**(main) native-vs-native, each method in its published operating mode:**
+Two different questions, two separate tables — never mixed in one:
 
-| method | operating point | Rollouts | SR-MAE | Coverage |
-|---|---|---|---|---|
-| tinyBenchmarks | fixed K=29 / 69 | 29 / 69 | .0477 / .0297 | — |
-| metabench-lite | fixed K=29 / 69 | 29 / 69 | .0507 / **.0285** | — |
-| Fluid-style | fixed B=29 / 69 | 29 / 69 | **.0375** / .0357 | — |
-| ATLAS-style | SE(theta)<=0.3, min30 | 63.7 +-5.3 | .0355 | 0.77 (37/48) |
-| ATLAS-style | SE(theta)<=0.2 | 163.5 (91% of bank) | .0045 | 0.96 (46/48) |
-| ATLAS-style | SE(theta)<=0.1 | 177.6 (pool exhausted) | — | 1.00 |
-| **ours** | SR +-10% | **29.0 +-1.0** | .0463 | **1.00 (48/48)** |
-| **ours** | SR +-5% | **69.1 +-2.2** | .0294 | 0.83 (40/48) |
-
-Fixed-budget methods carry no precision certificate (—); ATLAS's
-theta-scale certificate degenerates on a 180-item bank (tau=0.1 reachable
-only by full enumeration); ours certifies the evaluand itself. Reverse
-mapping: our +-10% stop corresponds to SE(theta) 0.405, +-5% to 0.278.
+- **Table 4-S (static, fixed budget)**: subset-construction accuracy at a
+  pre-declared budget. Methods whose published mode is a fixed subset
+  (tinyBenchmarks, metabench, Fluid, Anchor Points, DISCO, Fisher-static,
+  Random) plus ours' fixed-budget variant (explicitly *no stopping*).
+- **Table 4-D (dynamic, certification)**: rollouts to deliver a precision
+  contract, with the achieved half-width and coverage. Only methods that
+  define a stopping rule (classical Wilson+FPC, SR-CI arms, ATLAS's
+  SE(theta) <= tau). Reverse mapping between the two stopping scales: our
+  +-10% stop corresponds to SE(theta) 0.405, +-5% to 0.278.
 
 Selection-isolation panel (common stopping machine): informative rules tie
 on rollouts (Fluid-Fisher 27.3 / ATLAS-sel 28.5 / ours 29.0 at +-10%);
@@ -112,10 +106,9 @@ Bayesian SR-stop, which no published method provides. IES panel
 (ref Random-100 = .0217): tier-29 best Fluid 0.50, ours 0.59 (fixed) /
 0.62 (adaptive); tier-69 best metabench 0.91, ours 0.94.
 
-### Table 4(f) — Certification: methods with a stopping rule — `run_random_fpc.py`, `run_up_main.py`, `run_atlas_bridge.py`
+### Table 4-D — Dynamic: certification (stopping-rule methods ONLY) — `run_random_fpc.py`, `run_up_main.py`, `run_atlas_bridge.py`
 
-Fixed-budget accuracy (panel g) and certification (this panel) are
-different questions and are reported separately. Columns: rollouts /
+Columns: rollouts /
 SR-MAE / **achieved SR half-width mean +- SD** / coverage. The IRT-free row
 (uniform random + Wilson interval with finite-population correction) is the
 reference for "is IRT needed at all".
@@ -137,7 +130,7 @@ dispersion +-.023, range 0-.081). Fluid-style defines no stopping rule and
 appears only on the frontier. Per-planner required-rollout distributions:
 `figs/fig_rollout_distribution.pdf`.
 
-### Table 4(g) — Efficiency frontier on one budget grid — `run_budget_frontier.py`
+### Table 4-S — Static: fixed-budget accuracy on one budget grid — `run_budget_frontier.py`
 
 B in {10, 20, 29, 30, 40, 60, 69, 80, 100, 120}; native scoring per
 method. Added baselines: DISCO-adapted (inter-planner disagreement
@@ -157,7 +150,7 @@ mean). Figure: `figs/fig_budget_frontier.pdf`. SR-MAE:
 | metabench-lite | .0975 | .0602 | .0507 | **.0387** | .0321 | .0285 | **.0217** | **.0152** | **.0136** |
 | Fluid-style | **.0601** | **.0480** | **.0375** | .0427 | .0390 | .0357 | .0288 | .0218 | .0182 |
 | ours-EIG | .0827 | .0678 | .0519 | .0458 | .0323 | .0291 | .0260 | .0203 | .0187 |
-| ours-SRVar | .0780 | .0574 | .0443 | .0448 | .0360 | .0297 | .0259 | .0198 | .0174 |
+| ours-SRVar (fixed-B, no stopping) | .0780 | .0574 | .0443 | .0448 | .0360 | .0297 | .0259 | .0198 | .0174 |
 
 (Marginal-Fisher and Random-strat rows in the json.) Honest reading: at
 small budgets (<= 30) Fluid's discrimination-aware selection has the best
