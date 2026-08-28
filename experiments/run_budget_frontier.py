@@ -70,6 +70,14 @@ def pirt(bs, aa, yy, S):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--grid', default='', help='comma budgets; overrides the default grid and skips anchors')
+    args = ap.parse_args()
+    global BGRID
+    custom = bool(args.grid)
+    if custom:
+        BGRID = [int(x) for x in args.grid.split(',')]
     panel = Panel()
     METHODS = ['Random (IRT-free mean)', 'Random + IRT', 'Random-strat + IRT',
                'DISCO-adapted', 'AnchorPoints-adapted', 'Total-Fisher static',
@@ -182,7 +190,10 @@ def main():
     json.dump({'err': {m: {str(B): list(map(float, ERR[m][B])) for B in BGRID} for m in METHODS},
                'est': {m: {str(B): list(map(float, EST[m][B])) for B in BGRID} for m in METHODS},
                'true': list(map(float, TRUE))},
-              open(OUT / 'budget_frontier.json', 'w'))
+              open(OUT / ('budget_frontier.json' if not custom else f'budget_frontier_grid{"-".join(map(str, BGRID))}.json'), 'w'))
+    if custom:
+        print('custom grid: anchors skipped')
+        return
     assert abs(np.mean(ERR['ours-SRVar'][29]) - 0.0443) < 0.002
     assert abs(np.mean(ERR['Fluid-style'][29]) - 0.0375) < 0.002
     assert abs(np.mean(ERR['Random + IRT'][29]) - 0.0584) < 0.002

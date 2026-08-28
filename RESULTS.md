@@ -86,17 +86,29 @@ needs both.
 
 ## Table 4 — Published baselines (UP) — `run_up_baselines.py`, `run_atlas_bridge.py`
 
-Two different questions, two separate tables — never mixed in one:
+**(main) one table, one Mode column.** Static methods run at declared
+budgets B = 50 / 100 (not matched to anyone's realised rollouts); dynamic
+methods run their native stopping criteria. "—" in Coverage is a statement
+of fact — the method offers no precision contract.
 
-- **Table 4-S (static, fixed budget)**: subset-construction accuracy at a
-  pre-declared budget. Methods whose published mode is a fixed subset
-  (tinyBenchmarks, metabench, Fluid, Anchor Points, DISCO, Fisher-static,
-  Random) plus ours' fixed-budget variant (explicitly *no stopping*).
-- **Table 4-D (dynamic, certification)**: rollouts to deliver a precision
-  contract, with the achieved half-width and coverage. Only methods that
-  define a stopping rule (classical Wilson+FPC, SR-CI arms, ATLAS's
-  SE(theta) <= tau). Reverse mapping between the two stopping scales: our
-  +-10% stop corresponds to SE(theta) 0.405, +-5% to 0.278.
+| Method | Mode | Rollouts | SR-MAE | Coverage |
+|---|---|---|---|---|
+| Random (no model) | static, B=50/100 | 50 / 100 | .0439 / .0249 | — |
+| Random + IRT | static, B=50/100 | 50 / 100 | .0391 / .0217 | — |
+| tinyBenchmarks | static, B=50/100 | 50 / 100 | .0395 / .0197 | — |
+| metabench-lite | static, B=50/100 | 50 / 100 | **.0347** / **.0152** | — |
+| Fluid-style | static, B=50/100 | 50 / 100 | .0395 / .0218 | — |
+| AnchorPoints-adapted | static, B=50/100 | 50 / 100 | .0372 / .0212 | — |
+| DISCO-adapted | static, B=50/100 | 50 / 100 | .0408 / .0282 | — |
+| Total-Fisher static | static, B=50/100 | 50 / 100 | .0350 / .0258 | — |
+| Random, no IRT | dynamic, Wilson+FPC, SR±10/5% | 51.9 / 111.2 | .0444 / .0165 | 0.98 / 0.96 |
+| ATLAS-style (3PL) | dynamic, SE(theta)<=.3/.2/.1 | 63.7 / 163.5 / 177.6 | .0355 / .0045 / — | 0.77 / 0.96 / 1.00 |
+| **SC-IRT (ours)** | dynamic, SR±10/5% | **29.0** / **69.1** | .0463 / .0294 | **1.00** / 0.83 |
+
+ATLAS tau = 0.2 consumes 91% of the bank and tau = 0.1 is reachable only by
+exhausting it (its MAE cell is enumeration, not estimation). Reverse mapping
+between the stopping scales: our ±10% stop ~ SE(theta) 0.405, ±5% ~ 0.278.
+Details: static frontier in 4-S, certification (half-widths, ladder) in 4-D.
 
 Selection-isolation panel (common stopping machine): informative rules tie
 on rollouts (Fluid-Fisher 27.3 / ATLAS-sel 28.5 / ours 29.0 at +-10%);
