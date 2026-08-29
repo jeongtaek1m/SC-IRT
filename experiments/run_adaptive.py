@@ -40,7 +40,7 @@ JCALS = (4, 7, 10, 13)
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
 BGRID = [10, 20, 30, 40, 60, 80, 100, 120]
 TMAX = max(BGRID)
-TAU_SWEEP = (0.06, 0.05, 0.04, 0.03, 0.02)
+TAU_SWEEP = (0.06, 0.05, 0.04, 0.035, 0.03, 0.02)
 TARGETS = (30, 60)
 
 
@@ -109,6 +109,16 @@ def report(recs):
                 Bs, es = np.mean([s[0] for s in st]), np.mean([s[1] for s in st])
                 row.append(f'{o}: {Bs:5.1f}/{es:.4f}/{es / tau:4.2f}')
             print(f'   tau {tau:.3f}  ' + '   '.join(row))
+    print('\n===== SC-IRT: adaptive stop vs its own fixed-budget curve at matched mean rollouts =====')
+    for J in JCALS:
+        xs = np.array(BGRID, float)
+        ys = np.array([np.mean(FX[J]['SC-IRT'][B]) for B in BGRID])
+        row = []
+        for tau in TAU_SWEEP:
+            st = [stopped(r, 'SC-IRT', tau) for r in recs if r['J'] == J]
+            Bm, em = np.mean([s[0] for s in st]), np.mean([s[1] for s in st])
+            row.append(f'tau {tau:.3f}: {Bm:5.1f} roll, {em:.4f} vs fixed {float(np.interp(Bm, xs, ys)):.4f} ({em - float(np.interp(Bm, xs, ys)):+.4f})')
+        print(f'-- J_cal = {J} --\n   ' + '\n   '.join(row))
     tau_path = OUT / 'tau_hat.json'
     T2 = {}
     if tau_path.exists():

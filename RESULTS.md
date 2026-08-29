@@ -118,7 +118,8 @@ J_cal = 13 significantly so against all three orders; at target 30 SC-IRT
 and Fluid are within .002 of each other (they share the first 20 picks),
 metabench is within .001-.008, and only Random is separated. The
 adaptive stop also beats SC-IRT's own fixed-budget curve at matched mean
-rollouts in the 30-50 range (J13: -.0023 to -.0037 for tau in [.03, .04])
+rollouts in the 30-50 range (J13: -.0023 to -.0037 for tau in [.03, .04],
+printed by `run_adaptive.py --merge`)
 and the risk is honest there (MAE / tau 0.8-1.0; under a J_cal = 4 bank
 it is over-confident, 1.7-2.2, as the bank error is not in the posterior).
 The semantic tau sweep and design B (SC-IRT's tau applied to every order)
@@ -206,10 +207,9 @@ over B in {30, 40, 60, 80}:
 | 13 | .0325 | .0319 | .0318 | **.0312** | .0313 | .0318 | .0316 | .0352 | .0372 |
 
 Flat over K in [15, 30] (range .0006 at J13) with a cliff at K >= 40
-(never switching to cover); K = 20 is used at every J_cal. Held-out
-sensitivity: F15/F20/F25/F30 are within ~.002 of each other. Per-bank
-argmin estimates are too noisy with <= 13 planners to be worth using (they
-gain at J7, -.004, and lose at J13, +.004).
+(never switching to cover); K = 20 is used at every J_cal. A per-bank
+argmin is not used: with <= 13 planners the LOO curve is too flat for its
+argmin to be a reliable estimate, so only the plateau is read from it.
 
 ### Appendix — psychometric adequacy — `run_model_adequacy.py`
 
