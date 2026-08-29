@@ -1,57 +1,36 @@
 """SC-IRT: scene-conditioned item response theory for driving-policy evaluation.
 
-Treat a driving scenario as a test item and a planner as an examinee. Fitting an
-IRT model to the pass/fail panel recovers a per-scenario difficulty; learning to
-*predict* that difficulty from the scene alone makes it available for scenarios
-no planner has driven, which is what turns a fixed benchmark into an adaptive
-one.
+Treat a driving scenario as a test item and a planner as an examinee.
 
-Unified protocol (the paper's tables) — one generative model, one split::
+    evaluation model   y_ij ~ Bernoulli(sigmoid(theta_j - b_i)),  b_i | A ~ N(b_hat_i, s_i^2)
+    acquisition model  a joint 2PL fit of the same panel, used only to choose scenes
+    unseen scenes      b_i | x_i ~ N(w^T x_i, sigma^2)  (LLTM+e) or a trajectory encoder
 
-    theta_j ~ N(0,1);  b_i | x_i ~ N(b_tilde(x_i), sigma^2);  P = sigmoid(theta - b)
-
-    splits        13/3 planners x 36/8 scene types, R = 16 draws (the split)
+    splits        13/3 planners x 36/8 scene types, R = 16 draws
     b2d           data loading (repo-local, canonical route order)
-    calibration   MAP item-bank calibration (1PL main; 2PL/3PL for baselines)
+    calibration   MAP calibration of the evaluation (1PL) and acquisition (2PL) models
     curves        theta grid + difficulty-marginalised item curves
-    bayes         grid posterior, posterior-predictive SR, credible intervals
-    acquisition   SR-variance rule (ours), theta-EIG, Fisher/ATLAS/static rules
-    lltm          one-stage LLTM+e descriptor estimator (Table 1 canonical)
+    bayes         grid posterior, MAP-fill readout, posterior L1 risk (stopping)
+    acquisition   localize -> cover (UP), theta-EIG (UPS)
+    baselines     published selectors and their native readouts
+    lltm          one-stage LLTM+e descriptor estimator (US canonical)
+    encoder       the trajectory encoder (US learned representation)
     metrics       pooled metrics + the paper's resampling conventions
 
-Experiment entry points live in `experiments/`, one per reported table; each
-asserts the published numbers at the end of its run.
-
-Legacy layer (the pre-unified 220-route LOPO snapshot, kept for the paper's
-robustness appendix): `api`, `data`, `features`, `irt`, `theta`, `posterior`.
+Experiment entry points live in `experiments/`, one per reported table; the
+table-producing ones assert the published numbers at the end of their run.
 """
 
 from . import (  # noqa: F401
     acquisition,
     b2d,
+    baselines,
     bayes,
     calibration,
     curves,
-    data,
-    features,
-    irt,
     lltm,
     metrics,
-    paths,
-    posterior,
-    runtime,
     splits,
-    theta,
 )
 
-__version__ = "2.0.0"
-
-from .api import (  # noqa: F401,E402
-    calibrated_bank,
-    encoder_predictions,
-    estimate_planner,
-    evaluate,
-    next_route,
-    noise_ceiling,
-    reference,
-)
+__version__ = "3.0.0"

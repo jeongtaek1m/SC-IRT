@@ -12,9 +12,9 @@ Training signal: P(planner j fails scene i) = sigmoid(b_tilde_i - theta_j),
 BCE over the full response panel, theta fitted per training fold by the a==1
 calibration below and then frozen. The encoder never sees the full-panel reference.
 
-Torch is imported lazily so the CPU-pinned evaluation package does not pay for
-it; training runs on GPU and is *not* bit-reproducible across devices — see
-train/train_encoder_b2d.py for what is and is not pinned.
+Torch is imported lazily so the evaluation package does not pay for it;
+training runs on GPU and is *not* bit-reproducible across devices — see
+train/train_encoder_unified.py for what is and is not pinned.
 """
 
 import numpy as np
@@ -23,7 +23,7 @@ import numpy as np
 def rasch(Y, it=400, seed=0):
     """Fold-internal a==1 calibration used only to freeze theta for training.
 
-    Same MAP objective family as scirt.irt but with the discrimination fixed:
+    Same MAP objective family as scirt.calibration but with the discrimination fixed:
     split-half reliability of fitted log-a on this panel is 0.03-0.15, so a is
     noise here and the training target keeps the Rasch geometry. Y is fail=1
     with NaN for missing cells. Returns (theta, b), b centred.

@@ -1,10 +1,10 @@
-"""Table-1 evaluation of ANY unseen-scene difficulty predictor.
+"""Table-3A evaluation of ANY unseen-scene difficulty predictor.
 
 Give per-draw predictions b_tilde for the held-out-type routes of the
 unified split and get the paper's US metrics back — pooled cell AUROC
 (against the planner-only null), Scene-MAE with relative reduction, and
 rho_scene against observed failure rates — computed exactly as
-experiments/run_us.py does for every row of Table 1.
+experiments/run_us.py does for every row of Table 3A.
 
     preds[draw] = (route_ids, b_tilde)      # draw in 0..15, routes of block C
 
@@ -69,7 +69,7 @@ class USEvaluator:
         return dict(auroc=roc_auc_score(y, p), mae=float(np.mean(np.abs(np.array(rp) - np.array(ro)))))
 
     def evaluate(self, preds):
-        """preds: {draw: (route_ids, b_tilde)} -> Table-1 metrics + per-draw rho."""
+        """preds: {draw: (route_ids, b_tilde)} -> Table-3A metrics + per-draw rho."""
         idx = {r: i for i, r in enumerate(self.panel.allr)}
         p, y, rp, ro, bt, fl, rho_draw, missing = [], [], [], [], [], [], [], 0
         scored = {}

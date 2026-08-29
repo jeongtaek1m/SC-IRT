@@ -18,8 +18,8 @@ def test_trainer_has_no_stale_ablation_attributes():
     import re
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    src = open(os.path.join(root, "train", "train_encoder_b2d.py"), encoding="utf-8").read()
-    declared = set(re.findall(r'add_argument\("--(\w+)"', src))
+    src = open(os.path.join(root, "train", "train_encoder_unified.py"), encoding="utf-8").read()
+    declared = set(re.findall(r'add_argument\(["\']--(\w+)["\']', src))
     used = {n.attr for n in ast.walk(ast.parse(src))
             if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "a"}
     assert used <= declared, f"undeclared argparse attributes: {sorted(used - declared)}"

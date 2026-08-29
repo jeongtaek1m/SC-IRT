@@ -77,7 +77,7 @@ def calibrate_dense(Y0, MK, rows, cols, it=800, device='cuda', freeze_b0=False):
 
     freeze_b0=True fits the planner-only null (b == 0, theta free) and
     returns (None, theta) — theta is NOT centred in that case, matching the
-    null convention of the published Table 1.
+    null convention of the published Table 3A.
     """
     import torch
     M = torch.tensor(Y0[np.ix_(rows, cols)], dtype=torch.float32).to(device)
@@ -127,24 +127,3 @@ def frozen_b_dense(Y0, MK, rows, cols, thA, it=60):
             b = float(np.clip(b - g / hh, -6, 6))
         out[k] = b
     return out
-
-
-def frozen_b(Y, routes, cols, thA, it=60):
-    """Sparse-dict variant of frozen_b_dense; also returns the SE.
-    (UPS-extend decomposition uses both.)"""
-    out = np.zeros(len(routes))
-    se = np.zeros(len(routes))
-    for i, rid in enumerate(routes):
-        js = [k for k, pi in enumerate(cols) if (rid, pi) in Y]
-        ys = np.array([Y[(rid, cols[k])] for k in js], float)
-        tj = thA[js]
-        b = 0.0
-        for _ in range(it):
-            p = sig(tj - b)
-            g = (ys - p).sum() + 1e-3 * b
-            hh = (p * (1 - p)).sum() + 1e-3
-            b = float(np.clip(b - g / hh, -6, 6))
-        p = sig(tj - b)
-        out[i] = b
-        se[i] = 1 / np.sqrt((p * (1 - p)).sum() + 1e-2)
-    return out, se

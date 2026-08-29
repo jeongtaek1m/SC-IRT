@@ -2,7 +2,7 @@
 """Train the difficulty-supervised scene encoder on the unified split.
 
 Verbatim port of the research script that produced data/encoder/
-unified_enc_pred_d{64,96}s{0,1,2}.npz (the Table 1 / Table 2 encoder rows).
+unified_enc_pred_d{64,96}s{0,1,2}.npz (the Table 3A encoder rows).
 Per draw: theta for the 13 calibration planners from a fold-internal Rasch
 fit (`scirt.encoder.rasch`, fail parameterisation), then the encoder is
 trained end to end on the calibration block with the cell-level Bernoulli

@@ -1,9 +1,9 @@
-"""Fast invariants of the unified protocol + pointers to the slow anchors.
+"""Fast invariants of the protocol + pointers to the slow anchors.
 
 The full anchor suite lives in the experiment entry points themselves — each
 `experiments/run_*.py` ends by asserting the published table numbers and
-prints `anchors OK`. Those runs need a GPU and minutes-to-an-hour; here we
-pin everything that is cheap and deterministic on CPU.
+prints `anchors OK`. Those runs need a GPU and minutes-to-hours; here we pin
+everything that is cheap and deterministic on CPU.
 """
 import sys
 from pathlib import Path
@@ -15,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS, H_P, H_S
 from scirt.curves import THG, PRIOR, GX, GW, marginal_curves, sig
-from scirt.bayes import post_from, sr_ci, theta_sd
-from scirt.acquisition import srvar_pick, eig_pick
+from scirt.bayes import post_from, map_fill, r1_risk, track, stop_at
+from scirt.acquisition import localize_cover, eig_pick, population_fisher, K_LOCALIZE
+from scirt.baselines import fluid_order, metabench_order
 from scirt.metrics import ies
 
 
@@ -36,6 +37,7 @@ def test_panel_invariants(panel):
 
 def test_split_protocol_constants():
     assert (R_DRAWS, H_P, H_S) == (16, 3, 8)
+    assert K_LOCALIZE == 20
 
 
 def test_split_draw0_pinned(panel):
@@ -70,36 +72,51 @@ def test_marginal_curves_reduce_to_point():
     assert np.allclose(m, sig(THG[:, None] - mu[None, :]), atol=1e-6)
 
 
-def test_posterior_and_srvar_are_deterministic():
-    mu = np.linspace(-2, 2, 12)
-    M = marginal_curves(mu, np.full(12, 0.3))
-    y = (mu < 0).astype(float)
-    q = post_from(M, y, [0, 3, 7])
+def _toy():
+    mu = np.linspace(-2, 2, 40)
+    M = marginal_curves(mu, np.full(40, 0.3))
+    y = (mu < 0.3).astype(float)
+    return mu, M, y
+
+
+def test_readout_and_risk_are_deterministic_and_consistent():
+    mu, M, y = _toy()
+    S = [0, 3, 7]
+    q = post_from(M, y, S)
     assert abs(q.sum() - 1) < 1e-12
-    rem = [i for i in range(12) if i not in (0, 3, 7)]
-    assert srvar_pick(M, q, rem) == srvar_pick(M, q, rem)
-    assert eig_pick(q, M, rem) == eig_pick(q, M, rem)
-    assert theta_sd(PRIOR.copy()) > 0.9          # standard-normal prior
+    assert map_fill(M, y, S, q) == map_fill(M, y, S)
+    r = r1_risk(M, y, S, q)
+    assert r > 0
+    assert r1_risk(M, y, list(range(40))) == 0.0            # nothing left to fill
+    Sh, R1 = track(M, y, list(range(40)))
+    assert len(Sh) == 40 and abs(Sh[-1] - y.mean()) < 1e-12 and R1[-1] == 0.0
+    assert stop_at(R1, 1e-9) == 40 and stop_at(R1, 10.0) == 1
 
 
-def test_sr_ci_consumes_fixed_rng_stream():
-    mu = np.linspace(-2, 2, 12)
-    M = marginal_curves(mu, np.full(12, 0.3))
-    y = (mu < 0).astype(float)
+def test_acquisition_rules_are_deterministic():
+    mu, M, y = _toy()
+    a = np.ones(40)
+    th = np.linspace(-1, 1, 7)
+    o1 = localize_cover(a, mu, th, y, K=5, T=20)
+    o2 = localize_cover(a, mu, th, y, K=5, T=20)
+    assert o1 == o2 and len(set(o1)) == 20
+    assert o1[5:] == [i for i in np.argsort(-population_fisher(a, mu, th)) if i not in set(o1[:5])][:15]
+    assert localize_cover(a, mu, th, y, K=20, T=20) == fluid_order(a, mu, y, 20)   # K = T: pure localize
     q = post_from(M, y, [0, 3, 7])
-    lo1, hi1, m1 = sr_ci(M, y, [0, 3, 7], q, np.random.RandomState(7))
-    lo2, hi2, m2 = sr_ci(M, y, [0, 3, 7], q, np.random.RandomState(7))
-    assert (lo1, hi1, m1) == (lo2, hi2, m2)
-    assert lo1 <= m1 <= hi1
+    rem = [i for i in range(40) if i not in (0, 3, 7)]
+    assert eig_pick(q, M, rem) == eig_pick(q, M, rem)
+    mb = metabench_order(a, mu, 20, 40)
+    assert mb[:10] == metabench_order(a, mu, 10, 40)        # prefix property
 
 
 def test_ies_definition():
-    assert ies(0.0217, 100, 0.0217) == pytest.approx(1.0)
-    assert ies(0.0463, 29.0, 0.0217) == pytest.approx(0.618, abs=0.001)
+    assert ies(0.0347, 60, 0.0347) == pytest.approx(1.0)
+    assert ies(0.0360, 31.0, 0.0449) == pytest.approx(0.414, abs=0.001)
 
 
 def test_slow_anchor_entry_points_exist():
     exp = Path(__file__).resolve().parents[1] / 'experiments'
-    for name in ('run_up_main', 'run_up_baselines', 'run_atlas_bridge',
-                 'run_scarcity', 'run_us', 'run_ups', 'run_sel_diversity'):
-        assert (exp / f'{name}.py').exists()
+    for name in ('run_up_frontier', 'run_adaptive', 'run_tau_calibration', 'run_k_calibration',
+                 'run_readout_dropin', 'run_us', 'run_ups', 'run_model_adequacy',
+                 'run_calibration_stability', 'eval_us_predictions', 'build_data', 'make_figures'):
+        assert (exp / f'{name}.py').exists(), name

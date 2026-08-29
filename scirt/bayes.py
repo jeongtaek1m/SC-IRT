@@ -1,19 +1,20 @@
-"""Grid posterior, posterior-predictive success rate, and the certified-SR
-credible interval — the pieces every CAT loop composes.
+"""Evaluation-side inference: grid posterior over the new planner's ability,
+the MAP-fill success-rate readout, and the posterior L1 risk that drives
+adaptive stopping (PROTOCOL sections 2 and 5).
 
-The experiment scripts keep their loops inline on purpose: the order in which
-these primitives consume random numbers is part of the reproduction contract,
-and hiding it inside a generic runner is how silent drift happens.
+All of it runs on the difficulty-marginalised Rasch curves
+m_i(theta) = E_{b_i | A}[sigmoid(theta - b_i)] (`scirt.curves`). The
+acquisition model never enters here.
 """
 import numpy as np
+from scipy.stats import norm
 
-from .curves import THG, PRIOR
+from .curves import PRIOR
 
 
 def post_from(M, y, S, prior=PRIOR):
     """Posterior over the theta grid given administered items S.
-    M: (grid, n_items) response curves; y: observed 0/1 responses (full row,
-    only S entries are read)."""
+    M: (grid, n_items) curves; y: 0/1 responses (full row, only S read)."""
     if not len(S):
         return prior.copy()
     ll = (y[S][None, :] * np.log(M[:, S] + 1e-12)
@@ -22,32 +23,55 @@ def post_from(M, y, S, prior=PRIOR):
     return q / q.sum()
 
 
-def sr_ci(M, y, S, q, rng, n_draws=4000):
-    """Posterior-predictive distribution of the realised full-bank success
-    rate: draw theta from q, fill unobserved responses as Bernoulli(m_i),
-    add the observed successes. Returns (lo95, hi95, mean).
-
-    This consumes exactly len==2 draws from `rng` (choice + random) — the
-    draw order is part of the protocol."""
+def map_fill(M, y, S, q=None):
+    """Success-rate readout: observed successes + curve fill of the
+    unobserved items at the MAP ability."""
     n = M.shape[1]
-    un = [i for i in range(n) if i not in S]
-    ti = rng.choice(len(THG), size=n_draws, p=q)
-    mm = M[ti][:, un] if un else np.zeros((n_draws, 0))
-    sr = (y[S].sum() + (rng.random(mm.shape) < mm).sum(1)) / n
-    return np.percentile(sr, 2.5), np.percentile(sr, 97.5), sr.mean()
+    S = list(S)
+    if q is None:
+        q = post_from(M, y, S)
+    un = [i for i in range(n) if i not in set(S)]
+    ih = int(np.argmax(q))
+    return float((y[S].sum() + M[ih, un].sum()) / n)
 
 
-def theta_sd(q):
-    """Posterior SD of theta on the grid (ATLAS-style SE(theta) stopping)."""
-    m = (q * THG).sum()
-    return float(np.sqrt((q * THG ** 2).sum() - m ** 2))
-
-
-def posterior_mean_sr(M, y, S, q):
-    """Point estimate of the full-bank SR: observed successes + posterior-mean
-    fill of the unobserved items."""
+def r1_risk(M, y, S, q=None, s_hat=None):
+    """Posterior expected absolute error of the readout, E|S - S_hat | D|,
+    in closed form: unobserved responses given theta are approximated by a
+    normal with mean sum m_i and variance sum m_i(1 - m_i); the mixture over
+    the theta grid then gives E|X - c| = sigma [2 phi(z) + z (2 Phi(z) - 1)]."""
     n = M.shape[1]
-    un = [i for i in range(n) if i not in S]
+    S = list(S)
+    if q is None:
+        q = post_from(M, y, S)
+    if s_hat is None:
+        s_hat = map_fill(M, y, S, q)
+    un = [i for i in range(n) if i not in set(S)]
     if not un:
-        return float(y[S].sum() / n)
-    return float((y[S].sum() + (M * q[:, None]).sum(0)[un].sum()) / n)
+        return 0.0
+    Mu = M[:, un]
+    mu = Mu.sum(1)
+    sd = np.sqrt((Mu * (1 - Mu)).sum(1) + 1e-9)
+    z = (s_hat * n - y[S].sum() - mu) / sd
+    return float((q * sd * (2 * norm.pdf(z) + z * (2 * norm.cdf(z) - 1))).sum() / n)
+
+
+def track(M, y, order):
+    """Readout and risk along a bank order: (S_hat[t], R1[t]) for
+    t = 1..len(order). Fixed budgets read S_hat[B-1]; the stopping rule
+    reads the first t with R1[t] <= tau."""
+    Sh, R1 = [], []
+    for t in range(1, len(order) + 1):
+        S = order[:t]
+        q = post_from(M, y, S)
+        sh = map_fill(M, y, S, q)
+        Sh.append(sh)
+        R1.append(r1_risk(M, y, S, q, sh))
+    return Sh, R1
+
+
+def stop_at(R1, tau):
+    """First index (1-based rollout count) with R1 <= tau; the full length
+    if never reached."""
+    hit = np.where(np.asarray(R1) <= tau)[0]
+    return int(hit[0]) + 1 if len(hit) else len(R1)

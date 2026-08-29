@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score any unseen-scene difficulty predictions in Table-1 units.
+"""Score any unseen-scene difficulty predictions in Table-3A units.
 
     python experiments/eval_us_predictions.py data/encoder/unified_enc_pred_d64s0.npz [more.npz ...]
 

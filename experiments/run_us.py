@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Tables 1 and 2 — US: unseen-scene difficulty prediction.
+"""Table 3A (+ descriptor ablation) — US: unseen-scene difficulty prediction.
 
 Pooled cell-level evaluation on C = (held-out-type routes) x (13 calibration
 planners), 16 draws x ~40 routes = 640 route evaluations.
 
 Sections
-  (desc)  Table 1 descriptor arms: planner-only null, six simple baselines,
+  (desc)  Table 3A descriptor arms: planner-only null, six simple baselines,
           the SC-IRT stack via two-stage Ridge (comparison) and via one-stage
           LLTM+e (canonical), and the response-calibrated oracle ceiling.
   (lltm)  LLTM+e vs two-stage paired delta + the plausible-values
           decomposition of the calibration-noise share.
-  (enc)   Table 1 encoder row and Table 2 ablation from the shipped per-run
+  (enc)   Table 3A encoder row and Table 3A(b) ablation from the shipped per-run
           prediction artifacts (single runs; seeds summarised as metric
           mean +- SD — prediction ensembling is banned).
 
@@ -108,7 +108,7 @@ def main():
             NULLP['rp'].append(float(ps.mean()))
             NULLP['ro'].append(float(ys.mean()))
         bC = frozen_b_dense(Y0, MK, te, cols, th)
-        for name in ROWS:                               # Table 1 descriptor arms
+        for name in ROWS:                               # Table 3A descriptor arms
             if name.startswith('Oracle'):
                 bte = bC
             else:
@@ -170,7 +170,7 @@ def main():
 
     auc0 = roc_auc_score(NULLP['y'], NULLP['p'])
     mae0 = float(np.mean(np.abs(np.array(NULLP['rp']) - np.array(NULLP['ro']))))
-    print('\n===== Table 1 — US (unified split, pooled) =====')
+    print('\n===== Table 3A — US (unified split, pooled) =====')
     print(f'Planner-only null: AUROC {auc0:.3f} / Scene-MAE {mae0:.3f}')
     results = {'null': {'auroc': auc0, 'mae': mae0}}
     for name in ROWS + ['lltm', 'lltm-marg']:
@@ -204,7 +204,7 @@ def main():
         print(f'  d{dd}: AUROC {np.mean(aucs):.3f}+-{np.std(aucs, ddof=1):.3f}  '
               f'MAE {np.mean(maes):.3f}+-{np.std(maes, ddof=1):.3f}  '
               f'rho {np.mean(rhos):+.3f}+-{np.std(rhos, ddof=1):.3f}')
-    # Table 2 per-run Delta1 (enc - hand-crafted) using the shipped preds ----
+    # Table 3A(b) per-run Delta1 (enc - hand-crafted) using the shipped preds ----
     ck = load_features('eval_cmdkin_stats')
     gtr = load_features('eval_gtrisk')
     hc = {k: np.concatenate([ck[k], gtr[k]]) for k in ck if k in gtr}
@@ -233,7 +233,7 @@ def main():
     FLa = np.array(FL)
     rho_hc = spearmanr(BT['hc'], FLa).correlation
     rho_kin = spearmanr(BT['kin'], FLa).correlation
-    print(f'\n===== Table 2 — ablation (pooled {len(FL)} evaluations) =====')
+    print(f'\n===== Table 3A(b) — ablation (pooled {len(FL)} evaluations) =====')
     print(f'  Kinematics only        rho {rho_kin:+.3f}')
     print(f'  Hand-crafted (ck+gtr)  rho {rho_hc:+.3f}')
     for dd in (64, 96):

@@ -36,8 +36,3 @@ def marginal_curves(mu, sd, a=None):
 def point_curves_2pl(a, b):
     """sigmoid(a (theta - b)) point curves (Fluid-style native scoring)."""
     return sig(a[None, :] * (THG[:, None] - b[None, :]))
-
-
-def point_curves_3pl(a, b, c):
-    """c + (1-c) sigmoid(a (theta - b)) point curves (ATLAS-style)."""
-    return c[None, :] + (1 - c[None, :]) * sig(a[None, :] * (THG[:, None] - b[None, :]))

@@ -4,7 +4,7 @@
 
 (theta, w, log sigma) fitted jointly by MAP on the calibration block, with
 eps marginalised by 21-node Gauss-Hermite. This is the canonical descriptor
-estimator for Table 1 (Fischer 1973; Janssen et al. 2004; De Boeck 2008) —
+estimator for Table 3A (Fischer 1973; Janssen et al. 2004; De Boeck 2008) —
 sigma-hat is the model's own estimate of the difficulty share features
 cannot explain, and it instantiates the b|x ~ N(b_tilde(x), sigma^2) prior
 of the unified generative model.
