@@ -9,6 +9,7 @@
     python experiments/make_figures.py
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -18,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scirt.bayes import stop_at
 
-RES, FIGS = ROOT / 'results', ROOT / 'figs'
+RES, FIGS = Path(os.environ.get('SCIRT_RESULTS_DIR', ROOT / 'results')), Path(os.environ.get('SCIRT_FIGS_DIR', ROOT / 'figs'))
 BG = [10, 20, 30, 40, 60, 80, 100, 120]
 SHOW = ['Random + IRT', 'Fluid', 'metabench', 'AnchorPoints', 'tinyBenchmarks', 'SC-IRT']
 TAUS = (0.06, 0.05, 0.045, 0.04, 0.035, 0.03, 0.025, 0.02)

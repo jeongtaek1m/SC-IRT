@@ -18,6 +18,7 @@ Anchors: null 0.710/.207; LLTM+e 0.764/.177/+0.510; 2-stage 0.760/.178/+0.487;
 sigma-hat 0.593; PV share 16.4%; hc +0.486; kin +0.428; d64 rho +0.469+-.011.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -37,7 +38,7 @@ from scirt.metrics import cluster_boot_rho_delta
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(__file__).resolve().parents[1] / 'results'
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 
 
 def load_descriptor_arms():

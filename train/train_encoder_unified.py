@@ -25,6 +25,7 @@ artifact bit-for-bit on the development GPUs.
 """
 import argparse
 import csv
+import os
 import json
 import sys
 from pathlib import Path
@@ -77,7 +78,7 @@ def main():
     rid2w = {}
     for i, r in enumerate(routes):
         rid2w.setdefault(r.replace('route_', ''), []).append(i)
-    rows = list(csv.reader(open(ROOT / 'data/matrices/b2d_e2e16_response_matrix.csv')))
+    rows = list(csv.reader(open(os.environ.get('SCIRT_RESPONSE_CSV', ROOT / 'data/matrices/b2d_e2e16_response_matrix.csv'))))
     rids = rows[0][1:]
     data = [r for r in rows[1:] if r[0] != 'PDM-Lite']
     Yf = np.full((len(data), len(rids)), np.nan)

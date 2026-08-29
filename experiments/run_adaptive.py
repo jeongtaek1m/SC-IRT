@@ -19,6 +19,7 @@ target budget; design B: SC-IRT's tau applied to all).
 import argparse
 import glob
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -35,8 +36,8 @@ from scirt.acquisition import localize_cover, K_LOCALIZE
 from scirt.baselines import fluid_order, metabench_order
 from scirt.metrics import paired_seed_boot, ies
 
-OUT = Path(__file__).resolve().parents[1] / 'results'
-JCALS = (4, 7, 10, 13)
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+JCALS = tuple(int(x) for x in os.environ.get('SCIRT_JCALS', '4, 7, 10, 13').split(','))
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
 BGRID = [10, 20, 30, 40, 60, 80, 100, 120]
 TMAX = max(BGRID)
@@ -45,7 +46,7 @@ TARGETS = (30, 60)
 
 
 def subsample(cols, seed, Jc):
-    if Jc == 13:
+    if Jc >= len(cols):
         return list(cols)
     rs = np.random.RandomState(9000 + seed * 100 + Jc * 10 + 0)
     return sorted(np.array(cols)[rs.choice(len(cols), Jc, replace=False)].tolist())
@@ -127,7 +128,7 @@ def report(recs):
             print(f'\n===== Table 2 (design {design}: '
                   + ('each method at its own calibration-fixed tau, common target budget'
                      if design == 'A' else "SC-IRT's calibration-fixed tau applied to every method") + ') =====')
-            for J in (7, 10, 13):
+            for J in [J for J in JCALS if J >= 7]:
                 ref = np.mean(FX[J]['Random'][60])
                 print(f'-- J_cal = {J} --  (IES reference: Random @ fixed 60 = {ref:.4f})')
                 for tg in TARGETS:

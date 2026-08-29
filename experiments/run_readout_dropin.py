@@ -11,6 +11,7 @@ calibration scarcity (J_cal = 7).
     python experiments/run_readout_dropin.py            # ~40 min, GPU
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -26,14 +27,14 @@ from scirt.bayes import map_fill
 from scirt.baselines import (fluid_order, total_fisher_order, metabench_order, kmeans_anchors,
                              stratified_order)
 
-OUT = Path(__file__).resolve().parents[1] / 'results'
-JCALS = (7, 10, 13)
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+JCALS = tuple(int(x) for x in os.environ.get('SCIRT_JCALS', '7, 10, 13').split(','))
 BG = (10, 20, 30, 40, 60, 80)
 SELS = ('Fluid', 'Total-Fisher', 'metabench', 'tinyBenchmarks', 'AnchorPoints', 'Random')
 
 
 def subsample(cols, seed, Jc):
-    if Jc == 13:
+    if Jc >= len(cols):
         return list(cols)
     rs = np.random.RandomState(9000 + seed * 100 + Jc * 10 + 0)
     return sorted(np.array(cols)[rs.choice(len(cols), Jc, replace=False)].tolist())

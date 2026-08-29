@@ -18,6 +18,7 @@ must generalise is the evaluation-scale ability (PROTOCOL section 4).
     python experiments/run_ups.py     # ~10 min, GPU
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -34,7 +35,7 @@ from scirt.bayes import post_from
 from scirt.acquisition import eig_pick, localize_cover
 from scirt.metrics import paired_seed_boot
 
-OUT = Path(__file__).resolve().parents[1] / 'results'
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 B_PROBE = 30
 POL = ('Random', 'theta-EIG', 'Localize (2PL)')
 

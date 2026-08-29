@@ -20,6 +20,7 @@ and the J_cal x B map (`make_figures.py`).
 import argparse
 import glob
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -38,17 +39,17 @@ from scirt.baselines import (fluid_order, total_fisher_order, marginal_fisher_or
                              stratified_order, pirt)
 from scirt.metrics import paired_seed_boot
 
-OUT = Path(__file__).resolve().parents[1] / 'results'
-JCALS = (4, 7, 10, 13)
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+JCALS = tuple(int(x) for x in os.environ.get('SCIRT_JCALS', '4, 7, 10, 13').split(','))
 BGRID = [10, 20, 30, 40, 60, 80, 100, 120]
 TMAX = max(BGRID)
 METHODS = ['Random (IRT-free)', 'Random + IRT', 'Random-strat + IRT', 'DISCO', 'AnchorPoints',
            'Total-Fisher', 'Marginal-Fisher', 'tinyBenchmarks', 'metabench', 'Fluid', 'SC-IRT']
-CELLS = [(J, B) for J in (7, 10, 13) for B in (30, 60)]
+CELLS = [(J, B) for J in JCALS if J >= 7 for B in (30, 60)]
 
 
 def subsample(cols, seed, Jc):
-    if Jc == 13:
+    if Jc >= len(cols):
         return list(cols)
     rs = np.random.RandomState(9000 + seed * 100 + Jc * 10 + 0)
     return sorted(np.array(cols)[rs.choice(len(cols), Jc, replace=False)].tolist())

@@ -19,6 +19,7 @@ consumed by `run_adaptive.py --merge`.
 import argparse
 import glob
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -34,8 +35,8 @@ from scirt.bayes import track, stop_at
 from scirt.acquisition import localize_cover, K_LOCALIZE
 from scirt.baselines import fluid_order, metabench_order
 
-OUT = Path(__file__).resolve().parents[1] / 'results'
-JCALS = (7, 10, 13)
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+JCALS = tuple(int(x) for x in os.environ.get('SCIRT_JCALS', '7, 10, 13').split(','))
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
 TMAX = 120
 TARGETS = (30, 60)
@@ -43,7 +44,7 @@ TAUS = np.round(np.arange(0.010, 0.0801, 0.001), 3)
 
 
 def subsample(cols, seed, Jc):
-    if Jc == 13:
+    if Jc >= len(cols):
         return list(cols)
     rs = np.random.RandomState(9000 + seed * 100 + Jc * 10 + 0)
     return sorted(np.array(cols)[rs.choice(len(cols), Jc, replace=False)].tolist())

@@ -82,6 +82,15 @@ Table 3A reproduces without retraining. Full retraining:
 the development GPU; elsewhere expect rho within about +-0.01). Bench2Drive
 rollout annotations themselves are not redistributed.
 
+## Environment overrides
+
+`SCIRT_RESPONSE_CSV` (response panel; default the 16-planner matrix),
+`SCIRT_RESULTS_DIR` (where the scripts write; default `results/`),
+`SCIRT_JCALS` (calibration-panel sizes for the UP scripts; a value >= the
+number of calibration planners means the full panel), `SCIRT_FIGS_DIR`.
+They change inputs and paths only — never a computation — so the default
+run reproduces the anchors exactly.
+
 ## Known gaps
 
 - The NavSim panel (Table 4) is computed from a 17 x 12,146 out-of-fold

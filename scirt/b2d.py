@@ -6,6 +6,7 @@ that produced the paper numbers iterate routes in exactly this order, so it
 is part of the reproduction contract.
 """
 import csv
+import os
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +39,7 @@ def load_route_types():
 
 def load_response_rows():
     """Raw response matrix: (route_ids in CSV order, planner rows)."""
-    rows = list(csv.reader(open(DATA / 'matrices' / 'b2d_e2e16_response_matrix.csv')))
+    rows = list(csv.reader(open(os.environ.get('SCIRT_RESPONSE_CSV', DATA / 'matrices' / 'b2d_e2e16_response_matrix.csv'))))
     rids = rows[0][1:]
     planners = [r for r in rows[1:] if r[0] != EXCLUDED_PLANNER]
     return rids, planners

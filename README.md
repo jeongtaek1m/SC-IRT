@@ -95,6 +95,27 @@ routes (3,476 of 3,520 cells observed), 44 scenario types. All derived data
 was packaged by `experiments/build_data.py`, which re-verifies each artifact
 against its source.
 
+## The 22-planner panel
+
+`data/matrices/b2d_e2e22_response_matrix.csv` extends the 16-planner panel
+with six more open-source planners (R2SE, Orion-Lite, Hydra-NeXt, PGS,
+DriveMoE-Base, Drive-pi0-Base; 4,796 of 4,840 cells observed, same 220
+routes; `b2d_e2e22_build_report.json` records the derived vs published
+success rates). Every experiment runs on it unchanged through environment
+overrides — the split then holds out 3 of 22 planners (19 calibrate):
+
+```bash
+export SCIRT_RESPONSE_CSV=data/matrices/b2d_e2e22_response_matrix.csv
+export SCIRT_RESULTS_DIR=results_e22          # keep the 16-planner results separate
+SCIRT_JCALS=4,7,10,13,19 python experiments/run_up_frontier.py   # J_cal grid incl. the full 19-planner panel
+```
+
+The published anchors are for the 16-planner panel; on the 22-planner panel
+the scripts print their tables and the final anchor assertion is expected to
+fail. The shipped encoder predictions (`data/encoder/*.npz`) are keyed to the
+16-planner draws and must be retrained for the 22-planner split
+(`train/train_encoder_unified.py` honours `SCIRT_RESPONSE_CSV`).
+
 ## Honest caveats
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
