@@ -1,251 +1,225 @@
-# Results — the numbers of record
+# Results of record
 
-One section per paper table; every number is produced by the named script,
-which asserts it at the end of its run (`anchors OK`). Planner-side
-results are means over 48 planner evaluations (16 draws x 3 held-out
-planners); paired 95% intervals are cluster bootstraps over the 16 draws.
-Differences below about .005 SR-MAE are inside those intervals.
+Every number here is printed (and asserted, `anchors OK`) by the script named
+in each section. Conventions: K = planners, S = scenes, K_cal = calibration
+panel size, B = rollout budget, SR-MAE = |SR_hat - SR| averaged over 96
+planner evaluations per cell (16 draws x 6 evaluation planners). `*` marks a
+paired-bootstrap 95% CI vs SC-IRT that excludes zero. Differences below
+about .005 are inside the intervals at this replication and are read as ties.
 
-## Table 1 — UP fixed-budget accuracy — `run_up_frontier.py`
+## Table 1 — UP at fixed budgets (`run_up_frontier.py`)
 
-Primary protocol: J_cal in {7, 10, 13} calibration planners x B in
-{30, 60} rollouts, SR-MAE (lower is better), macro = mean of the six
-cells. Baselines use their native readouts; SC-IRT the Rasch MAP-fill
-readout. `*` = the paired 95% interval against SC-IRT excludes zero.
+Unseen-planner SR reconstruction on the 22 x 220 Bench2Drive panel,
+random 16:6 planner split, B counted in scenario types (5 routes each).
 
-| method | J7·B30 | J7·B60 | J10·B30 | J10·B60 | J13·B30 | J13·B60 | macro |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Random (IRT-free) | .0624* | .0385 | .0624 | .0385* | .0624* | .0385* | .0505 |
-| Random + IRT | .0540 | .0331 | .0599 | .0352 | .0575* | .0345* | .0457 |
-| Random-strat + IRT | .0574* | .0344 | .0576 | .0341* | .0574* | .0348* | .0460 |
-| DISCO-adapted | .0744* | .0521* | .0596 | .0445* | .0472 | .0372* | .0525 |
-| AnchorPoints-adapted | .0785* | .0695* | .0527 | .0403* | .0603* | .0296* | .0552 |
-| Total-Fisher static | .0717* | .0522* | .0598* | .0400* | .0470* | .0317* | .0504 |
-| Marginal-Fisher static | .0605* | .0580* | .0567 | .0379* | .0495* | .0346* | .0495 |
-| tinyBenchmarks | .0724* | .0493* | .0485 | .0331* | .0516 | .0373* | .0487 |
-| metabench-lite | .0480 | .0377 | .0490 | .0318 | .0464 | .0321* | .0408 |
-| Fluid-style | .0576 | .0359 | .0514 | .0374* | **.0379** | .0390* | .0432 |
-| **SC-IRT** | **.0423** | .0345 | .0494 | **.0260** | .0388 | **.0213** | **.0354** |
+| method | K7 B30 | K7 B55 | K7 B110 | K10 B30 | K10 B55 | K10 B110 | K16 B30 | K16 B55 | K16 B110 | macro |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Random (IRT-free) | .0670* | .0405 | .0224 | .0670* | .0405* | .0224* | .0670 | .0405 | .0224 | .0433 |
+| Random + IRT | .0602 | .0401 | .0216 | .0571* | .0369 | .0193 | .0587 | .0377 | .0191 | .0390 |
+| Random-strat + IRT | .0589 | .0365 | .0175* | .0554 | .0358 | .0175 | .0554 | .0353* | .0174 | .0366 |
+| DISCO | .0657* | .0466* | .0315* | .0547 | .0398 | .0253* | .0455 | .0389 | .0249* | .0414 |
+| AnchorPoints | .0805* | .0669* | .0649* | .0559* | .0387 | .0264* | .0554 | .0470 | .0243* | .0511 |
+| Total-Fisher | .0581 | .0406 | .0268 | .0549 | .0411 | .0260* | .0507 | .0358 | .0208 | .0394 |
+| Marginal-Fisher | .0549 | .0471* | .0297* | .0551 | .0409 | .0241* | .0521 | .0379 | .0234* | .0406 |
+| tinyBenchmarks | .0626* | .0475 | .0411* | .0529 | .0384 | .0214 | .0588 | .0344* | .0222 | .0421 |
+| metabench | .0554 | .0424 | .0236 | .0472 | .0361 | .0224 | .0460* | .0375 | .0232 | .0371 |
+| Fluid | .0486 | .0421 | .0258 | .0495 | .0436* | .0214* | .0472* | .0414 | .0219* | .0379 |
+| **SC-IRT** | **.0497** | **.0375** | .0248 | **.0453** | **.0339** | **.0189** | .0571 | .0419 | .0197 | **.0365** |
 
-Reading. Macro .0354 against metabench .0408 (-13%) and Fluid .0432. Three
-cells are the lowest point estimate (J7·B30, J10·B60, J13·B60) and three
-are ties within +5% of the best baseline (J7·B60 vs Random+IRT .0331,
-J10·B30 vs tinyBenchmarks .0485, J13·B30 vs Fluid .0379). At J13·B60
-SC-IRT improves significantly over every reported baseline; at J10·B60 it
-has the lowest point estimate and improves significantly over several, but
-not all (metabench .0318 and Random+IRT .0352 are inside the interval).
-The first K = 20 picks of SC-IRT are the Fluid selection rule; at B <= 20
-the two rows differ only through their readouts.
+Reading. SC-IRT is best or tied-best in every K_cal <= 10 cell except
+K7 B110 and holds the best macro average. The advantage concentrates where
+evaluation is hard — small calibration panels at low-to-medium budgets
+(e.g. K10 B30: .0453 vs Fluid .0495, Random .0670*). At K_cal = 16 with
+B >= 55 (a rich panel plus 31-61% of the per-draw 180-route bank) the
+IRT-based orderings stop paying for themselves and stratified random
+sampling is the frontier (.0353* at K16 B55); that saturation column is
+part of the result, not an omission. AnchorPoints and DISCO, which pick
+by response-similarity clustering, are the weakest orderings on a
+220-scene bank at these budgets.
 
-### Full budget grids (SR-MAE, B in {10, ..., 120})
+## Table 2 — adaptive stopping (`run_tau_calibration.py`, `run_adaptive.py`)
 
-| J_cal = 13 | 10 | 20 | 30 | 40 | 60 | 80 | 100 | 120 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Random (IRT-free) | .0916 | .0752 | .0624 | .0500 | .0385 | .0266 | .0249 | .0184 |
-| Random + IRT | .0902 | .0676 | .0575 | .0466 | .0345 | .0264 | .0217 | .0154 |
-| AnchorPoints-adapted | .0778 | .0721 | .0603 | .0508 | .0296 | .0231 | .0212 | .0159 |
-| Total-Fisher static | .0831 | .0627 | .0470 | .0411 | .0317 | .0306 | .0258 | .0201 |
-| tinyBenchmarks | .1047 | .0683 | .0516 | .0432 | .0373 | .0275 | .0197 | .0155 |
-| metabench-lite | .0975 | .0602 | .0464 | .0387 | .0321 | **.0217** | **.0152** | **.0136** |
-| Fluid-style | **.0601** | .0480 | **.0379** | .0427 | .0390 | .0288 | .0218 | .0182 |
-| **SC-IRT** | .0617 | **.0479** | .0388 | **.0342** | **.0213** | .0222 | .0205 | .0168 |
+Each method stops at its own calibration-fixed threshold tau_hat
+(leave-one-planner-out on the calibration panel, tuned to a mean-budget
+target — a cost target, never an accuracy target, so evaluation SR-MAE is
+measured, not selected). IES = (SR-MAE / Random-at-fixed-55) x (mean
+rollouts / 55); lower is better, d = paired delta vs SC-IRT.
 
-| J_cal = 7 | 10 | 20 | 30 | 40 | 60 | 80 | 100 | 120 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Random (IRT-free) | .0916 | .0752 | .0624 | .0500 | .0385 | .0266 | .0249 | .0184 |
-| Random + IRT | .0896 | .0629 | .0540 | .0435 | **.0331** | .0264 | .0210 | **.0151** |
-| AnchorPoints-adapted | .1263 | .0922 | .0785 | .0722 | .0695 | .0697 | .0697 | .0697 |
-| tinyBenchmarks | .0905 | .0779 | .0724 | .0595 | .0493 | .0504 | .0504 | .0504 |
-| metabench-lite | .1238 | .0605 | .0480 | .0414 | .0377 | .0264 | **.0178** | .0179 |
-| Fluid-style | .0800 | .0570 | .0576 | .0666 | .0359 | .0298 | .0268 | .0213 |
-| **SC-IRT** | **.0795** | **.0536** | **.0423** | **.0383** | .0345 | **.0255** | .0213 | .0209 |
+Thresholds are stable across draws (SC-IRT median tau_hat: .039-.041 for
+target 30, .026-.027 for target 55, IQR width <= .002 at every K_cal) and
+the realized budgets land on target without post-hoc adjustment (29.8-31.1
+and 54.0-56.3 across all methods).
 
-(J_cal = 10 and the DISCO / Marginal-Fisher / Random-strat rows are printed
-by `run_up_frontier.py`; the J_cal = 4 grid is shown as the map below.)
-At B >= 100 representative static subsets (metabench, tinyBenchmarks) win at
-every J_cal, and random sampling does too at J_cal <= 10 — adaptive
-selection buys its accuracy at 20-80 rollouts.
+| cell | method | rollouts | SR-MAE | IES | d vs SC-IRT |
+|---|---|---|---|---|---|
+| K7 target 30 | **SC-IRT** | 30.2 | .0471 | .63 | — |
+| | Fluid | 30.2 | .0422 | .57 | -.0049 |
+| | metabench | 30.1 | .0540 | .72 | +.0069 |
+| | Random | 31.0 | .0590 | .81 | +.0118* |
+| K7 target 55 | **SC-IRT** | 54.2 | **.0342** | **.82** | — |
+| | Fluid | 54.0 | .0409 | .98 | +.0067* |
+| | metabench | 55.8 | .0434 | 1.08 | +.0092* |
+| | Random | 56.3 | .0398 | 1.00 | +.0056 |
+| K10 target 30 | **SC-IRT** | 30.4 | **.0409** | **.61** | — |
+| | Fluid | 31.0 | .0483 | .73 | +.0073 |
+| | metabench | 30.6 | .0511 | .77 | +.0102 |
+| | Random | 31.1 | .0556 | .85 | +.0147* |
+| K10 target 55 | **SC-IRT** | 55.2 | **.0349** | .94 | — |
+| | Fluid | 56.1 | .0424 | 1.17 | +.0075* |
+| | metabench | 55.9 | .0360 | .99 | +.0011 |
+| | Random | 56.0 | .0384 | 1.05 | +.0034 |
+| K16 target 30 | SC-IRT | 30.3 | .0543 | .80 | — |
+| | Fluid | 30.4 | .0447 | .66 | -.0097* |
+| | metabench | 29.8 | .0461 | .66 | -.0082* |
+| | Random | 30.7 | .0570 | .85 | +.0027 |
+| K16 target 55 | SC-IRT | 54.7 | .0399 | 1.06 | — |
+| | Fluid | 55.3 | .0395 | 1.05 | -.0004 |
+| | metabench | 55.8 | .0374 | 1.01 | -.0025 |
+| | Random | 55.8 | .0374 | 1.01 | -.0025 |
 
-### The J_cal x B map — `make_figures.py` (`figs/fig_jb_map`)
+Reading. At K_cal <= 10 the full pipeline (risk acquisition + risk
+stopping) is best or tied-best in every cell — at K7 target 55 it beats
+every competitor's own adaptive variant (Fluid +.0067*, metabench
++.0092*), and at K10 target 30 it does better than fixed-55 Random using
+30 rollouts (IES .61). At K16 the panel is rich enough that 2PL-based
+orderings pay off and SC-IRT's ordering advantage inverts (target 30:
+Fluid -.0097*, metabench -.0082*) — the same saturation boundary as
+Table 1 and the component ablation, reported as-is.
 
-SC-IRT minus the best baseline, SR-MAE. With J_cal = 4 the calibrated bank
-is too wrong for model-based extrapolation: random sampling (design-
-unbiased) is the floor from B ~ 40 on (J4: SC-IRT .0699/.0522 at B = 30/60
-vs Random+IRT .0580/.0367). Under a J_cal = 4 bank *every* adaptive
-selector loses to random: the executed set of a greedy rule is
-non-representative by design and its fill is model-dependent, so a bank
-that is too wrong cannot repay that non-representativeness. That is when
-not to use adaptive evaluation.
+Adaptive vs fixed at matched mean rollouts (SC-IRT against its own
+fixed-budget curve): -.0018 to -.0046 for tau <= .040 at K7/K10 — the
+stopping rule redistributes budget across evaluation planners at no
+accuracy cost. R1 is a usable risk: thresholded on left-out calibration
+planners it transfers to unseen planners with realized budgets on target.
 
-## Table 2 — Adaptive evaluation under a common stopping machine — `run_tau_calibration.py`, `run_adaptive.py`
+## Component ablation (`run_ablation.py`)
 
-Every bank order runs with SC-IRT's readout and the posterior-risk stop
-R1(D_t) <= tau. Thresholds are fixed on the calibration panel by
-leave-one-planner-out simulation to a *target* mean budget (30 / 60) and
-never selected on held-out planners; the table reports the achieved mean
-rollouts. IES = (SR-MAE / SR-MAE of Random at fixed B = 60) x (rollouts /
-60). `*` = paired 95% interval vs SC-IRT excludes zero.
+The model has exactly two components on top of plug-in Rasch: (i)
+b-uncertainty — the conditional-Laplace difficulty posterior marginalised
+into every probability; (ii) risk acquisition — the Delta-R1 rollout order.
+Each is switched off independently (off-acquisition = per-evaluation random
+permutation; off-uncertainty = point curves at s -> 0). Paired deltas vs full,
+`*` = 95% CI excludes zero:
 
-| J_cal | target | method | tau_hat (median) | rollouts | SR-MAE | IES |
-|---|---|---|---|---:|---:|---:|
-| 7 | 30 | Random | .048 | 29.5 | .0586* | 0.87 |
-| 7 | 30 | Fluid | .038 | 29.7 | .0410 | 0.61 |
-| 7 | 30 | metabench | .048 | 30.1 | .0445 | 0.67 |
-| 7 | 30 | **SC-IRT** | .040 | 29.2 | .0433 | 0.63 |
-| 7 | 60 | Random | .032 | 59.3 | .0321 | 0.95 |
-| 7 | 60 | Fluid | .023 | 58.1 | .0367 | 1.07 |
-| 7 | 60 | metabench | .031 | 58.7 | .0338 | 0.99 |
-| 7 | 60 | **SC-IRT** | .027 | 60.2 | **.0306** | **0.92** |
-| 10 | 30 | Random | .049 | 29.8 | .0610* | 0.86 |
-| 10 | 30 | Fluid | .040 | 29.0 | .0455 | 0.62 |
-| 10 | 30 | metabench | .048 | 30.1 | .0437 | 0.62 |
-| 10 | 30 | **SC-IRT** | .042 | 29.0 | .0448 | **0.61** |
-| 10 | 60 | Random | .032 | 59.8 | .0316 | 0.89 |
-| 10 | 60 | Fluid | .024 | 58.9 | .0347 | 0.96 |
-| 10 | 60 | metabench | .031 | 59.8 | .0282 | 0.79 |
-| 10 | 60 | **SC-IRT** | .028 | 57.9 | **.0265** | **0.72** |
-| 13 | 30 | Random | .049 | 29.9 | .0589* | 0.85 |
-| 13 | 30 | Fluid | .041 | 28.7 | .0399 | 0.55 |
-| 13 | 30 | metabench | .050 | 29.4 | .0461 | 0.65 |
-| 13 | 30 | **SC-IRT** | .042 | 29.1 | **.0384** | **0.54** |
-| 13 | 60 | Random | .032 | 58.9 | .0316* | 0.89 |
-| 13 | 60 | Fluid | .024 | 58.6 | .0358* | 1.01 |
-| 13 | 60 | metabench | .032 | 59.2 | .0307* | 0.87 |
-| 13 | 60 | **SC-IRT** | .027 | 59.1 | **.0228** | **0.65** |
-
-At target 60 SC-IRT has the lowest error and IES at every J_cal, and at
-J_cal = 13 significantly so against all three orders; at target 30 SC-IRT
-and Fluid are within .002 of each other (they share the first 20 picks),
-metabench is within .001-.008, and only Random is separated. The
-adaptive stop also beats SC-IRT's own fixed-budget curve at matched mean
-rollouts in the 30-50 range (J13: -.0023 to -.0037 for tau in [.03, .04],
-printed by `run_adaptive.py --merge`)
-and the risk is honest there (MAE / tau 0.8-1.0; under a J_cal = 4 bank
-it is over-confident, 1.7-2.2, as the bank error is not in the posterior).
-The semantic tau sweep and design B (SC-IRT's tau applied to every order)
-are printed by `run_adaptive.py --merge`; the cost-error curves are
-`figs/fig_cost_error`.
-
-## Table 3 — Generalisation
-
-### Table 3A — Scene difficulty prediction (US; pooled 640) — `run_us.py`
-
-| arm | AUROC | Scene-MAE | rel. | rho_scene |
+| cell | full | w/o b-uncertainty | w/o risk acquisition | w/o both |
 |---|---|---|---|---|
-| Planner-only null | 0.710 | 0.207 | — | 0 |
-| Min-TTC | 0.700 | 0.216 | -4.2% | -0.092 |
-| Risk field | 0.710 | 0.214 | -3.2% | +0.069 |
-| Route geometry | 0.714 | 0.209 | -0.8% | +0.121 |
-| Agent density + kin. | 0.722 | 0.214 | -3.4% | +0.182 |
-| Traffic entropy | 0.716 | 0.210 | -1.3% | +0.090 |
-| Agent-JEPA | 0.702 | 0.214 | -3.5% | -0.057 |
-| SC-IRT stack, LLTM+e (canonical) | **0.764** | **0.177** | **+14.4%** | **+0.510** |
-| Encoder (single run d64, 3-seed) | 0.753 +-.002 | 0.189 +-.001 | +8.8% | +0.469 +-.011 |
-| Oracle (in-sample ceiling) | 0.876 | ~0 | — | +0.994 |
+| K7 B30 | .0497 | .0493 (-.0005) | .0617 (+.0120*) | .0601 (+.0103) |
+| K7 B55 | .0375 | .0392 (+.0017) | .0408 (+.0033) | .0404 (+.0029) |
+| K10 B30 | .0453 | .0450 (-.0003) | .0586 (+.0133*) | .0571 (+.0119*) |
+| K10 B55 | .0339 | .0360 (+.0022) | .0371 (+.0032) | .0373 (+.0034) |
+| K16 B30 | .0571 | .0563 (-.0008) | .0597 (+.0026) | .0588 (+.0017) |
+| K16 B55 | .0419 | .0379 (-.0040) | .0376 (-.0043) | .0375 (-.0044) |
 
-Relative reductions use unrounded MAEs. LLTM+e vs two-stage Ridge:
-delta rho +0.023 CI[-0.002, +0.049] (adoption rationale is canonicity, not
-significance). sigma-hat = 0.593 +- 0.118; plausible-values share of the
-13-rater calibration noise in US rho uncertainty: 16.4%.
+Reading. The fixed-budget error is carried by the risk acquisition: removing
+it costs +.0120*/+.0133* at the small-panel low-budget cells and the loss
+shrinks toward zero as K_cal and B grow (at K16 B55 the panel saturates and
+the ordering no longer matters — the same reversal as Table 1). Removing the
+b-uncertainty leaves fixed-budget SR-MAE unchanged everywhere (all cells
+inside the intervals): its role is not the point estimate but the risk
+calibration — without it R1 is not a posterior risk and the stopping rule of
+Table 2 has no calibrated trigger. The w/o-both column tracks
+w/o-risk-acquisition, i.e. the two components do not interact at fixed budgets.
 
-### Table 3A(b) — US descriptor ablation — `run_us.py`
+## Table 3A — US: unseen scenes (`run_us.py`)
 
-Kinematics only +0.428 / **hand-crafted (ck+gtr) +0.486** /
-encoder d64 +0.469 +- 0.011 / **d96 +0.490 +- 0.011** (per-run delta vs
-hand-crafted: all CIs cover zero — statistical tie; both column bests bolded).
+Predict scene difficulty (and per-cell outcomes) for the 8 evaluation
+scenario types from scene features alone; pooled over 16 draws.
+Planner-only null: AUROC .694 / scene-MAE .199.
 
-### Table 3B — UPS: unseen planner x unseen scenes — `run_ups.py`
+| difficulty source | AUROC | scene-MAE | rho(b_hat, b) |
+|---|---|---|---|
+| Min-TTC | .689 | .205 (-3.2%) | -.146 |
+| Risk field | .710 | .199 (+0.1%) | +.125 |
+| Route geometry | .720 | .196 (+1.6%) | +.353 |
+| Agent density + kin. | .723 | .195 (+1.9%) | +.308 |
+| Traffic entropy | .706 | .198 (+0.6%) | +.122 |
+| Agent-JEPA | .696 | .201 (-1.1%) | +.006 |
+| **SC-IRT stack, LLTM+e (canonical)** | **.758** | **.170 (+14.4%)** | **+.555** |
+| RelGraph R2 scene encoder (3 runs) | .754 +- .004 | .178 +- .003 | +.532 +- .019 |
+| Oracle (response-calibrated) | .863 | .000 | +.997 |
 
-30 probes on the calibrated bank, zero rollouts on the unseen-type routes
-D; ability = MAP of the Rasch posterior on the probes; D success predicted
-through the feature path with the difficulty prior marginalised
-(ridge b_tilde + residual tau). 48 evaluations.
+- LLTM+e vs two-stage plug-in scoring: Delta rho +.0019, CI [-.0123, +.0176]
+  — marginalised training changes nothing measurable; it is kept because it
+  is the same likelihood the rest of the pipeline uses.
+- sigma_hat (residual difficulty SD after features) = .696 +- .091: features
+  explain roughly half the difficulty variance, consistent with the oracle gap.
+- Descriptor ablation (pooled rho): kinematics only +.514, hand-crafted
+  ck+gtr +.541, RelGraph R2 +.532 +- .019 (Delta vs hand-crafted
+  -.008 +- .019). The learned relational encoder ties the hand-crafted
+  stack — scene-graph learning does not yet buy difficulty signal beyond
+  well-chosen descriptors on this bank.
+- Plausible-values check: calibration noise contributes 4.5% of the US rho
+  uncertainty — the split, not the panel fit, dominates.
 
-| probe policy (30 rollouts on B) | D-SR MAE | D NLL |
-|---|---:|---:|
-| naive SR transfer (probe mean) | .1282 | .7235 |
-| Random probes | .1194 | .6251 |
-| **theta-EIG under the evaluation model (canonical)** | **.1034** | **.6095** |
-| Localize (2PL Fisher, the UP rule) | .1083 | .6126 |
+## Table 3B — UPS: unseen planner x unseen scenes (`run_ups.py`)
 
-Paired vs theta-EIG: Random +.0160 [-.0010, +.0332]; Localize +.0049
-[-.0151, +.0241]. The UP localize rule brings no additional gain for
-transport — the quantity that must generalise here is the evaluation-scale
-ability, and the probe rule is chosen by alignment and simplicity, not by
-a statistical win.
+Predict an unseen planner's behaviour on unseen scenario types with zero
+rollouts on the target block: probe the planner on B calibration-type
+rollouts, transport theta_hat through the scene-conditioned difficulty prior.
+96 evaluations; MAE on the target-block SR, mean per-cell NLL.
 
-## Analysis — the Rasch readout as a drop-in for any selector — `run_readout_dropin.py`
+| probe policy | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
+|---|---|---|---|---|---|---|
+| naive (no IRT) | .1290 | .6445 | .1189 | .6348 | .1146 | .6302 |
+| Random | .1099 | .5993 | .1015 | .5921 | .0981 | .5892 |
+| theta-EIG (canonical) | .1087 | .5966 | .1003 | .5912 | .0979 | .5872 |
+| 2PL Fisher (abl.) | .1042 | .5943 | .0979 | .5908 | .0977 | .5875 |
 
-Selector subsets re-scored with SC-IRT's readout; native readout in
-parentheses. SR-MAE at B = 30 / 60.
+Reading. Any IRT transport beats the naive planner-mean by .017-.025 MAE;
+between probe policies the paired deltas are all inside the intervals
+(theta-EIG vs Random +.0012 ns; 2PL Fisher -.0045 ns at B30). The
+bottleneck is the US difficulty prior (rho about .55), not probe placement —
+UPS is reported as a transport result, not an acquisition result.
 
-| selector | J7 B30 | J7 B60 | J13 B30 | J13 B60 |
-|---|---:|---:|---:|---:|
-| Fluid-style | .0421 (.0576) | .0333 (.0359) | .0387 (.0379) | .0394 (.0390) |
-| Total-Fisher static | .0623 (.0717) | .0420 (.0522) | .0418 (.0470) | **.0266** (.0317) |
-| metabench-lite | .0459 (.0480) | .0338 (.0377) | .0452 (.0464) | .0307 (.0321) |
-| AnchorPoints-adapted | .0699 (.0785) | .0551 (.0695) | .0512 (.0603) | .0294 (.0296) |
-| tinyBenchmarks | .0763 (.0724) | .0534 (.0493) | .0560 (.0516) | .0385 (.0373) |
-| Random | .0584 (.0540) | .0333 (.0331) | .0575 (.0575) | .0347 (.0345) |
+## Table 4 — the two-stage panel (`run_navhard.py`)
 
-The inference layer helps every information-based selector, most under
-scarcity (Fluid at J7·B30: .0576 -> .0421), and it is neutral-to-worse for
-the two K-means designs and for random subsets, whose native estimators
-are already representative. SC-IRT's cover phase is the Total-Fisher order:
-that row at J13·B60 (.0266 with the readout) is what the cover phase alone
-delivers before the localize phase is added (.0213).
+The same UP protocol on a panel with a different simulator, metric and
+evaluation stage: the NAVSIM navhard leaderboard (two-stage
+pseudo-closed-loop EPDMS), 87 unique submissions x 225 scored units,
+pass = EPDMS >= 0.5. Per draw, 6 evaluation planners; K_cal subsampled
+from the remaining 81 ({7, 10, 16} as on Bench2Drive, plus the full 81);
+budgets are unit counts (no scenario-type structure, so no stratified
+Random). SR-MAE, `*` vs SC-IRT as above; the strongest competitor per
+K_cal in parentheses:
 
-## Analysis — the localize budget K is a bank constant — `run_k_calibration.py`
+| K_cal | B=30 | B=55 | B=110 |
+|---|---|---|---|
+| 7 | **.0419** (metabench .0479) | **.0312** (Random+IRT .0344) | .0250 (Random+IRT .0242) |
+| 10 | .0486 (tinyB .0469) | .0383 (tinyB .0334) | **.0203** (Random+IRT .0225) |
+| 16 | .0487 (tinyB .0465) | .0345 (Random+IRT .0330) | **.0197** (Random+IRT .0229) |
+| 81 | .0468 (DISCO .0396) | .0360 (DISCO .0299) | **.0166** (Fluid .0205*) |
 
-Leave-one-planner-out simulation on the calibration panel, SR-MAE averaged
-over B in {30, 40, 60, 80}:
+Reading. The Bench2Drive pattern transfers to a two-stage panel without
+retuning anything: at K_cal = 7 SC-IRT is best at B <= 55 with most
+baselines significantly worse (Random .0674*, Fluid .0516*, Total-Fisher
+.0531* at B30), and it is the best B = 110 method at every K_cal >= 10.
+The saturation boundary moves the same way too — with the full 81-planner
+calibration panel, response-clustering (DISCO) wins the low budgets, as
+the rich-panel regime did on Bench2Drive. Caveats (REPRODUCIBILITY.md):
+the leaderboard is dominated by a few teams' submission sweeps and
+near-duplicates can straddle the planner split; this affects all methods
+identically but limits reading the panel as 87 independent planners.
 
-| J_cal | K = 0 | 5 | 10 | 15 | 20 | 25 | 30 | 40 | 60 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 7 | .0467 | .0467 | .0452 | .0424 | .0410 | .0402 | **.0393** | .0399 | .0402 |
-| 10 | .0381 | .0378 | .0378 | .0375 | .0369 | .0351 | **.0335** | .0351 | .0373 |
-| 13 | .0325 | .0319 | .0318 | **.0312** | .0313 | .0318 | .0316 | .0352 | .0372 |
+## Readout drop-in (`run_readout_dropin.py`)
 
-Flat over K in [15, 30] (range .0006 at J13) with a cliff at K >= 40
-(never switching to cover); K = 20 is used at every J_cal. A per-bank
-argmin is not used: with <= 13 planners the LOO curve is too flat for its
-argmin to be a reliable estimate, so only the plateau is read from it.
+Analysis, not a headline: every baseline's selected subset re-scored with
+the SC-IRT readout (marginalised curves + theta-MAP fill), native readout
+in parentheses. SR-MAE at K_cal = 7:
 
-### Appendix — psychometric adequacy — `run_model_adequacy.py`
+| selector | B=30 | B=55 | B=110 |
+|---|---|---|---|
+| Fluid | .0477 (.0486) | .0420 (.0421) | .0241 (.0258) |
+| Total-Fisher | .0525 (.0581) | .0367 (.0406) | .0208 (.0268) |
+| metabench | .0526 (.0554) | .0409 (.0424) | .0240 (.0236) |
+| tinyBenchmarks | .0632 (.0626) | .0483 (.0475) | .0419 (.0411) |
+| AnchorPoints | .0589 (.0805) | .0450 (.0669) | .0433 (.0649) |
+| Random | .0617 (.0602) | .0408 (.0401) | .0215 (.0216) |
 
-Held-out cell NLL on the calibration block (10% of cells, 16 draws):
-**1PL .5303 +-.0119 / 2PL .5292 +-.0120 / 3PL .5340 +-.0117**; 2PL - 1PL =
--0.0012 +-0.0008 (ns), 3PL - 1PL = +0.0037. Split-half reliability of
-log a-hat across 6/7-planner halves: **+0.095 +-0.021**. Discrimination
-neither predicts held-out responses better nor is reliably estimable on a
-13-planner panel: the Rasch model is the adequate model here, not a
-simplification (with the a-marginalisation identity, max cell-probability
-change 0.0009, this is the PROTOCOL section 2 justification).
-
-### Appendix — calibration stability: full 16 x 220 fit vs the per-draw A block — `run_calibration_stability.py`
-
-On the shared routes, b-hat from the 13 x ~180 calibration block vs the
-full-panel fit: Pearson 0.978 (min 0.955 over 16 draws), Spearman 0.976;
-mean-aligned RMSE 0.355 logit against sd(b-hat) = 1.63 and a per-route
-posterior SD s_i = 0.81 — only 1.5% of routes move by more than their own
-s_i (max 3.9%). theta-hat on the 13 shared planners: Pearson 0.997,
-aligned RMSE 0.095 against sd(theta-hat) = 1.17 (max single shift 0.32).
-Raw offsets (b -0.02, theta -0.01 on average, up to +-0.3 in a draw) are the
-theta-mean-centring convention applied to 16 vs 13 planners, not
-estimation change. Dropping three planners and the held-out types
-therefore moves the bank by well under its own calibration uncertainty —
-the regime is stable, and the residual s_i is exactly what the marginalised
-curves carry.
-
-## Table 4 — NavSim scale-up (US) (17 x 12,146 full OOF)
-
-| seed | stack rho | enc rho | Delta [95% CI] | P(Delta>0) |
-|---|---|---|---|---|
-| 0 | +0.513 | +0.542 | **+0.029 [+0.003, +0.055]** | 0.986 |
-| 1 | +0.513 | +0.533 | +0.020 [-0.005, +0.046] | 0.943 |
-| 2 | +0.513 | +0.531 | +0.017 [-0.009, +0.043] | 0.903 |
-| mean | +0.513 | +0.535 | +0.022 [-0.002, +0.047] | 0.962 |
-
-Consistently positive across three independent runs, significant for one of
-three seeds — no stronger claim. (The NavSim artifacts and runner are staged
-for a follow-up commit; see REPRODUCIBILITY.md.)
+Reading. The readout is a drop-in improvement wherever the native readout
+is a 2PL plug-in on a scarce panel — AnchorPoints about -.022 and
+Total-Fisher -.004 to -.006 at every K_cal = 7 budget (same direction at
+K_cal = 16, e.g. AnchorPoints .0243 -> .0194 at B110) — and neutral for
+selectors whose native readout is already an average or a well-behaved
+plug-in (Random, metabench, tinyBenchmarks, all within .003). So the
+Table 1 gaps are not a readout artifact: with the readout equalised, the
+remaining differences are attributable to scene selection.

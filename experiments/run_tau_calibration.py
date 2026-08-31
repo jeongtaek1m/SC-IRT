@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Stopping thresholds fixed on the calibration panel (never on held-out planners).
+"""Stopping thresholds fixed on the calibration panel (never on evaluation planners).
 
-For each draw and J_cal, every calibration planner j is held out in turn, the
-bank is re-calibrated from the other J_cal - 1 planners, and the four bank
+For each draw and K_cal, every calibration planner j is held out in turn, the
+bank is re-calibrated from the other K_cal - 1 planners, and the four bank
 orders of `run_adaptive.py` are run on j with the same readout and the same
-posterior L1 risk R1. For a target mean budget B* in {30, 60} the threshold
+posterior L1 risk R1. For a target mean budget B* in {30, 55} the threshold
 is
 
-    tau_hat(draw, J_cal, method, B*) = argmin_tau | mean_j rollouts_j(tau) - B* |
+    tau_hat(draw, K_cal, method, B*) = argmin_tau | mean_j rollouts_j(tau) - B* |
 
 over a 0.001 grid — a cost target, not an accuracy target, so held-out
 SR-MAE and IES are measured, not selected. Output: results/tau_hat.json,
@@ -32,14 +32,16 @@ from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
 from scirt.curves import marginal_curves
 from scirt.bayes import track, stop_at
-from scirt.acquisition import localize_cover, K_LOCALIZE
+from scirt.curves import PRIOR
+from scirt.bayes import post_from
+from scirt.acquisition import r1_pick
 from scirt.baselines import fluid_order, metabench_order
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-JCALS = tuple(int(x) for x in os.environ.get('SCIRT_JCALS', '7, 10, 13').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
-TMAX = 120
-TARGETS = (30, 60)
+TMAX = 110
+TARGETS = (30, 55)
 TAUS = np.round(np.arange(0.010, 0.0801, 0.001), 3)
 
 
@@ -57,7 +59,7 @@ def run(seeds):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
-        for Jc in JCALS:
+        for Jc in KCALS:
             cs = subsample(cols, seed, Jc)
             for j in cs:
                 csl = [c for c in cs if c != j]
@@ -68,7 +70,14 @@ def run(seeds):
                 T = min(TMAX, n)
                 M1 = marginal_curves(f1['b'][bi], f1['s'][bi])
                 a, b = f2['a'][bi], f2['b'][bi]
-                orders = {'SC-IRT': localize_cover(a, b, f2['th'], yy, K=K_LOCALIZE, T=T),
+                def _r1_traj(M, y, n):
+                    S, q = [], PRIOR.copy()
+                    for _ in range(min(T, n)):
+                        rem = [i for i in range(n) if i not in S]
+                        S.append(r1_pick(M, y, S, q, rem))
+                        q = post_from(M, y, S)
+                    return S
+                orders = {'SC-IRT': _r1_traj(M1, yy, n),
                           'Fluid': fluid_order(a, b, yy, T),
                           'metabench': [int(i) for i in metabench_order(a, b, T, n)],
                           'Random': [int(i) for i in np.random.RandomState(700 + seed * 20 + j).permutation(n)[:T]]}
@@ -77,14 +86,14 @@ def run(seeds):
                     Sh, R1 = track(M1, yy, o)
                     rec[k] = {'Shat': [float(x) for x in Sh], 'R1': [float(x) for x in R1]}
                 recs.append(rec)
-            print(f'seed {seed} J{Jc} done', flush=True)
+            print(f'seed {seed} K{Jc} done', flush=True)
     return recs
 
 
 def select(recs):
     TAU, summary = {}, {}
     for seed in sorted(set(r['seed'] for r in recs)):
-        for J in JCALS:
+        for J in KCALS:
             rj = [r for r in recs if r['seed'] == seed and r['J'] == J]
             for o in ORD:
                 for tg in TARGETS:
@@ -93,9 +102,9 @@ def select(recs):
                     TAU[f'{seed}|{J}|{o}|{tg}'] = tau
                     summary.setdefault((J, o, tg), []).append(tau)
     print('\n===== calibration-fixed thresholds tau_hat: median [IQR] over draws =====')
-    for J in JCALS:
+    for J in KCALS:
         for tg in TARGETS:
-            print(f'J_cal {J:2d} target {tg}: ' + '  '.join(
+            print(f'K_cal {J:2d} target {tg}: ' + '  '.join(
                 f'{o} {np.median(summary[(J, o, tg)]):.3f} [{np.percentile(summary[(J, o, tg)], 25):.3f},'
                 f'{np.percentile(summary[(J, o, tg)], 75):.3f}]' for o in ORD))
     return TAU, summary
@@ -122,6 +131,10 @@ def main():
     json.dump(TAU, open(OUT / 'tau_hat.json', 'w'))
     assert len(set(r['seed'] for r in recs)) == R_DRAWS
     print('tau_hat.json written')
+    for J, tg, v in ((7, 30, .039), (7, 55, .026), (10, 30, .041), (10, 55, .026),
+                     (16, 30, .041), (16, 55, .027)):
+        m = float(np.median(summary[(J, 'SC-IRT', tg)]))
+        assert abs(m - v) < .0015, (J, tg, m)
     print('anchors OK')
 
 

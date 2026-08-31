@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Psychometric model adequacy on the calibration block (ATLAS reports M2 /
-RMSEA; with 13 raters we use what is identifiable): held-out cell
+RMSEA; with 16 raters we use what is identifiable): held-out cell
 negative log-likelihood of 1PL vs 2PL vs 3PL, and the split-half
 reliability of log-discrimination across two random halves of the
 calibration planners. If 2PL/3PL do not predict held-out responses better
@@ -67,7 +67,7 @@ def main():
     print(f'  2PL - 1PL: {d.mean():+.4f} +- {d.std(ddof=1) / 4:.4f}   '
           f'3PL - 1PL: {(np.array(NLL["3pl"]) - np.array(NLL["1pl"])).mean():+.4f}')
     r, se = mean_se(REL)
-    print(f'\nsplit-half reliability of log a-hat (6/7-planner halves): {r:+.3f} +- {se:.3f}')
+    print(f'\nsplit-half reliability of log a-hat (8/8-planner halves): {r:+.3f} +- {se:.3f}')
     OUT.mkdir(exist_ok=True)
     json.dump({'nll': {m: list(map(float, NLL[m])) for m in NLL}, 'rel_loga': list(map(float, REL))},
               open(OUT / 'model_adequacy.json', 'w'))

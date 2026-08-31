@@ -8,13 +8,13 @@ experiments/run_us.py does for every row of Table 3A.
 
     preds[draw] = (route_ids, b_tilde)      # draw in 0..15, routes of block C
 
-Ability theta_j for the 13 calibration planners comes from the canonical
+Ability theta_j for the 16 calibration planners comes from the canonical
 1PL calibration of block A (`calibration.calibrate_dense`, it = 800), so
 descriptor rows, LLTM+e and encoder predictions are all scored on one
 theta. Predictions may be a subset of the C routes of a draw; missing
 routes are skipped (and counted).
 
-The shipped encoder artifacts (data/encoder/unified_enc_pred_*.npz) are in
+The shipped encoder artifacts (data/encoder/relgraph_r2_s*.npz) are in
 this format: keys draw{r}_rt / draw{r}_bt.
 """
 import numpy as np

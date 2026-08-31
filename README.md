@@ -1,77 +1,80 @@
 # SC-IRT — Scene-Conditioned Item Response Theory for Closed-Loop Driving Evaluation
 
 Official code release. Treat a driving scenario as a test item and a planner
-as an examinee. SC-IRT separates *robust performance inference* from
-*acquisition*: it propagates the uncertainty of a scene bank calibrated from
-a handful of planners, then chooses which scenes to run according to the
-quantity each evaluation regime needs — and it learns scene difficulty from
-the scene itself so that scenarios no planner has driven can be scored.
+as an examinee. SC-IRT is built around a single probabilistic object — an
+uncertainty-aware Rasch posterior over the scene bank and the planner's
+ability — and uses it for everything: reconstructing the benchmark success
+rate, choosing which scene to roll out next, and deciding when to stop.
+
+```
+evaluation model   y_sk ~ Bernoulli(sigmoid(theta_k - b_s)),  b_s | A ~ N(b_hat_s, s_s^2)
+readout            SR_hat = (1/S) [ sum observed y + sum m_s(theta_hat) ]
+acquisition        argmax_s  R1(D_t) - E_{Y_s}[ R1(D_t + (s, Y_s)) ]      (Delta-R1)
+stopping           R1(D_t) <= tau_hat,  R1 = E[ |SR - SR_hat_t| | D_t ]
+```
+
+*Same posterior, same target for inference, acquisition and stopping.* No
+auxiliary discrimination model, no phase switch, no localisation budget: an
+acquisition-criterion ablation shows every posterior-based criterion within
+the paired intervals, so the target-aligned one is used.
 
 Everything in the paper runs from this repository: the data ships in
-`data/` (~2.3 MB, no external downloads), and every table-producing entry
+`data/` (under 1 MB, no external downloads) and every table-producing entry
 point ends by asserting the published numbers (`anchors OK`).
 
-- [[Protocol]](PROTOCOL.md) — the specification: models, split, acquisition, stopping, metrics.
+- [[Protocol]](PROTOCOL.md) — models, split, acquisition, stopping, metrics.
 - [[Results]](RESULTS.md) — the numbers of record, one section per table.
 - [[Reproducibility]](REPRODUCIBILITY.md) — anchors ledger, RNG registry, environment.
 
-## The method in four lines
+## Contributions
 
-```
-evaluation model    y_ij ~ Bernoulli(sigmoid(theta_j - b_i)),   b_i | A ~ N(b_hat_i, s_i^2)   (Rasch, item uncertainty kept)
-acquisition model   a joint 2PL fit of the same panel — used only to choose scenes, never to score
-unseen scenes       b_i | x_i ~ N(w^T x_i, sigma^2)  (LLTM+e)  or a trajectory encoder
-stopping            R1(D_t) = E[ |S - S_hat_t| | D_t ] <= tau     (posterior L1 risk of the reported success rate)
-```
-
-Contributions, in the order the paper makes them:
-
-- **C1 Uncertain item-bank inference.** Small planner panels make every
-  scene difficulty uncertain; SC-IRT propagates p(b_i | A) into the item
-  curves instead of fixing b_hat_i. The Rasch readout is a drop-in for any
-  selector (`run_readout_dropin.py`).
+- **C1 Uncertain item-bank inference.** A small calibration panel makes
+  every scene difficulty uncertain; SC-IRT keeps p(b_s | A) (conditional
+  Laplace) and marginalises it into every probability it computes.
 - **C2 Target-aligned acquisition.** *Acquire for the quantity that must
-  generalise.* UP (full-bank success rate): localize the new planner for
-  K = 20 rollouts with 2PL Fisher, then cover the bank in population-Fisher
-  order. UPS (an ability to transport to unseen scenes): theta-EIG under the
-  evaluation model. US: no acquisition.
-- **C3 Risk-based adaptive stopping.** Stop when the posterior expected
-  absolute error of the reported success rate is below tau; thresholds are
-  fixed on the calibration panel, never on held-out planners.
-- **C4 Unseen-scene difficulty transfer.** x -> b enables US and UPS.
+  generalise*: the posterior L1 risk of the reported success rate in UP,
+  evaluation-model information for the transported ability in UPS, nothing
+  in US.
+- **C3 Risk-based adaptive stopping.** Stop when the same risk falls below
+  tau_hat, which is fixed on the calibration panel (leave-one-planner-out,
+  cost-matched) and never selected on evaluation planners.
+- **C4 Scene-conditioned difficulty.** x -> b via the hand-crafted LLTM+e
+  path and the RelGraph relational scene-graph encoder (shipped as per-run
+  predictions), enabling unseen-scene (US) and joint (UPS) generalisation.
 
-## The split
+## The primary protocol
 
-13/3 planners x 36/8 scenario types, 16 Monte-Carlo draws
-(`scirt/splits.py`). Within a draw the three regimes share the partition:
+22-planner x 220-route Bench2Drive panel; per draw (R = 16), 16 calibration
+: 6 evaluation planners and 36 : 8 scenario types. Rollout budgets are whole
+scenario types: B = 5 x {6, 11, 22} = {30, 55, 110}; calibration-panel sizes
+K_cal in {7, 10, 16}. 96 evaluations per cell. A second, two-stage panel
+(NAVSIM navhard leaderboard, 87 unique submissions x 225 units) reproduces
+the UP comparison off Bench2Drive.
 
-|                    | train planners (13) | held-out planners (3) |
-|--------------------|---------------------|-----------------------|
-| train types (36)   | A: calibration      | **UP** evaluation     |
-| held-out types (8) | **US** evaluation   | **UPS** target        |
+|                          | calibration planners (16) | evaluation planners (6) |
+|--------------------------|---------------------------|-------------------------|
+| calibration types (36)   | A: calibration            | **UP** evaluation       |
+| evaluation types (8)     | **US** evaluation         | **UPS** target          |
 
 ## Getting started
 
 ```bash
-pip install -e .[figs]      # numpy, scipy, scikit-learn, torch (+ matplotlib for the figures)
+pip install -e .[figs]      # numpy, scipy, scikit-learn, torch (+ matplotlib)
 pytest tests/ -q            # fast invariants, CPU
 
 # Reproduce the paper (GPU). Heavy scripts accept --seeds lo hi shards + --merge.
-python experiments/run_up_frontier.py       # Table 1 + full budget grids (~1 h)
-python experiments/run_tau_calibration.py   # calibration-fixed stopping thresholds (~1.5 h)
-python experiments/run_adaptive.py          # Table 2 + cost-error figure data (~1.5 h)
-python experiments/run_k_calibration.py     # the localize budget K on the calibration panel (~1.5 h)
-python experiments/run_us.py                # Table 3A + descriptor ablation (~40 min)
-python experiments/run_ups.py               # Table 3B (~10 min)
-python experiments/run_readout_dropin.py    # analysis: the Rasch readout under every selector (~40 min)
-python experiments/run_model_adequacy.py    # appendix: evaluation-model adequacy (~10 min)
-python experiments/run_calibration_stability.py   # appendix: calibration stability
+python experiments/run_up_frontier.py       # Table 1 (fixed budgets)
+python experiments/run_tau_calibration.py   # calibration-fixed stopping thresholds
+python experiments/run_adaptive.py          # Table 2 (adaptive) + cost-error data
+python experiments/run_ablation.py          # component ablation (2 x 2)
+python experiments/run_us.py                # Table 3A + descriptor ablation
+python experiments/run_ups.py               # Table 3B
+python experiments/run_navhard.py           # Table 4: the two-stage NAVSIM panel
+python experiments/run_readout_dropin.py    # analysis: the readout under every selector
+python experiments/run_model_adequacy.py    # appendix diagnostics
+python experiments/run_calibration_stability.py
 python experiments/make_figures.py          # figures from the results jsons
 ```
-
-Each table-producing script prints its table and finishes with `anchors OK`;
-the two appendix diagnostics, `eval_us_predictions.py` and `make_figures.py`
-print their numbers without an assertion.
 
 ## What is in the box
 
@@ -79,58 +82,31 @@ print their numbers without an assertion.
 scirt/          the library (PROTOCOL.md has the maths)
 experiments/    one entry point per paper table + build_data.py (provenance)
 data/
-  matrices/     16 x 220 pass/fail response panel; route -> scenario type
-  features/     six scene-descriptor sets (cmdkin, scenparamz, gtrisk, ...)
+  matrices/     22 x 220 pass/fail response panel (+ the 16-planner panel it extends)
+  features/     scene-descriptor sets (cmdkin, scenparamz, gtrisk, ...)
   b2d/          traffic-feature table and kin/density baselines
-  encoder/      per-run encoder predictions for the unified split (d64/d96,
-                3 seeds each — single runs; prediction ensembling is banned)
-                + the trajectory tensors to retrain from scratch
-results/        written by the scripts (gitignored); the numbers of record are RESULTS.md
+  encoder/      RelGraph R2 per-run out-of-fold difficulty predictions
+                (3 independent runs; prediction ensembling is banned)
+  navhard/      the two-stage NAVSIM leaderboard panel (provenance in REPRODUCIBILITY.md)
+results/        written by the scripts (gitignored); numbers of record are RESULTS.md
 tests/          fast invariants
-train/          train_encoder_unified.py — the paper's encoder recipe
 ```
-
-The response panel: 16 open-source end-to-end planners x 220 Bench2Drive
-routes (3,476 of 3,520 cells observed), 44 scenario types. All derived data
-was packaged by `experiments/build_data.py`, which re-verifies each artifact
-against its source.
-
-## The 22-planner panel
-
-`data/matrices/b2d_e2e22_response_matrix.csv` extends the 16-planner panel
-with six more open-source planners (R2SE, Orion-Lite, Hydra-NeXt, PGS,
-DriveMoE-Base, Drive-pi0-Base; 4,796 of 4,840 cells observed, same 220
-routes; `b2d_e2e22_build_report.json` records the derived vs published
-success rates). Every experiment runs on it unchanged through environment
-overrides — the split then holds out 3 of 22 planners (19 calibrate):
-
-```bash
-export SCIRT_RESPONSE_CSV=data/matrices/b2d_e2e22_response_matrix.csv
-export SCIRT_RESULTS_DIR=results_e22          # keep the 16-planner results separate
-SCIRT_JCALS=4,7,10,13,19 python experiments/run_up_frontier.py   # J_cal grid incl. the full 19-planner panel
-```
-
-The published anchors are for the 16-planner panel; on the 22-planner panel
-the scripts print their tables and the final anchor assertion is expected to
-fail. The shipped encoder predictions (`data/encoder/*.npz`) are keyed to the
-16-planner draws and must be retrained for the 22-planner split
-(`train/train_encoder_unified.py` honours `SCIRT_RESPONSE_CSV`).
 
 ## Honest caveats
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
-  at 48 evaluations per cell; Table 1 marks which cells are.
-- At large fixed budgets (B >= 100) representative static subsets and
-  random sampling estimate the mean better than any adaptive rule, and with
-  a 4-planner calibration panel the bank is too wrong for model-based
-  extrapolation at any budget above ~30 (`figs/fig_jb_map`). The J_cal x B
-  map is part of the result, not a footnote.
-- The first K = 20 picks of the UP rule are the Fluid selection rule; the
-  cover phase is the Total-Fisher static order. What is new is the
-  inference layer, the target-aligned two-phase design and its
-  calibration-time constants, and the risk-based stop — not a new item
-  selection criterion.
-- Encoder rows use single runs; seeds are summarised as mean +- SD.
+  at 96 evaluations per cell; the tables mark which cells are.
+- SC-IRT's advantage concentrates where evaluation is hard: small
+  calibration panels (K_cal <= 10) and low-to-medium budgets. With a rich
+  panel at B = 110 (61% of the per-draw bank executed) representative random
+  sampling wins — that saturation column is part of the result.
+- The RelGraph encoder ships as predictions; its training code depends on
+  Bench2Drive raw rollouts (not redistributable) and is staged for a
+  separate release. The LLTM+e descriptor path is fully reproducible here
+  and is statistically tied with it.
+- The navhard panel is dominated by a few teams' submission sweeps;
+  near-duplicate submissions can appear on both sides of the planner split
+  (this affects every method identically). See RESULTS.md for the caveats.
 
 ## Citation
 

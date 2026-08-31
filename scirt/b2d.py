@@ -39,22 +39,22 @@ def load_route_types():
 
 def load_response_rows():
     """Raw response matrix: (route_ids in CSV order, planner rows)."""
-    rows = list(csv.reader(open(os.environ.get('SCIRT_RESPONSE_CSV', DATA / 'matrices' / 'b2d_e2e16_response_matrix.csv'))))
+    rows = list(csv.reader(open(os.environ.get('SCIRT_RESPONSE_CSV', DATA / 'matrices' / 'b2d_e2e22_response_matrix.csv'))))
     rids = rows[0][1:]
     planners = [r for r in rows[1:] if r[0] != EXCLUDED_PLANNER]
     return rids, planners
 
 
 class Panel:
-    """The 16-planner x 220-route response panel plus everything the
+    """The 22-planner x 220-route response panel (a different panel via SCIRT_RESPONSE_CSV) plus everything the
     experiments need, in the canonical ordering.
 
     Attributes
     ----------
     rids      : route ids, CSV column order (the canonical route order)
     names     : planner names, CSV row order
-    J         : number of planners (16)
-    Y         : {(route_id, planner_idx): 0/1} sparse dict (44 cells missing)
+    J         : number of planners (22)
+    Y         : {(route_id, planner_idx): 0/1} sparse dict (4,796 of 4,840 cells observed)
     sn        : {route_id: scenario_type}
     feat      : {route_id: 56d descriptor} (cmdkin + scenparamz)
     allr      : routes present in both feat and sn, CSV order (220)

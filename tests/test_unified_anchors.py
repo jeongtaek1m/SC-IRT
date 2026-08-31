@@ -16,8 +16,8 @@ from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS, H_P, H_S
 from scirt.curves import THG, PRIOR, GX, GW, marginal_curves, sig
 from scirt.bayes import post_from, map_fill, r1_risk, track, stop_at
-from scirt.acquisition import localize_cover, eig_pick, population_fisher, K_LOCALIZE
-from scirt.baselines import fluid_order, metabench_order
+from scirt.acquisition import r1_pick, eig_pick
+from scirt.baselines import fluid_order, metabench_order, population_fisher
 from scirt.metrics import ies
 
 
@@ -29,32 +29,32 @@ def panel():
 def test_panel_invariants(panel):
     assert len(panel.allr) == 220
     assert len(panel.utypes) == 44
-    assert panel.J == 16
-    assert len(panel.Y) == 3476              # 3520 cells - 44 missing
+    assert panel.J == 22
+    assert len(panel.Y) == 4796              # 4840 cells - 44 missing
     assert 'PDM-Lite' not in panel.names
     assert panel.sn['11755'] == 'EnterActorFlow'
 
 
 def test_split_protocol_constants():
-    assert (R_DRAWS, H_P, H_S) == (16, 3, 8)
-    assert K_LOCALIZE == 20
+    assert (R_DRAWS, H_P, H_S) == (16, 6, 8)
 
 
 def test_split_draw0_pinned(panel):
     hp, ht = unified_split(0, panel.utypes, panel.J)
-    assert hp == [2, 5, 13]
-    assert sorted(ht) == ['ConstructionObstacle', 'CrossingBicycleFlow',
+    assert hp == [3, 5, 6, 17, 18, 20]
+    assert sorted(ht) == ['BlockedIntersection', 'ConstructionObstacle',
                           'EnterActorFlow', 'HardBreakRoute',
                           'NonSignalizedJunctionLeftTurn',
-                          'ParkingCrossingPedestrian', 'ParkingCutIn',
-                          'StaticCutIn']
+                          'ParkedObstacleTwoWays',
+                          'SignalizedJunctionRightTurn',
+                          'VanillaNonSignalizedTurnEncounterStopsign']
 
 
 def test_splits_are_paired_across_regimes(panel):
     """Every draw partitions both axes at once, so US/UP/UPS share it."""
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
-        assert len(hp) == 3 and len(ht) == 8
+        assert len(hp) == 6 and len(ht) == 8
         cal, new = panel.split_routes(ht)
         assert len(cal) + len(new) == 220
         assert all(panel.sn[r] in ht for r in new)
@@ -97,26 +97,35 @@ def test_acquisition_rules_are_deterministic():
     mu, M, y = _toy()
     a = np.ones(40)
     th = np.linspace(-1, 1, 7)
-    o1 = localize_cover(a, mu, th, y, K=5, T=20)
-    o2 = localize_cover(a, mu, th, y, K=5, T=20)
-    assert o1 == o2 and len(set(o1)) == 20
-    assert o1[5:] == [i for i in np.argsort(-population_fisher(a, mu, th)) if i not in set(o1[:5])][:15]
-    assert localize_cover(a, mu, th, y, K=20, T=20) == fluid_order(a, mu, y, 20)   # K = T: pure localize
+    S, q = [], post_from(M, y, [])
+    for _ in range(8):
+        rem = [i for i in range(40) if i not in S]
+        S.append(r1_pick(M, y, S, q, rem))
+        q = post_from(M, y, S)
+    assert len(set(S)) == 8
+    S2, q = [], post_from(M, y, [])
+    for _ in range(8):
+        rem = [i for i in range(40) if i not in S2]
+        S2.append(r1_pick(M, y, S2, q, rem))
+        q = post_from(M, y, S2)
+    assert S == S2
     q = post_from(M, y, [0, 3, 7])
     rem = [i for i in range(40) if i not in (0, 3, 7)]
     assert eig_pick(q, M, rem) == eig_pick(q, M, rem)
+    assert len(population_fisher(a, mu, th)) == 40
     mb = metabench_order(a, mu, 20, 40)
     assert mb[:10] == metabench_order(a, mu, 10, 40)        # prefix property
 
 
 def test_ies_definition():
-    assert ies(0.0347, 60, 0.0347) == pytest.approx(1.0)
-    assert ies(0.0360, 31.0, 0.0449) == pytest.approx(0.414, abs=0.001)
+    assert ies(0.04, 55, 0.04) == pytest.approx(1.0)
+    assert ies(0.0342, 54.2, 0.0408) == pytest.approx(0.826, abs=0.001)
 
 
 def test_slow_anchor_entry_points_exist():
     exp = Path(__file__).resolve().parents[1] / 'experiments'
-    for name in ('run_up_frontier', 'run_adaptive', 'run_tau_calibration', 'run_k_calibration',
+    for name in ('run_up_frontier', 'run_adaptive', 'run_tau_calibration',
                  'run_readout_dropin', 'run_us', 'run_ups', 'run_model_adequacy',
+                 'run_ablation', 'run_navhard',
                  'run_calibration_stability', 'eval_us_predictions', 'build_data', 'make_figures'):
         assert (exp / f'{name}.py').exists(), name

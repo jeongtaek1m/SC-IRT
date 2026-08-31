@@ -14,7 +14,6 @@ REPO = Path(__file__).resolve().parents[1]
 FEAT_SRC = Path('/data1/jeongtae/b2d_jepa/features')
 IRT = Path('/home/jeongtae/SCIRT/b2d_irt')
 CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
-TENSORS = Path('/data2/jeongtae/navsim_interact/b2d_tensors.npz')
 
 FEATURES = ['eval_cmdkin_stats', 'eval_scenparamz', 'eval_gtrisk',
             'eval_routegeom', 'eval_smart_ent', 'eval_agentjepa']
@@ -55,14 +54,12 @@ def main():
     copy_checked(IRT / 'b2d_traffic_features_220.csv', REPO / 'data/b2d/traffic_features_220.csv')
     copy_checked(IRT / 'baseline_kin_den.npz', REPO / 'data/b2d/baseline_kin_den.npz')
     print('encoder artifacts (unified split, per-run — no ensembling):')
-    for d in (64, 96):
-        for s in (0, 1, 2):
-            copy_checked(IRT / f'results/unified_enc_pred_d{d}s{s}.npz',
-                         REPO / 'data/encoder' / f'unified_enc_pred_d{d}s{s}.npz')
-            copy_checked(IRT / f'results/unified_us_encoder_d{d}s{s}.json',
-                         REPO / 'data/encoder' / f'unified_us_encoder_d{d}s{s}.json')
-    print('encoder training tensors:')
-    copy_checked(TENSORS, REPO / 'data/encoder/b2d_tensors.npz')
+    for s in (0, 1, 2):
+        copy_checked(IRT / f'relgraph_r2_s{s}.npz',
+                     REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')
+    print('navhard panel:')
+    copy_checked(IRT / 'navhard/navhard_binary_panel.npz',
+                 REPO / 'data/navhard/navhard_binary_panel.npz')
     print('checks:')
     verify_route_types()
     src = Path('/home/jeongtae/SCIRT/SC-IRT/result/b2d/b2d_e2e16_response_matrix.csv')

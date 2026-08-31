@@ -10,8 +10,24 @@ import warnings
 
 import numpy as np
 
-from .acquisition import theta_newton, population_fisher
 from .curves import sig, THG
+
+
+def theta_newton(b, y, a, it=50):
+    """Newton MAP ability under a 2PL curve set (N(0,1) prior, clipped)."""
+    t = 0.0
+    for _ in range(it):
+        p = sig(a * (t - b))
+        g = (a * (y - p)).sum() - t
+        h = -((a ** 2) * p * (1 - p)).sum() - 1.0
+        t -= g / h
+    return float(np.clip(t, -6, 6))
+
+
+def population_fisher(a, b, th_cal):
+    """Mean 2PL Fisher information over the calibration planners' abilities."""
+    return np.array([np.mean([(a[i] ** 2) * sig(a[i] * (t - b[i])) * (1 - sig(a[i] * (t - b[i]))) for t in th_cal])
+                     for i in range(len(a))])
 
 
 def fluid_order(a, b, y, T):
@@ -29,7 +45,7 @@ def fluid_order(a, b, y, T):
 
 def total_fisher_order(a, b, th_cal):
     """Total-Fisher static: sum of 2PL information over the calibration
-    planners (the same order as SC-IRT's cover phase)."""
+    planners, applied as a static order."""
     return [int(i) for i in np.argsort(-population_fisher(a, b, th_cal))]
 
 

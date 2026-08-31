@@ -6,7 +6,7 @@ Every published selector's subsets are re-scored with SC-IRT's readout
 native estimator; compared with the native numbers of `run_up_frontier.py`
 this isolates what the uncertainty-aware inference layer contributes,
 independently of how scenes were chosen. The gain is largest under
-calibration scarcity (J_cal = 7).
+calibration scarcity (K_cal = 7).
 
     python experiments/run_readout_dropin.py            # ~40 min, GPU
 """
@@ -28,8 +28,8 @@ from scirt.baselines import (fluid_order, total_fisher_order, metabench_order, k
                              stratified_order)
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-JCALS = tuple(int(x) for x in os.environ.get('SCIRT_JCALS', '7, 10, 13').split(','))
-BG = (10, 20, 30, 40, 60, 80)
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
+BG = (30, 55, 110)
 SELS = ('Fluid', 'Total-Fisher', 'metabench', 'tinyBenchmarks', 'AnchorPoints', 'Random')
 
 
@@ -53,12 +53,12 @@ def anchor_set(Rb, budget):
 
 def main():
     panel = Panel()
-    ERR = {s: {J: {B: [] for B in BG} for J in JCALS} for s in SELS}
+    ERR = {s: {J: {B: [] for B in BG} for J in KCALS} for s in SELS}
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
-        for Jc in JCALS:
+        for Jc in KCALS:
             cs = subsample(cols, seed, Jc)
             f1 = calibrate(panel.Y, calR, cs, mode='1pl')
             f2 = calibrate(panel.Y, calR, cs, mode='2pl')
@@ -92,10 +92,10 @@ def main():
         recs = json.load(open(fp))
         for s in SELS:
             key = {'Random': 'Random + IRT'}.get(s, s)
-            nat[s] = {J: {B: np.mean([r['err'][key][str(B)] for r in recs if r['J'] == J]) for B in BG} for J in JCALS}
+            nat[s] = {J: {B: np.mean([r['err'][key][str(B)] for r in recs if r['K'] == J]) for B in BG} for J in KCALS}
     print('\n===== selector subsets re-scored with the SC-IRT readout (native readout in parentheses) =====')
-    for Jc in JCALS:
-        print(f'-- J_cal = {Jc} --      ' + ' '.join(f'{B:>15d}' for B in BG))
+    for Jc in KCALS:
+        print(f'-- K_cal = {Jc} --      ' + ' '.join(f'{B:>15d}' for B in BG))
         for s in SELS:
             cells = []
             for B in BG:
@@ -103,11 +103,13 @@ def main():
                 cells.append(f'{v:.4f} ({nat[s][Jc][B]:.4f})' if nat else f'{v:.4f}')
             print(f'   {s:15s} ' + ' '.join(f'{c:>15s}' for c in cells))
     OUT.mkdir(exist_ok=True)
-    json.dump({s: {str(J): {str(B): [float(x) for x in ERR[s][J][B]] for B in BG} for J in JCALS} for s in SELS},
+    json.dump({s: {str(J): {str(B): [float(x) for x in ERR[s][J][B]] for B in BG} for J in KCALS} for s in SELS},
               open(OUT / 'readout_dropin.json', 'w'))
-    for (s, J, B, ref) in (('Fluid', 13, 30, .0387), ('Fluid', 7, 30, .0421), ('Total-Fisher', 13, 60, .0266),
-                           ('metabench', 13, 80, .0236)):
-        assert abs(np.mean(ERR[s][J][B]) - ref) < .002, (s, J, B, np.mean(ERR[s][J][B]))
+    for sel, J, B, v in (('Total-Fisher', 7, 30, .0525), ('AnchorPoints', 7, 30, .0589),
+                         ('Fluid', 7, 55, .0420), ('AnchorPoints', 16, 110, .0194),
+                         ('Random', 10, 110, .0193)):
+        m = float(np.mean(ERR[sel][J][B]))
+        assert abs(m - v) < .0003, (sel, J, B, m)
     print('anchors OK')
 
 

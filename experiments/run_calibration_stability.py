@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Diagnostic: how much do theta-hat and b-hat move between the full
-16 x 220 panel fit and the per-draw calibration block (13 planners x ~180
+22 x 220 panel fit and the per-draw calibration block (16 planners x ~180
 routes)? Compared on the shared routes / planners. Both fits are
 theta-mean-centred on *different* planner sets, so a constant offset is an
 identification convention, not estimation change: raw and mean-aligned
@@ -63,11 +63,11 @@ def main():
         v = np.array([x[k] for x in L])
         return f'{v.mean():+.3f} (min {v.min():+.3f}, max {v.max():+.3f})'
 
-    print('\n===== b-hat: full 16x220 vs A-block 13x~180, shared routes (16 draws) =====')
+    print('\n===== b-hat: full 22x220 vs A-block 16x~180, shared routes (16 draws) =====')
     for k in ('pearson', 'spearman', 'offset', 'rmse_raw', 'rmse_aligned', 'max_aligned', 'frac_gt_s'):
         print(f'  {k:13s} {summ(B, k)}')
     print(f'  scale: sd(b-hat) {summ(B, "sd_b")}; mean s_i  A-block {summ(B, "mean_s_A")}  full {summ(B, "mean_s_F")}')
-    print('\n===== theta-hat: full vs A-block, shared 13 planners =====')
+    print('\n===== theta-hat: full vs A-block, shared 16 planners =====')
     for k in ('pearson', 'spearman', 'offset', 'rmse_raw', 'rmse_aligned', 'max_aligned'):
         print(f'  {k:13s} {summ(T, k)}')
     print(f'  scale: sd(theta-hat) {summ(T, "sd_t")}')

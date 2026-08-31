@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Table 3A (+ descriptor ablation) — US: unseen-scene difficulty prediction.
 
-Pooled cell-level evaluation on C = (held-out-type routes) x (13 calibration
+Pooled cell-level evaluation on C = (evaluation-type routes) x (16 calibration
 planners), 16 draws x ~40 routes = 640 route evaluations.
 
 Sections
@@ -14,8 +14,8 @@ Sections
           prediction artifacts (single runs; seeds summarised as metric
           mean +- SD — prediction ensembling is banned).
 
-Anchors: null 0.710/.207; LLTM+e 0.764/.177/+0.510; 2-stage 0.760/.178/+0.487;
-sigma-hat 0.593; PV share 16.4%; hc +0.486; kin +0.428; d64 rho +0.469+-.011.
+Anchors: null .694/.199; LLTM+e .758/.170/+.555; two-stage .757/+.553;
+sigma-hat .696; PV share 4.5%; hc +.541; kin +.514; RelGraph .754/+.532.
 """
 import json
 import os
@@ -85,6 +85,8 @@ def main():
     N = len(panel.allr)
     sn, allr = panel.sn, panel.allr
     ROWS = list(arms) + ['Oracle (resp-calibrated C)']
+    RELG = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in (0, 1, 2)}
+    ROWS += [f'RelGraph R2 s{s_}' for s_ in (0, 1, 2)]
     POOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []} for a in ROWS}
     LPOOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []}
              for a in ('lltm', 'lltm-marg')}
@@ -112,6 +114,11 @@ def main():
         for name in ROWS:                               # Table 3A descriptor arms
             if name.startswith('Oracle'):
                 bte = bC
+            elif name.startswith('RelGraph'):
+                pz = RELG[int(name[-1])]
+                rt = [str(x) for x in pz[f'draw{seed}_rt']]
+                lut = {rt[k]: float(pz[f'draw{seed}_bt'][k]) for k in range(len(rt))}
+                bte = np.array([lut[allr[i]] for i in te])
             else:
                 feat = arms[name]
                 Z = np.vstack([feat[allr[i]] for i in tr])
@@ -182,6 +189,11 @@ def main():
         print(f'{label:34s} AUROC {auc:.3f} ({auc - auc0:+.3f})  MAE {mae:.3f} '
               f'({1 - mae / mae0:+.1%})  rho {rho:+.3f}')
         results[name] = {'auroc': auc, 'mae': mae, 'rho': rho}
+    rg = [results[f'RelGraph R2 s{s_}'] for s_ in (0, 1, 2)]
+    print('RelGraph R2 scene encoder (3 runs)  AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}'.format(
+        np.mean([r['auroc'] for r in rg]), np.std([r['auroc'] for r in rg], ddof=1),
+        np.mean([r['mae'] for r in rg]), np.std([r['mae'] for r in rg], ddof=1),
+        np.mean([r['rho'] for r in rg]), np.std([r['rho'] for r in rg], ddof=1)))
     print(f'\nsigma-hat (LLTM+e residual difficulty SD): '
           f'{np.mean(SIGS):.3f} +- {np.std(SIGS, ddof=1):.3f}')
     d, lo, hi, p = cluster_boot_rho_delta(LPOOL['lltm']['bt'],
@@ -192,28 +204,14 @@ def main():
     bv = np.mean(PV['rho_between']) * (1 + 1 / 20)
     print(f'Plausible values: calibration-noise share of US rho uncertainty = {bv / (wv + bv):.1%}')
 
-    # ---- (enc) encoder rows from the shipped artifacts --------------------
-    print('\n===== Encoder rows (shipped per-run artifacts; no ensembling) =====')
-    enc = {}
-    for dd in (64, 96):
-        rows = [json.load(open(DATA / 'encoder' / f'unified_us_encoder_d{dd}s{s}.json'))['unified']
-                for s in (0, 1, 2)]
-        rhos = [r['rho_pooled'] for r in rows]
-        aucs = [r['auroc'] for r in rows]
-        maes = [r['mae'] for r in rows]
-        enc[dd] = dict(rho=rhos, auroc=aucs, mae=maes)
-        print(f'  d{dd}: AUROC {np.mean(aucs):.3f}+-{np.std(aucs, ddof=1):.3f}  '
-              f'MAE {np.mean(maes):.3f}+-{np.std(maes, ddof=1):.3f}  '
-              f'rho {np.mean(rhos):+.3f}+-{np.std(rhos, ddof=1):.3f}')
     # Table 3A(b) per-run Delta1 (enc - hand-crafted) using the shipped preds ----
     ck = load_features('eval_cmdkin_stats')
     gtr = load_features('eval_gtrisk')
     hc = {k: np.concatenate([ck[k], gtr[k]]) for k in ck if k in gtr}
     BT = {'kin': [], 'hc': []}
     FL = []
-    ENC = {(dd, s): [] for dd in (64, 96) for s in (0, 1, 2)}
-    P = {(dd, s): np.load(DATA / 'encoder' / f'unified_enc_pred_d{dd}s{s}.npz', allow_pickle=True)
-         for dd in (64, 96) for s in (0, 1, 2)}
+    ENC = {s_: [] for s_ in (0, 1, 2)}
+    P = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in (0, 1, 2)}
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
@@ -237,27 +235,26 @@ def main():
     print(f'\n===== Table 3A(b) — ablation (pooled {len(FL)} evaluations) =====')
     print(f'  Kinematics only        rho {rho_kin:+.3f}')
     print(f'  Hand-crafted (ck+gtr)  rho {rho_hc:+.3f}')
-    for dd in (64, 96):
-        rr = [spearmanr(ENC[(dd, s)], FLa).correlation for s in (0, 1, 2)]
-        d1 = [r - rho_hc for r in rr]
-        print(f'  Encoder d{dd} (3 runs)   rho {np.mean(rr):+.3f}+-{np.std(rr, ddof=1):.3f}   '
-              f'Delta1 vs hc {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
+    rr = [spearmanr(ENC[s_], FLa).correlation for s_ in (0, 1, 2)]
+    d1 = [r - rho_hc for r in rr]
+    print(f'  RelGraph R2 (3 runs)   rho {np.mean(rr):+.3f}+-{np.std(rr, ddof=1):.3f}   '
+          f'Delta1 vs hc {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
 
     OUT.mkdir(exist_ok=True)
-    json.dump({'table1': results, 'sigma': list(map(float, SIGS)),
-               'enc': {str(k): v for k, v in enc.items()}},
+    json.dump({'table3a': results, 'sigma': list(map(float, SIGS))},
               open(OUT / 'us.json', 'w'))
 
-    assert abs(auc0 - 0.710) < 0.002 and abs(mae0 - 0.207) < 0.002
+    assert abs(auc0 - 0.694) < 0.002 and abs(mae0 - 0.199) < 0.002
     l = results['lltm']
-    assert abs(l['auroc'] - 0.764) < 0.002 and abs(l['rho'] - 0.510) < 0.005
+    assert abs(l['auroc'] - 0.758) < 0.002 and abs(l['rho'] - 0.555) < 0.005
     t = results['SC-IRT stack (ck+spz)']
-    assert abs(t['auroc'] - 0.760) < 0.002 and abs(t['rho'] - 0.487) < 0.005
-    assert abs(np.mean(SIGS) - 0.593) < 0.01
-    assert abs(bv / (wv + bv) - 0.164) < 0.01
-    assert abs(rho_hc - 0.486) < 0.005 and abs(rho_kin - 0.428) < 0.005
-    assert abs(np.mean(enc[64]['auroc']) - 0.753) < 0.003
-    assert abs(np.mean([spearmanr(ENC[(64, s)], FLa).correlation for s in (0, 1, 2)]) - 0.469) < 0.005
+    assert abs(t['auroc'] - 0.757) < 0.002 and abs(t['rho'] - 0.553) < 0.005
+    assert abs(np.mean(SIGS) - 0.696) < 0.01
+    assert abs(bv / (wv + bv) - 0.045) < 0.02
+    assert abs(rho_hc - 0.541) < 0.005 and abs(rho_kin - 0.514) < 0.005
+    rgm_ = [results[f'RelGraph R2 s{s_}'] for s_ in (0, 1, 2)]
+    assert abs(np.mean([r['auroc'] for r in rgm_]) - 0.754) < 0.003
+    assert abs(np.mean([r['rho'] for r in rgm_]) - 0.532) < 0.005
     print('anchors OK')
 
 

@@ -1,65 +1,64 @@
-"""Target-aligned acquisition (PROTOCOL section 4).
+"""Target-aligned acquisition (PROTOCOL section 4): one posterior, one target.
 
-The acquisition model is a joint 2PL fit of the calibration panel used
-*only* to choose the next scene; every reported number is read out under the
-Rasch evaluation model (`scirt.bayes`). Two regimes, two targets:
+The same uncertainty-aware Rasch posterior that produces the readout and the
+stopping risk also chooses the next scene. No auxiliary model, no phase
+switch, no localisation budget.
 
-  UP   the quantity is the full-bank success rate S -> localize the new
-       planner for K rollouts (2PL Fisher at its Newton-MAP ability), then
-       cover the bank by population-Fisher order (`localize_cover`).
-  UPS  the quantity is the evaluation-scale ability to be transported ->
-       theta-EIG under the evaluation model itself (`eig_pick`).
+  UP   the reported quantity is the full-bank success rate SR, so the next
+       scene is the one whose outcome most reduces the posterior L1 risk of
+       the reported estimate (`r1_pick`):
 
-K is a bank constant estimated at calibration time by leave-one-planner-out
-simulation (`experiments/run_k_calibration.py`); on Bench2Drive the
-simulated loss is flat for K in [15, 30] and K = 20 is used.
+           Delta R1_s = R1(D_t) - E_{Y_s | D_t}[ R1(D_t + (s, Y_s)) ]
+
+       R1 inside the acquisition is evaluated at the branch posterior median
+       (the L1-optimal point) in the same closed form as `scirt.bayes.r1_risk`;
+       the reported point estimate is the MAP fill, which differs from the
+       median by < .0005 SR on this panel.
+
+  UPS  the quantity that must generalise is the evaluation-scale ability, so
+       the probe rule maximises expected information about theta under the
+       same curves (`eig_pick`).
+
 """
 import numpy as np
+from scipy.stats import norm
 
-from .curves import THG, h_, sig
-
-K_LOCALIZE = 20
-
-
-def theta_newton(b, y, a, it=50):
-    """Newton MAP of the acquisition-model ability from the administered
-    items (N(0,1) prior, clipped to the theta grid)."""
-    t = 0.0
-    for _ in range(it):
-        p = sig(a * (t - b))
-        g = (a * (y - p)).sum() - t
-        h = -((a ** 2) * p * (1 - p)).sum() - 1.0
-        t -= g / h
-    return float(np.clip(t, -6, 6))
+from .curves import h_
 
 
-def fisher_pick(theta_hat, a, b, rem):
-    """Localize: argmax 2PL Fisher information at theta_hat."""
-    p = sig(a[rem] * (theta_hat - b[rem]))
-    return rem[int(np.argmax((a[rem] ** 2) * p * (1 - p)))]
+def r1_pick(M, y, S, q, rem):
+    """argmax Delta R1 over candidate scenes `rem`, vectorised over the
+    candidate set (closed form; a bisection over the mixture CDF finds each
+    branch's posterior median)."""
+    n = M.shape[1]
+    un = [i for i in range(n) if i not in S]
+    yo = y[S].sum() if len(S) else 0.0
+    Mu = M[:, un]
+    idx = {j: k for k, j in enumerate(un)}
+    mu_all = Mu.sum(1)
+    var_all = (Mu * (1 - Mu)).sum(1)
+    cols = np.array([idx[i] for i in rem])
+    mi = Mu[:, cols]                                        # (grid, K)
+    p1 = q @ mi
+    q1 = (q[:, None] * mi) / np.maximum(p1[None, :], 1e-12)
+    q0 = (q[:, None] * (1 - mi)) / np.maximum(1 - p1[None, :], 1e-12)
+    mup = mu_all[:, None] - mi
+    sdp = np.sqrt(np.maximum(var_all[:, None] - mi * (1 - mi), 0) + 1e-9)
 
+    def branch(qb, yb):
+        lo, hi = np.zeros(len(rem)), np.full(len(rem), float(n))
+        for _ in range(30):
+            c = (lo + hi) / 2
+            F = (qb * norm.cdf((c[None, :] - yb - mup) / sdp)).sum(0)
+            m_ = F < 0.5
+            lo = np.where(m_, c, lo)
+            hi = np.where(m_, hi, c)
+        c = (lo + hi) / 2
+        z = (c[None, :] - yb - mup) / sdp
+        return (qb * sdp * (2 * norm.pdf(z) + z * (2 * norm.cdf(z) - 1))).sum(0)
 
-def population_fisher(a, b, th_cal):
-    """Cover: mean 2PL Fisher information over the calibration planners'
-    (acquisition-model) abilities — a planner-independent bank order."""
-    return np.array([np.mean([(a[i] ** 2) * sig(a[i] * (t - b[i])) * (1 - sig(a[i] * (t - b[i])))
-                              for t in th_cal]) for i in range(len(a))])
-
-
-def localize_cover(a, b, th_cal, y, K=K_LOCALIZE, T=120):
-    """The UP acquisition: K localize picks (adaptive, reads y only for the
-    administered items) followed by the population-Fisher static order.
-    Returns the first T items."""
-    n = len(a)
-    T = min(T, n)
-    S, t0 = [], 0.0
-    for _ in range(min(K, T)):
-        rem = [i for i in range(n) if i not in S]
-        S.append(fisher_pick(t0, a, b, rem))
-        idx = np.array(S)
-        t0 = theta_newton(b[idx], y[idx], a[idx])
-    cover = [int(i) for i in np.argsort(-population_fisher(a, b, th_cal)) if i not in set(S)]
-    return S + cover[:T - len(S)]
+    ev = p1 * branch(q1, yo + 1.0) + (1 - p1) * branch(q0, yo)
+    return rem[int(np.argmin(ev))]
 
 
 def eig_pick(q, M, rem):

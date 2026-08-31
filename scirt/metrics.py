@@ -1,8 +1,8 @@
 """Pooled metrics and the resampling conventions of the paper.
 
-Bootstrap units: (seed) 16 clusters of 3 for planner-side paired deltas,
+Bootstrap units: (seed) 16 clusters of 6 for planner-side paired deltas,
 (draw, type) 128 clusters for the US pooled deltas. Differences smaller than
-about .005 SR-MAE are inside the paired 95% intervals at n = 48.
+about .005 SR-MAE are inside the paired 95% intervals at n = 96.
 """
 import numpy as np
 from scipy.stats import spearmanr
@@ -43,8 +43,8 @@ def cluster_boot_rho_delta(bt_a, bt_b, fail, clusters, B=10000, seed=0):
     return delta, np.percentile(ds, 2.5), np.percentile(ds, 97.5), float((ds > 0).mean())
 
 
-def ies(mae, rollouts, mae_ref, rollouts_ref=60):
+def ies(mae, rollouts, mae_ref, rollouts_ref=55):
     """Information Efficiency Score (ATLAS-style) with a declared reference:
     (MAE / MAE_ref) x (rollouts / rollouts_ref). The paper's reference is the
-    random order at a fixed budget of 60 under the common readout."""
+    random order at a fixed budget of 55 under the common readout."""
     return mae / mae_ref * rollouts / rollouts_ref

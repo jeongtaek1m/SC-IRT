@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score any unseen-scene difficulty predictions in Table-3A units.
 
-    python experiments/eval_us_predictions.py data/encoder/unified_enc_pred_d64s0.npz [more.npz ...]
+    python experiments/eval_us_predictions.py data/encoder/relgraph_r2_s0.npz [more.npz ...]
 
 Each npz holds draw{r}_rt (route ids of block C) and draw{r}_bt (b_tilde).
 With several files (e.g. three seeds) the per-file metrics are summarised as
@@ -32,4 +32,4 @@ def main(paths):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:] or sorted(str(p) for p in (Path(__file__).resolve().parents[1] / 'data/encoder').glob('unified_enc_pred_d64s*.npz')))
+    main(sys.argv[1:] or sorted(str(p) for p in (Path(__file__).resolve().parents[1] / 'data/encoder').glob('relgraph_r2_s*.npz')))

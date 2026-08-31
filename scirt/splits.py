@@ -1,11 +1,11 @@
 """The unified evaluation split — the single source of truth for every experiment.
 
-13/3 planners x 36/8 scene types, R = 16 Monte-Carlo cross-validation draws.
+16/6 planners x 36/8 scene types (22-planner panel), R = 16 Monte-Carlo cross-validation draws.
 Within one draw the three regimes (US / UP / UPS) share the same partition:
 
-                     train planners (13)     held-out planners (3)
-  train types (36)   A: calibration block    UP evaluation
-  held-out types (8) C: US evaluation        D: UPS target (0 rollouts)
+                     calibration planners (16)  evaluation planners (6)
+  calibration types (36)  A: calibration block    UP evaluation
+  evaluation types (8)    C: US evaluation        D: UPS target (0 rollouts)
 
 Verbatim port of the research script `b2d_splits.py`; the RandomState seed
 convention (1000 + draw index) is part of the protocol and must not change.
@@ -13,10 +13,10 @@ convention (1000 + draw index) is part of the protocol and must not change.
 import numpy as np
 
 R_DRAWS = 16
-H_P, H_S = 3, 8
+H_P, H_S = 6, 8
 
 
-def unified_split(seed, utypes, n_planners=16):
+def unified_split(seed, utypes, n_planners=22):
     """Return (held_out_planner_ids, held_out_type_set) for one draw.
 
     `utypes` must be the sorted list of unique scenario types (44 for B2D);
