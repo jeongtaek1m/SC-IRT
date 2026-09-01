@@ -123,10 +123,12 @@ w/o-risk-acquisition, i.e. the two components do not interact at fixed budgets.
 ## Table 3A — US: unseen scenes (`run_us.py`)
 
 Predict scene difficulty (and per-cell outcomes) for the 8 evaluation
-scenario types from scene features alone; pooled over 16 draws.
-Planner-only null: AUROC .694 / scene-MAE .199.
+scenario types from the scene alone; pooled over 16 draws (640 route
+evaluations). Descriptor rows are scored through a two-stage Ridge plug-in
+fitted on the calibration types; the encoder row is the RelGraph R2
+out-of-fold prediction. Planner-only null: AUROC .694 / scene-MAE .199.
 
-| difficulty source | AUROC | scene-MAE | rho(b_hat, b) |
+| difficulty source | AUROC | scene-MAE | rho(b_tilde, fail rate) |
 |---|---|---|---|
 | Min-TTC | .689 | .205 (-3.2%) | -.146 |
 | Risk field | .710 | .199 (+0.1%) | +.125 |
@@ -134,42 +136,45 @@ Planner-only null: AUROC .694 / scene-MAE .199.
 | Agent density + kin. | .723 | .195 (+1.9%) | +.308 |
 | Traffic entropy | .706 | .198 (+0.6%) | +.122 |
 | Agent-JEPA | .696 | .201 (-1.1%) | +.006 |
-| **SC-IRT stack, LLTM+e (canonical)** | **.758** | **.170 (+14.4%)** | **+.555** |
-| RelGraph R2 scene encoder (3 runs) | .754 +- .004 | .178 +- .003 | +.532 +- .019 |
+| Kinematics (cmdkin, 25d) | .753 | .173 (+12.8%) | +.514 |
+| Hand-crafted risk (cmdkin+gtrisk, 73d) | .751 | .175 (+12.0%) | +.541 |
+| **SC-IRT: RelGraph R2 scene encoder (3 runs)** | **.754 +- .004** | **.178 +- .003** | **+.532 +- .019** |
 | Oracle (response-calibrated) | .863 | .000 | +.997 |
 
-- LLTM+e vs two-stage plug-in scoring: Delta rho +.0019, CI [-.0123, +.0176]
-  — marginalised training changes nothing measurable; it is kept because it
-  is the same likelihood the rest of the pipeline uses.
-- sigma_hat (residual difficulty SD after features) = .696 +- .091: features
-  explain roughly half the difficulty variance, consistent with the oracle gap.
-- Descriptor ablation (pooled rho): kinematics only +.514, hand-crafted
-  ck+gtr +.541, RelGraph R2 +.532 +- .019 (Delta vs hand-crafted
-  -.008 +- .019). The learned relational encoder ties the hand-crafted
-  stack — scene-graph learning does not yet buy difficulty signal beyond
-  well-chosen descriptors on this bank.
-- Plausible-values check: calibration noise contributes 4.5% of the US rho
-  uncertainty — the split, not the panel fit, dominates.
+Reading. The learned relational encoder and the two hand-crafted stacks
+are statistically tied (RelGraph minus hand-crafted risk: Delta rho
+-.008 +- .019 across runs) and all three clear the single-descriptor
+baselines by +.03 AUROC and 10 points of scene-MAE. The encoder buys no
+difficulty signal beyond well-chosen rollout descriptors on this bank, but
+it needs no feature engineering — it consumes the raw scene graph. The
+oracle gap (.863) is the ceiling any scene-only predictor faces: roughly
+half the difficulty variance is not visible from the scene. Earlier
+versions reported a descriptor stack that included the scenario-definition
+parameters (scenparamz); it was removed because those values are the
+benchmark's own construction parameters, not observable scene content.
 
 ## Table 3B — UPS: unseen planner x unseen scenes (`run_ups.py`)
 
 Predict an unseen planner's behaviour on unseen scenario types with zero
 rollouts on the target block: probe the planner on B calibration-type
-rollouts, transport theta_hat through the scene-conditioned difficulty prior.
-96 evaluations; MAE on the target-block SR, mean per-cell NLL.
+rollouts, transport theta_hat through the RelGraph difficulty prior
+N(b_tilde_s, sigma^2) (sigma = the residual SD the encoder learned on the
+calibration block, ~.65). 96 evaluations, RelGraph run s0; MAE on the
+target-block SR, mean per-cell NLL. Across the three encoder runs the MAE
+cells move by .002-.006 (SD).
 
 | probe policy | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
 |---|---|---|---|---|---|---|
 | naive (no IRT) | .1290 | .6445 | .1189 | .6348 | .1146 | .6302 |
-| Random | .1099 | .5993 | .1015 | .5921 | .0981 | .5892 |
-| theta-EIG (canonical) | .1087 | .5966 | .1003 | .5912 | .0979 | .5872 |
-| 2PL Fisher (abl.) | .1042 | .5943 | .0979 | .5908 | .0977 | .5875 |
+| Random | .1039 | .6071 | .0941 | .6008 | .0905 | .5986 |
+| theta-EIG (canonical) | .1017 | .6071 | .0946 | .6021 | .0884 | .5968 |
+| 2PL Fisher (abl.) | .0983 | .6049 | .0914 | .6018 | .0881 | .5966 |
 
-Reading. Any IRT transport beats the naive planner-mean by .017-.025 MAE;
+Reading. Any IRT transport beats the naive planner-mean by .024-.031 MAE;
 between probe policies the paired deltas are all inside the intervals
-(theta-EIG vs Random +.0012 ns; 2PL Fisher -.0045 ns at B30). The
-bottleneck is the US difficulty prior (rho about .55), not probe placement —
-UPS is reported as a transport result, not an acquisition result.
+(Random minus theta-EIG +.0022 ns at B30; 2PL Fisher minus theta-EIG -.0034 ns). The
+bottleneck is the US difficulty prior (rho about .53), not probe placement
+— UPS is reported as a transport result, not an acquisition result.
 
 ## Table 4 — the two-stage panel (`run_navhard.py`)
 

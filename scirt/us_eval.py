@@ -10,12 +10,13 @@ experiments/run_us.py does for every row of Table 3A.
 
 Ability theta_j for the 16 calibration planners comes from the canonical
 1PL calibration of block A (`calibration.calibrate_dense`, it = 800), so
-descriptor rows, LLTM+e and encoder predictions are all scored on one
+descriptor rows and encoder predictions are all scored on one
 theta. Predictions may be a subset of the C routes of a draw; missing
 routes are skipped (and counted).
 
 The shipped encoder artifacts (data/encoder/relgraph_r2_s*.npz) are in
-this format: keys draw{r}_rt / draw{r}_bt.
+this format: keys draw{r}_rt / draw{r}_bt, plus draw{r}_sigma (the
+residual SD learned on that draw's calibration block, used by run_ups.py).
 """
 import numpy as np
 from scipy.stats import spearmanr

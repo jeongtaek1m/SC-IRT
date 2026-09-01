@@ -38,9 +38,10 @@ point ends by asserting the published numbers (`anchors OK`).
 - **C3 Risk-based adaptive stopping.** Stop when the same risk falls below
   tau_hat, which is fixed on the calibration panel (leave-one-planner-out,
   cost-matched) and never selected on evaluation planners.
-- **C4 Scene-conditioned difficulty.** x -> b via the hand-crafted LLTM+e
-  path and the RelGraph relational scene-graph encoder (shipped as per-run
-  predictions), enabling unseen-scene (US) and joint (UPS) generalisation.
+- **C4 Scene-conditioned difficulty.** scene -> b via the RelGraph
+  relational scene-graph encoder (learned per draw on the calibration
+  types, shipped as per-run out-of-fold predictions), enabling unseen-scene
+  (US) and joint (UPS) generalisation.
 
 ## The primary protocol
 
@@ -67,7 +68,7 @@ python experiments/run_up_frontier.py       # Table 1 (fixed budgets)
 python experiments/run_tau_calibration.py   # calibration-fixed stopping thresholds
 python experiments/run_adaptive.py          # Table 2 (adaptive) + cost-error data
 python experiments/run_ablation.py          # component ablation (2 x 2)
-python experiments/run_us.py                # Table 3A + descriptor ablation
+python experiments/run_us.py                # Table 3A
 python experiments/run_ups.py               # Table 3B
 python experiments/run_navhard.py           # Table 4: the two-stage NAVSIM panel
 python experiments/run_readout_dropin.py    # analysis: the readout under every selector
@@ -83,10 +84,10 @@ scirt/          the library (PROTOCOL.md has the maths)
 experiments/    one entry point per paper table + build_data.py (provenance)
 data/
   matrices/     22 x 220 pass/fail response panel (+ the 16-planner panel it extends)
-  features/     scene-descriptor sets (cmdkin, scenparamz, gtrisk, ...)
+  features/     scene-descriptor sets used as US baselines (cmdkin, gtrisk, ...)
   b2d/          traffic-feature table and kin/density baselines
-  encoder/      RelGraph R2 per-run out-of-fold difficulty predictions
-                (3 independent runs; prediction ensembling is banned)
+  encoder/      RelGraph R2 per-run out-of-fold difficulty predictions + the
+                learned residual SD per draw (3 independent runs; no ensembling)
   navhard/      the two-stage NAVSIM leaderboard panel (provenance in REPRODUCIBILITY.md)
 results/        written by the scripts (gitignored); numbers of record are RESULTS.md
 tests/          fast invariants
@@ -102,8 +103,9 @@ tests/          fast invariants
   sampling wins — that saturation column is part of the result.
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
-  separate release. The LLTM+e descriptor path is fully reproducible here
-  and is statistically tied with it.
+  separate release; everything downstream of the predictions (US scoring,
+  the UPS prior) is reproducible here, and the hand-crafted descriptor
+  baselines in Table 3A tie it.
 - The navhard panel is dominated by a few teams' submission sweeps;
   near-duplicate submissions can appear on both sides of the planner split
   (this affects every method identically). See RESULTS.md for the caveats.

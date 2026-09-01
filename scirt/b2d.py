@@ -23,13 +23,6 @@ def load_features(name):
     return {names[i]: d['stats'][i].astype(np.float64) for i in range(len(names))}
 
 
-def load_scene_features():
-    """The SC-IRT descriptor stack: cmdkin (25d) + scenparamz (31d) -> 56d."""
-    ck = load_features('eval_cmdkin_stats')
-    spz = load_features('eval_scenparamz')
-    return {k: np.concatenate([ck[k], spz[k]]) for k in ck if k in spz}
-
-
 def load_route_types():
     """{route_id: scenario_type}. Derived from the CARLA checkpoint JSONs
     (verified identical by experiments/build_data.py; includes the one route,
@@ -56,8 +49,7 @@ class Panel:
     J         : number of planners (22)
     Y         : {(route_id, planner_idx): 0/1} sparse dict (4,796 of 4,840 cells observed)
     sn        : {route_id: scenario_type}
-    feat      : {route_id: 56d descriptor} (cmdkin + scenparamz)
-    allr      : routes present in both feat and sn, CSV order (220)
+    allr      : routes present in both the matrix and sn, CSV order (220)
     utypes    : sorted unique scenario types (44)
     """
 
@@ -72,8 +64,7 @@ class Panel:
                 if row[1 + j] != '':
                     self.Y[(rid, pi)] = int(float(row[1 + j]))
         self.sn = load_route_types()
-        self.feat = load_scene_features()
-        keys = set(self.feat)
+        keys = set(rids)
         for d in extra_feature_dicts:
             keys &= set(d)
         self.allr = [r for r in rids if r in keys and r in self.sn]

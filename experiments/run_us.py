@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""Table 3A (+ descriptor ablation) — US: unseen-scene difficulty prediction.
+"""Table 3A — US: unseen-scene difficulty prediction.
 
 Pooled cell-level evaluation on C = (evaluation-type routes) x (16 calibration
 planners), 16 draws x ~40 routes = 640 route evaluations.
 
-Sections
-  (desc)  Table 3A descriptor arms: planner-only null, six simple baselines,
-          the SC-IRT stack via two-stage Ridge (comparison) and via one-stage
-          LLTM+e (canonical), and the response-calibrated oracle ceiling.
-  (lltm)  LLTM+e vs two-stage paired delta + the plausible-values
-          decomposition of the calibration-noise share.
-  (enc)   Table 3A encoder row and Table 3A(b) ablation from the shipped per-run
-          prediction artifacts (single runs; seeds summarised as metric
-          mean +- SD — prediction ensembling is banned).
+Rows
+  planner-only null (b = 0), eight descriptor baselines scored through a
+  two-stage Ridge plug-in (b_hat ~ x on the calibration types, predict the
+  evaluation types), the response-calibrated oracle ceiling, and the
+  RelGraph R2 scene encoder from the shipped per-run out-of-fold predictions
+  (three independent runs summarised as metric mean +- SD; prediction
+  ensembling is banned).
 
-Anchors: null .694/.199; LLTM+e .758/.170/+.555; two-stage .757/+.553;
-sigma-hat .696; PV share 4.5%; hc +.541; kin +.514; RelGraph .754/+.532.
+Anchors: null .694/.199; kinematics rho +.514; hand-crafted risk rho +.541;
+RelGraph mean AUROC .754 / rho +.532.
 """
 import json
 import os
@@ -31,20 +29,19 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel, load_features, DATA
 from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate_dense, calibrate_dense_se, frozen_b_dense
-from scirt.curves import sig, GX, GW
-from scirt.lltm import lltm_e
-from scirt.metrics import cluster_boot_rho_delta
+from scirt.calibration import calibrate_dense, frozen_b_dense
+from scirt.curves import sig
 
 np.random.seed(0)
 torch.manual_seed(0)
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+RUNS = (0, 1, 2)
 
 
 def load_descriptor_arms():
     import csv
     ck = load_features('eval_cmdkin_stats')
-    spz = load_features('eval_scenparamz')
+    gtr = load_features('eval_gtrisk')
     tf = list(csv.reader(open(DATA / 'b2d' / 'traffic_features_220.csv')))
     hdr = tf[0]
     ci = {c: i for i, c in enumerate(hdr)}
@@ -68,13 +65,14 @@ def load_descriptor_arms():
             'Agent density + kin.': kinden,
             'Traffic entropy': load_features('eval_smart_ent'),
             'Agent-JEPA': load_features('eval_agentjepa'),
-            'SC-IRT stack (ck+spz)': {k: np.concatenate([ck[k], spz[k]]) for k in ck if k in spz}}
+            'Kinematics (cmdkin)': ck,
+            'Hand-crafted risk (cmdkin+gtrisk)': {k: np.concatenate([ck[k], gtr[k]]) for k in ck if k in gtr}}
 
 
-def pooled_metrics(d, auc0=None, mae0=None):
+def pooled_metrics(d):
     auc = roc_auc_score(d['y'], d['p'])
     mae = float(np.mean(np.abs(np.array(d['rp']) - np.array(d['ro']))))
-    rho = float(spearmanr(d['bt'], d['fl']).correlation) if d.get('bt') else None
+    rho = float(spearmanr(d['bt'], d['fl']).correlation)
     return auc, mae, rho
 
 
@@ -84,15 +82,10 @@ def main():
     Y0, MK = panel.dense()
     N = len(panel.allr)
     sn, allr = panel.sn, panel.allr
-    ROWS = list(arms) + ['Oracle (resp-calibrated C)']
-    RELG = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in (0, 1, 2)}
-    ROWS += [f'RelGraph R2 s{s_}' for s_ in (0, 1, 2)]
+    RELG = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in RUNS}
+    ROWS = list(arms) + ['Oracle (resp-calibrated C)'] + [f'RelGraph R2 s{s_}' for s_ in RUNS]
     POOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []} for a in ROWS}
-    LPOOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []}
-             for a in ('lltm', 'lltm-marg')}
     NULLP = {'p': [], 'y': [], 'rp': [], 'ro': []}
-    CLREC, SIGS = [], []
-    PV = {'rho_m': [], 'rho_between': []}
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
@@ -111,7 +104,7 @@ def main():
             NULLP['rp'].append(float(ps.mean()))
             NULLP['ro'].append(float(ys.mean()))
         bC = frozen_b_dense(Y0, MK, te, cols, th)
-        for name in ROWS:                               # Table 3A descriptor arms
+        for name in ROWS:
             if name.startswith('Oracle'):
                 bte = bC
             elif name.startswith('RelGraph'):
@@ -136,125 +129,37 @@ def main():
                 POOL[name]['ro'].append(float(ys.mean()))
             POOL[name]['bt'] += bte.tolist()
             POOL[name]['fl'] += obs_fail.tolist()
-        # ---- LLTM+e (canonical one-stage) + plausible values --------------
-        stack = arms['SC-IRT stack (ck+spz)']
-        Z = np.vstack([stack[allr[i]] for i in tr])
-        m0, s0 = Z.mean(0), Z.std(0) + 1e-9
-        Ztr = (Z - m0) / s0
-        Zte = (np.vstack([stack[allr[i]] for i in te]) - m0) / s0
-        bA2, thA2, seA = calibrate_dense_se(Y0, MK, tr, cols)
-        wL, sgL, thL, _cL = lltm_e(Y0, MK, tr, cols, Ztr)
-        bLL = Zte @ wL
-        bLL = bLL - ((Ztr @ wL).mean() - bA2.mean())     # location: align to b-hat mean
-        SIGS.append(sgL)
-        for k, i in enumerate(te):
-            js = [c for c in cols if MK[i, c]]
-            jj = [cols.index(c) for c in js]
-            ys = Y0[i, js]
-            ps = sig(thL[jj] - bLL[k])
-            LPOOL['lltm']['p'] += ps.tolist()
-            LPOOL['lltm']['y'] += ys.tolist()
-            LPOOL['lltm']['rp'].append(float(ps.mean()))
-            LPOOL['lltm']['ro'].append(float(ys.mean()))
-            zz = thL[jj][:, None] - (bLL[k] + sgL * GX[None, :])
-            pm = (sig(zz) * GW[None, :]).sum(1)
-            LPOOL['lltm-marg']['p'] += pm.tolist()
-            LPOOL['lltm-marg']['y'] += ys.tolist()
-            LPOOL['lltm-marg']['rp'].append(float(pm.mean()))
-            LPOOL['lltm-marg']['ro'].append(float(ys.mean()))
-        for a in ('lltm', 'lltm-marg'):
-            LPOOL[a]['bt'] += list(bLL)
-            LPOOL[a]['fl'] += list(obs_fail)
-        CLREC += [f'{seed}:{sn[allr[i]]}' for i in te]
-        rngp = np.random.RandomState(400 + seed)
-        rhos = []
-        for _ in range(20):                              # plausible values, M=20
-            bdraw = bA2 + seA * rngp.randn(len(bA2))
-            rgm = Ridge(alpha=100.).fit(Ztr, bdraw)
-            rhos.append(spearmanr(rgm.predict(Zte), obs_fail).correlation)
-        PV['rho_m'].append(float(np.mean(rhos)))
-        PV['rho_between'].append(float(np.var(rhos, ddof=1)))
-        print(f'seed {seed} done (sigma-hat={sgL:.3f})', flush=True)
+        print(f'seed {seed} done', flush=True)
 
     auc0 = roc_auc_score(NULLP['y'], NULLP['p'])
     mae0 = float(np.mean(np.abs(np.array(NULLP['rp']) - np.array(NULLP['ro']))))
-    print('\n===== Table 3A — US (unified split, pooled) =====')
+    print(f'\n===== Table 3A — US (unified split, pooled {len(POOL[ROWS[0]]["bt"])} route evaluations) =====')
     print(f'Planner-only null: AUROC {auc0:.3f} / Scene-MAE {mae0:.3f}')
     results = {'null': {'auroc': auc0, 'mae': mae0}}
-    for name in ROWS + ['lltm', 'lltm-marg']:
-        d = POOL[name] if name in POOL else LPOOL[name]
-        auc, mae, rho = pooled_metrics(d)
-        label = {'lltm': 'SC-IRT stack, LLTM+e (canonical)',
-                 'lltm-marg': 'LLTM+e, eps-marginalised cells'}.get(name, name)
-        print(f'{label:34s} AUROC {auc:.3f} ({auc - auc0:+.3f})  MAE {mae:.3f} '
+    for name in ROWS:
+        auc, mae, rho = pooled_metrics(POOL[name])
+        print(f'{name:34s} AUROC {auc:.3f} ({auc - auc0:+.3f})  MAE {mae:.3f} '
               f'({1 - mae / mae0:+.1%})  rho {rho:+.3f}')
         results[name] = {'auroc': auc, 'mae': mae, 'rho': rho}
-    rg = [results[f'RelGraph R2 s{s_}'] for s_ in (0, 1, 2)]
+    rg = [results[f'RelGraph R2 s{s_}'] for s_ in RUNS]
+    sd = lambda k: np.std([r[k] for r in rg], ddof=1)
+    mn = lambda k: np.mean([r[k] for r in rg])
     print('RelGraph R2 scene encoder (3 runs)  AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}'.format(
-        np.mean([r['auroc'] for r in rg]), np.std([r['auroc'] for r in rg], ddof=1),
-        np.mean([r['mae'] for r in rg]), np.std([r['mae'] for r in rg], ddof=1),
-        np.mean([r['rho'] for r in rg]), np.std([r['rho'] for r in rg], ddof=1)))
-    print(f'\nsigma-hat (LLTM+e residual difficulty SD): '
-          f'{np.mean(SIGS):.3f} +- {np.std(SIGS, ddof=1):.3f}')
-    d, lo, hi, p = cluster_boot_rho_delta(LPOOL['lltm']['bt'],
-                                          POOL['SC-IRT stack (ck+spz)']['bt'],
-                                          POOL['SC-IRT stack (ck+spz)']['fl'], CLREC)
-    print(f'Delta rho (LLTM+e - two-stage) = {d:+.4f} CI[{lo:+.4f},{hi:+.4f}] P(>0)={p:.3f}')
-    wv = np.var(PV['rho_m'], ddof=1)
-    bv = np.mean(PV['rho_between']) * (1 + 1 / 20)
-    print(f'Plausible values: calibration-noise share of US rho uncertainty = {bv / (wv + bv):.1%}')
-
-    # Table 3A(b) per-run Delta1 (enc - hand-crafted) using the shipped preds ----
-    ck = load_features('eval_cmdkin_stats')
-    gtr = load_features('eval_gtrisk')
-    hc = {k: np.concatenate([ck[k], gtr[k]]) for k in ck if k in gtr}
-    BT = {'kin': [], 'hc': []}
-    FL = []
-    ENC = {s_: [] for s_ in (0, 1, 2)}
-    P = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in (0, 1, 2)}
-    for seed in range(R_DRAWS):
-        hp, ht = unified_split(seed, panel.utypes, panel.J)
-        cols = [c for c in range(panel.J) if c not in hp]
-        tr = [i for i in range(N) if sn[allr[i]] not in ht]
-        te = [i for i in range(N) if sn[allr[i]] in ht]
-        bA, _ = calibrate_dense(Y0, MK, tr, cols)
-        obs_fail = np.array([1 - Y0[i, [c for c in cols if MK[i, c]]].mean() for i in te])
-        for nm, feat in (('kin', ck), ('hc', hc)):
-            Z = np.vstack([feat[allr[i]] for i in tr])
-            m0, s0 = Z.mean(0), Z.std(0) + 1e-9
-            rgm = Ridge(alpha=100.).fit((Z - m0) / s0, bA)
-            BT[nm] += list(rgm.predict((np.vstack([feat[allr[i]] for i in te]) - m0) / s0))
-        FL += list(obs_fail)
-        for key, pz in P.items():
-            rt = [str(x) for x in pz[f'draw{seed}_rt']]
-            lut = {rt[k]: pz[f'draw{seed}_bt'][k] for k in range(len(rt))}
-            ENC[key] += [lut[allr[i]] for i in te]
-    FLa = np.array(FL)
-    rho_hc = spearmanr(BT['hc'], FLa).correlation
-    rho_kin = spearmanr(BT['kin'], FLa).correlation
-    print(f'\n===== Table 3A(b) — ablation (pooled {len(FL)} evaluations) =====')
-    print(f'  Kinematics only        rho {rho_kin:+.3f}')
-    print(f'  Hand-crafted (ck+gtr)  rho {rho_hc:+.3f}')
-    rr = [spearmanr(ENC[s_], FLa).correlation for s_ in (0, 1, 2)]
-    d1 = [r - rho_hc for r in rr]
-    print(f'  RelGraph R2 (3 runs)   rho {np.mean(rr):+.3f}+-{np.std(rr, ddof=1):.3f}   '
-          f'Delta1 vs hc {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
+        mn('auroc'), sd('auroc'), mn('mae'), sd('mae'), mn('rho'), sd('rho')))
+    rho_hc = results['Hand-crafted risk (cmdkin+gtrisk)']['rho']
+    d1 = [r['rho'] - rho_hc for r in rg]
+    print(f'Delta rho (RelGraph - hand-crafted risk), per run: {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
 
     OUT.mkdir(exist_ok=True)
-    json.dump({'table3a': results, 'sigma': list(map(float, SIGS))},
-              open(OUT / 'us.json', 'w'))
+    json.dump({'table3a': results}, open(OUT / 'us.json', 'w'))
 
     assert abs(auc0 - 0.694) < 0.002 and abs(mae0 - 0.199) < 0.002
-    l = results['lltm']
-    assert abs(l['auroc'] - 0.758) < 0.002 and abs(l['rho'] - 0.555) < 0.005
-    t = results['SC-IRT stack (ck+spz)']
-    assert abs(t['auroc'] - 0.757) < 0.002 and abs(t['rho'] - 0.553) < 0.005
-    assert abs(np.mean(SIGS) - 0.696) < 0.01
-    assert abs(bv / (wv + bv) - 0.045) < 0.02
-    assert abs(rho_hc - 0.541) < 0.005 and abs(rho_kin - 0.514) < 0.005
-    rgm_ = [results[f'RelGraph R2 s{s_}'] for s_ in (0, 1, 2)]
-    assert abs(np.mean([r['auroc'] for r in rgm_]) - 0.754) < 0.003
-    assert abs(np.mean([r['rho'] for r in rgm_]) - 0.532) < 0.005
+    assert abs(results['Kinematics (cmdkin)']['rho'] - 0.514) < 0.005
+    assert abs(rho_hc - 0.541) < 0.005
+    assert abs(mn('auroc') - 0.754) < 0.003 and abs(mn('rho') - 0.532) < 0.005
+    k, h = results['Kinematics (cmdkin)'], results['Hand-crafted risk (cmdkin+gtrisk)']
+    assert abs(k['auroc'] - 0.753) < 0.002 and abs(k['mae'] - 0.173) < 0.002
+    assert abs(h['auroc'] - 0.751) < 0.002 and abs(h['mae'] - 0.175) < 0.002
     print('anchors OK')
 
 

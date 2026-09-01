@@ -3,9 +3,9 @@
 ## Environment
 
 Python 3.9, numpy 1.23, scipy 1.13-era API (verified on 1.10/1.13), scikit-learn 1.2,
-torch 2.0. A CUDA GPU is required as shipped — the 1PL/2PL calibration and
-the LLTM+e fit run on `device='cuda'` — though any single GPU suffices (the
-RelGraph encoder itself ships as predictions). All experiment scripts are
+torch 2.0. A CUDA GPU is required as shipped — the 1PL/2PL calibration
+runs on `device='cuda'` — though any single GPU suffices (the RelGraph
+encoder itself ships as predictions). All experiment scripts are
 deterministic given the RNG registry below; a full 16-draw run of the
 heaviest script is a few hours on one GPU, and every heavy script accepts
 `--seeds lo hi` sharding plus `--merge`.
@@ -23,7 +23,7 @@ past a failed anchor.
 | `run_tau_calibration.py --merge` | tau_hat per (K_cal, target) + LOO expected-budget table |
 | `run_adaptive.py --merge` | Table 2 adaptive SR-MAE cells |
 | `run_ablation.py --merge` | component table at K7/K10 B30 and K16 B55 (full and off-arms) |
-| `run_us.py` | Table 3A: null, canonical, two-stage, RelGraph mean, sigma_hat, PV share, descriptor ablation |
+| `run_us.py` | Table 3A: null, the two hand-crafted rows, RelGraph 3-run means |
 | `run_ups.py` | Table 3B: representative MAE cells per policy (tol .003) |
 | `run_navhard.py --merge` | Table 4 cells |
 | `run_readout_dropin.py` | the drop-in deltas |
@@ -41,9 +41,8 @@ global seed state except the top-of-script `np.random.seed(0); torch.manual_seed
 | K_cal subsample from the 16 calibration planners | `RandomState(9000 + 100*draw + 10*K_cal)` |
 | Random / Random-strat rollout order (per evaluation) | `RandomState(100 + 20*draw + planner_id)` |
 | leave-one-planner-out Random order (tau calibration) | `RandomState(700 + 20*draw + j)` |
-| US plausible-values draw | `RandomState(400 + draw)` |
 | model-adequacy simulation | `RandomState(2000 + draw)` |
-| paired bootstrap | `RandomState(0)`; 4,000 resamples over 16 draw-clusters of 6 planner evaluations (10,000 for the US rho cluster bootstrap) |
+| paired bootstrap | `RandomState(0)`; 4,000 resamples over 16 draw-clusters of 6 planner evaluations |
 
 Policy: no prediction or run ensembling anywhere — single-run numbers with
 across-draw dispersion only. The RelGraph rows report 3 independent runs as
@@ -58,16 +57,21 @@ mean +- SD, never an averaged prediction.
   against the research tree. The 16-planner matrix it extends is kept
   alongside.
   `SCIRT_RESPONSE_CSV` overrides the panel for new matrices.
-- `data/features/` — per-route descriptor sets (cmdkin, scenparamz, gtrisk,
-  ...) computed from Bench2Drive route definitions and expert logs only
-  (nothing from the evaluated planners' rollouts).
+- `data/features/` — per-route descriptor sets (cmdkin, gtrisk, routegeom,
+  ...) used as US baselines. They are computed from a fixed probe rollout
+  per route, so they are probe-conditioned but contain nothing from the
+  evaluated planners' rollouts. The scenario-definition parameters
+  (scenparamz) that earlier versions used were removed: they are the
+  benchmark's own construction values, not observable scene content.
 - `data/encoder/relgraph_r2_s{0,1,2}.npz` — per-draw difficulty predictions
   from the RelGraph R2 scene encoder (ego, agent and lane tokens; R-GCN
   lane-lane message passing, agent-lane cross-attention over
   relative-geometry relations and an ego-route relation; d = 64), trained
   per draw on the 36 calibration types
   with the shared-sigma epsilon-marginalised objective and predicting the 8
-  evaluation types out-of-fold; three seeds, one file per run. Training code
+  evaluation types out-of-fold; three seeds, one file per run. Each file
+  also carries `draw{r}_sigma`, the shared residual SD the encoder learned
+  on that draw's calibration block (the UPS prior width). Training code
   depends on Bench2Drive raw rollouts and is staged for a separate release.
 - `data/navhard/navhard_binary_panel.npz` — NAVSIM navhard leaderboard
   (two-stage pseudo-closed-loop EPDMS): 115 submissions scraped from the

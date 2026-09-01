@@ -10,12 +10,15 @@ routes in the JSONs + the one manual entry 11755 -> EnterActorFlow).
 import csv, glob, hashlib, json, re, shutil, sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 REPO = Path(__file__).resolve().parents[1]
 FEAT_SRC = Path('/data1/jeongtae/b2d_jepa/features')
 IRT = Path('/home/jeongtae/SCIRT/b2d_irt')
+RELG_RAW = Path('/data2/jeongtae/relgraph_e22')   # r2_b2d_s{0,1,2}.npz: pred (R_DRAWS, 220), routes, sigma (R_DRAWS,)
 CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
 
-FEATURES = ['eval_cmdkin_stats', 'eval_scenparamz', 'eval_gtrisk',
+FEATURES = ['eval_cmdkin_stats', 'eval_gtrisk',
             'eval_routegeom', 'eval_smart_ent', 'eval_agentjepa']
 
 
@@ -46,6 +49,33 @@ def verify_route_types():
     print(f'  route_types.csv == checkpoint-derived mapping ({len(sn)} routes)')
 
 
+def export_relgraph(src, dst):
+    """Raw RelGraph run output -> the shipped format: draw{r}_rt / draw{r}_bt
+    (evaluation-type routes of that draw, out-of-fold) + draw{r}_sigma (the
+    shared residual SD learned on that draw's calibration block). Verifies
+    against the shipped file when it exists."""
+    import numpy as np
+    from scirt.b2d import Panel
+    from scirt.splits import unified_split, R_DRAWS
+    d = np.load(src, allow_pickle=True)
+    routes = [str(r) for r in d['routes']]
+    panel = Panel()
+    out = {}
+    for r in range(R_DRAWS):
+        _, ht = unified_split(r, panel.utypes, panel.J)
+        te = [i for i, rid in enumerate(routes) if panel.sn.get(rid) in ht]
+        out[f'draw{r}_rt'] = np.array([routes[i] for i in te])
+        out[f'draw{r}_bt'] = d['pred'][r, te].astype(np.float64)
+        out[f'draw{r}_sigma'] = np.float64(d['sigma'][r])
+    if dst.exists():
+        old = np.load(dst, allow_pickle=True)
+        assert set(old.files) == set(out) and all(np.array_equal(old[k], out[k]) for k in out), dst
+        print(f'  {dst.name} identical to the raw export')
+    else:
+        np.savez(dst, **out)
+        print(f'  {dst.name} written')
+
+
 def main():
     print('features:')
     for f in FEATURES:
@@ -55,8 +85,7 @@ def main():
     copy_checked(IRT / 'baseline_kin_den.npz', REPO / 'data/b2d/baseline_kin_den.npz')
     print('encoder artifacts (unified split, per-run — no ensembling):')
     for s in (0, 1, 2):
-        copy_checked(IRT / f'relgraph_r2_s{s}.npz',
-                     REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')
+        export_relgraph(RELG_RAW / f'r2_b2d_s{s}.npz', REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')
     print('navhard panel:')
     copy_checked(IRT / 'navhard/navhard_binary_panel.npz',
                  REPO / 'data/navhard/navhard_binary_panel.npz')

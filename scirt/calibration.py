@@ -99,17 +99,6 @@ def calibrate_dense(Y0, MK, rows, cols, it=800, device='cuda', freeze_b0=False):
         return (bb - c).cpu().numpy(), (th - c).cpu().numpy()
 
 
-def calibrate_dense_se(Y0, MK, rows, cols, it=800, device='cuda'):
-    """As calibrate_dense but also return the 1PL difficulty posterior SD
-    (used by the plausible-values decomposition)."""
-    bh, tv = calibrate_dense(Y0, MK, rows, cols, it=it, device=device)
-    se = np.array([
-        1 / np.sqrt(sum(sig(tv[k] - bh[i]) * (1 - sig(tv[k] - bh[i]))
-                        for k in range(len(cols)) if MK[rows[i], cols[k]]) + 1e-2)
-        for i in range(len(rows))])
-    return bh, tv, se
-
-
 def frozen_b_dense(Y0, MK, rows, cols, thA, it=60):
     """Refit item difficulties with theta frozen (Newton, descent) — the
     response-calibrated oracle for held-out routes, anchored to the training

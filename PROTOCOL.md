@@ -10,9 +10,9 @@ registry: [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 y_sk = 1 iff planner k completes scene (route) s (`data/matrices/`,
 4,796 of 4,840 cells observed; the build report records derived vs published
 success rates). Each route carries one of 44 scenario types (5 routes per
-type). Scene descriptors x_s (`data/features/`): the SC-IRT stack is
-cmdkin (25d) + scenparamz (31d). Route order is the response-matrix CSV
-column order — part of the reproduction contract.
+type). Scene descriptors (`data/features/`) serve only as US baselines;
+the scene encoder consumes the raw scene graph (Section 3.1). Route order
+is the response-matrix CSV column order — part of the reproduction contract.
 
 ## 2. The split
 
@@ -82,18 +82,20 @@ q_t(theta) ∝ N(theta; 0, 1) prod_{s in 𝒜_t} m_s(theta)^{y_s} (1 - m_s(theta
 ### 3.1 Unseen scenes — the difficulty prior from the scene
 
 ```
-b_s | x_s ~ N( w^T x_s , sigma^2 )        (LLTM+e, canonical descriptor path)
+b_s | scene_s ~ N( b_tilde_s , sigma^2 )        (RelGraph R2 scene encoder)
 ```
 
-(w, log sigma, theta) fitted jointly by MAP on the calibration block with
-the residual marginalised by Gauss-Hermite (`scirt/lltm.py`). The learned
-scene encoder is the RelGraph R2: ego, agent and lane tokens with R-GCN
+The scene encoder is the RelGraph R2: ego, agent and lane tokens with R-GCN
 lane-lane message passing, agent-lane cross-attention over relative-geometry
-relations and an ego-route relation (d = 64), trained end-to-end with the
-same residual-marginalised cell likelihood; the release
+relations and an ego-route relation (d = 64). Per draw it is trained
+end-to-end on the calibration types only, with the cell likelihood
+marginalised over the residual b_s - b_tilde_s ~ N(0, sigma^2) by
+Gauss-Hermite and sigma learned jointly (the encoder's shared residual SD,
+~.65 on this panel); the release
 ships its per-run out-of-fold predictions (`data/encoder/relgraph_r2_s*.npz`,
-three independent runs, no ensembling). Table 3A scores point predictions;
-statistically the two paths are tied on this panel.
+three independent runs, no ensembling). Table 3A scores these point predictions; on this panel the encoder is
+statistically tied with the hand-crafted descriptor baselines (RelGraph
+minus cmdkin+gtrisk: Delta rho -.008 +- .019 across runs).
 
 ## 4. UP — one posterior for inference, acquisition and stopping
 
@@ -144,11 +146,13 @@ transported to the evaluation-type routes D:
 
 ```
 probes: theta-EIG under the evaluation model (scirt/acquisition.eig_pick)
-P(y = 1 | x, B) = int sigmoid(theta_hat - b) N(b; ridge(x), tau_D^2) db,   zero rollouts on D
+P(y = 1 | scene, B) = int sigmoid(theta_hat - b) N(b; b_tilde_s, sigma^2) db,   zero rollouts on D
 ```
 
-with b_tilde = ridge(alpha = 100) on the descriptor stack fitted to the
-calibration difficulties and tau_D its residual SD. Choosing probes by the
+with b_tilde_s the RelGraph R2 out-of-fold prediction of that draw and
+sigma the residual SD the encoder learned on the calibration block — the
+same prior as Section 3.1, so US and UPS share one difficulty model (run
+s0 is canonical; the across-run SD is reported). Choosing probes by the
 2PL Fisher rule brings no additional gain (ablation in Table 3B): the
 principle is *acquire for the quantity that must generalise* — full-bank SR
 in UP, the transportable ability in UPS, nothing in US.
@@ -178,5 +182,4 @@ stopping rule of its own.
   rate (primary); pooled cell AUROC and Scene-MAE vs the planner-only null.
 - **UPS**: D-SR MAE at zero rollouts on the evaluation-type routes
   (primary), at probe budgets {30, 55, 110}; D-cell NLL.
-- Resampling: paired cluster bootstrap — (draw) 16 clusters of 6 for
-  planner-side deltas, (draw, type) clusters for US pooled deltas.
+- Resampling: paired cluster bootstrap — (draw) 16 clusters of 6 for planner-side deltas; US encoder-vs-baseline deltas are reported as mean +- SD across the three encoder runs.
