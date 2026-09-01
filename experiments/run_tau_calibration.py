@@ -11,7 +11,14 @@ is
 
 over a 0.001 grid — a cost target, not an accuracy target, so held-out
 SR-MAE and IES are measured, not selected. Output: results/tau_hat.json,
-consumed by `run_adaptive.py --merge`.
+consumed by `run_adaptive.py --merge` (matched-cost table, appendix).
+
+The same LOO tracks also fix the risk scale of the stopping rule: per
+(draw, K_cal, order), c = 90th percentile of |Shat_t - SR| / R1_t over the
+left-out planners and t in [10, 110] (results/risk_cal.json), so that
+`run_adaptive.py --merge` can stop at c * R1_t <= epsilon — an error target
+rather than a cost target. The merge also prints a reliability diagnostic of
+raw vs scaled R1 against the realised error, by deciles of raw R1.
 
     python experiments/run_tau_calibration.py --seeds 0 4   # shard (~25 min each, GPU)
     python experiments/run_tau_calibration.py --merge       # tau_hat.json + summary
@@ -30,11 +37,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
-from scirt.curves import marginal_curves
-from scirt.bayes import track, stop_at
-from scirt.curves import PRIOR
-from scirt.bayes import post_from
-from scirt.acquisition import r1_pick
+from scirt.bayes import bank_from_fit, track, stop_at
+from scirt.acquisition import r1_traj
 from scirt.baselines import fluid_order, metabench_order
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
@@ -43,6 +47,7 @@ ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
 TMAX = 110
 TARGETS = (30, 55)
 TAUS = np.round(np.arange(0.010, 0.0801, 0.001), 3)
+RISK_T0 = 10
 
 
 def subsample(cols, seed, Jc):
@@ -59,31 +64,26 @@ def run(seeds):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
+        typ = np.array([panel.sn[r] for r in calR])
         for Jc in KCALS:
             cs = subsample(cols, seed, Jc)
+            f0 = calibrate(panel.Y, calR, cs, mode='1pl', types=typ)      # sigma_b / sigma_g of the panel
             for j in cs:
                 csl = [c for c in cs if c != j]
-                f1 = calibrate(panel.Y, calR, csl, mode='1pl')
-                f2 = calibrate(panel.Y, calR, csl, mode='2pl')
+                f1 = calibrate(panel.Y, calR, csl, mode='1pl', sigma_b=f0['sigma_b'])
+                f2 = calibrate(panel.Y, calR, csl, mode='2pl', sigma_b=f0['sigma_b'])
                 bi, yy = panel.bank_rows(calR, j)
                 n = len(bi)
                 T = min(TMAX, n)
-                M1 = marginal_curves(f1['b'][bi], f1['s'][bi])
+                bank = bank_from_fit(f1, bi, typ, sigma_g=f0['sigma_g'])
                 a, b = f2['a'][bi], f2['b'][bi]
-                def _r1_traj(M, y, n):
-                    S, q = [], PRIOR.copy()
-                    for _ in range(min(T, n)):
-                        rem = [i for i in range(n) if i not in S]
-                        S.append(r1_pick(M, y, S, q, rem))
-                        q = post_from(M, y, S)
-                    return S
-                orders = {'SC-IRT': _r1_traj(M1, yy, n),
+                orders = {'SC-IRT': r1_traj(bank, yy, T),
                           'Fluid': fluid_order(a, b, yy, T),
                           'metabench': [int(i) for i in metabench_order(a, b, T, n)],
                           'Random': [int(i) for i in np.random.RandomState(700 + seed * 20 + j).permutation(n)[:T]]}
-                rec = {'seed': seed, 'J': Jc, 'j': int(j), 'SR': float(yy.mean())}
+                rec = {'seed': seed, 'J': Jc, 'j': int(j), 'SR': float(yy.mean()), 'sigma_g': f0['sigma_g']}
                 for k, o in orders.items():
-                    Sh, R1 = track(M1, yy, o)
+                    Sh, R1 = track(bank, yy, o)
                     rec[k] = {'Shat': [float(x) for x in Sh], 'R1': [float(x) for x in R1]}
                 recs.append(rec)
             print(f'seed {seed} K{Jc} done', flush=True)
@@ -110,6 +110,36 @@ def select(recs):
     return TAU, summary
 
 
+def risk_scale(recs):
+    """c(draw, K_cal, order) = 90th percentile of |Shat_t - SR| / R1_t over the
+    left-out planners and t in [RISK_T0, TMAX] of the LOO tracks (R1_t <= 1e-6
+    skipped); prints the reliability of raw and scaled R1 pooled over draws."""
+    C, cs, pool = {}, {}, {}
+    for seed in sorted(set(r['seed'] for r in recs)):
+        for J in KCALS:
+            rj = [r for r in recs if r['seed'] == seed and r['J'] == J]
+            for o in ORD:
+                raw = np.concatenate([r[o]['R1'][RISK_T0 - 1:TMAX] for r in rj])
+                act = np.concatenate([np.abs(np.array(r[o]['Shat'][RISK_T0 - 1:TMAX]) - r['SR']) for r in rj])
+                ok = raw > 1e-6
+                c = float(np.percentile(act[ok] / raw[ok], 90))
+                C[f'{seed}|{J}|{o}'] = c
+                cs.setdefault((J, o), []).append(c)
+                pool.setdefault((J, o), []).append(np.stack([raw[ok], act[ok], c * raw[ok]]))
+    print(f'\n===== reliability of R1 on the LOO tracks (t in [{RISK_T0},{TMAX}], pooled over draws; rows = deciles of raw R1) =====')
+    for J in KCALS:
+        print(f'-- K_cal = {J} --  c median [IQR]: ' + '  '.join(
+            f'{o} {np.median(cs[(J, o)]):.2f} [{np.percentile(cs[(J, o)], 25):.2f},{np.percentile(cs[(J, o)], 75):.2f}]'
+            for o in ORD))
+        print('   decile ' + ' | '.join(f'{o:^22s}' for o in ORD))
+        print('          ' + ' | '.join('raw R1   |err|    c*R1' for o in ORD))
+        P = {o: np.concatenate(pool[(J, o)], 1) for o in ORD}
+        D = {o: np.digitize(P[o][0], np.percentile(P[o][0], np.arange(10, 100, 10))) for o in ORD}
+        for b in range(10):
+            print(f'   {b + 1:6d} ' + ' | '.join('  '.join(f'{v:.4f}' for v in P[o][:, D[o] == b].mean(1)) for o in ORD))
+    return C
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--seeds', nargs=2, type=int, default=None)
@@ -131,10 +161,13 @@ def main():
     json.dump(TAU, open(OUT / 'tau_hat.json', 'w'))
     assert len(set(r['seed'] for r in recs)) == R_DRAWS
     print('tau_hat.json written')
-    for J, tg, v in ((7, 30, .039), (7, 55, .026), (10, 30, .041), (10, 55, .026),
-                     (16, 30, .041), (16, 55, .027)):
-        m = float(np.median(summary[(J, 'SC-IRT', tg)]))
-        assert abs(m - v) < .0015, (J, tg, m)
+    C = risk_scale(recs)
+    json.dump(C, open(OUT / 'risk_cal.json', 'w'))
+    print('risk_cal.json written')
+    for J, v in ((7, 1.79), (10, 1.97), (16, 2.10)):
+        cm = float(np.median([C[f'{s}|{J}|SC-IRT'] for s in sorted(set(r['seed'] for r in recs))]))
+        assert abs(cm - v) < .03, (J, cm)
+    assert abs(float(np.median(summary[(16, 'SC-IRT', 55)])) - .029) < .0015
     print('anchors OK')
 
 

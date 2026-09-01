@@ -2,7 +2,7 @@
 """Analysis — the Rasch readout as a drop-in for any selector (contribution C1).
 
 Every published selector's subsets are re-scored with SC-IRT's readout
-(difficulty-marginalised Rasch curves, MAP fill) instead of the selector's
+(exact difficulty posteriors, testlet, posterior median) instead of the selector's
 native estimator; compared with the native numbers of `run_up_frontier.py`
 this isolates what the uncertainty-aware inference layer contributes,
 independently of how scenes were chosen. The gain is largest under
@@ -22,8 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
-from scirt.curves import marginal_curves
-from scirt.bayes import map_fill
+from scirt.bayes import bank_from_fit, readout
 from scirt.baselines import (fluid_order, total_fisher_order, metabench_order, kmeans_anchors,
                              stratified_order)
 
@@ -58,10 +57,11 @@ def main():
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
+        typ = np.array([panel.sn[r] for r in calR])
         for Jc in KCALS:
             cs = subsample(cols, seed, Jc)
-            f1 = calibrate(panel.Y, calR, cs, mode='1pl')
-            f2 = calibrate(panel.Y, calR, cs, mode='2pl')
+            f1 = calibrate(panel.Y, calR, cs, mode='1pl', types=typ)
+            f2 = calibrate(panel.Y, calR, cs, mode='2pl', sigma_b=f1['sigma_b'])
             R = np.full((len(calR), len(cs)), np.nan)
             for a_, rid in enumerate(calR):
                 for b_, pi in enumerate(cs):
@@ -74,7 +74,7 @@ def main():
                 bi, yy = panel.bank_rows(calR, js)
                 n = len(bi)
                 SR = yy.mean()
-                M1 = marginal_curves(f1['b'][bi], f1['s'][bi])
+                bank = bank_from_fit(f1, bi, typ)
                 a2, b2 = f2['a'][bi], f2['b'][bi]
                 fl = fluid_order(a2, b2, yy, max(BG))
                 tf = total_fisher_order(a2, b2, f2['th'])
@@ -84,7 +84,7 @@ def main():
                             'tinyBenchmarks': kmeans_anchors(a2, b2, B, n), 'AnchorPoints': anchor_set(Rf[bi], B),
                             'Random': perm[:B]}
                     for s in SELS:
-                        ERR[s][Jc][B].append(abs(map_fill(M1, yy, sets[s]) - SR))
+                        ERR[s][Jc][B].append(abs(readout(bank, yy, sets[s]) - SR))
         print(f'seed {seed} done', flush=True)
     nat = {}
     fp = OUT / 'up_frontier.json'
@@ -105,9 +105,8 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({s: {str(J): {str(B): [float(x) for x in ERR[s][J][B]] for B in BG} for J in KCALS} for s in SELS},
               open(OUT / 'readout_dropin.json', 'w'))
-    for sel, J, B, v in (('Total-Fisher', 7, 30, .0525), ('AnchorPoints', 7, 30, .0589),
-                         ('Fluid', 7, 55, .0420), ('AnchorPoints', 16, 110, .0194),
-                         ('Random', 10, 110, .0193)):
+    for sel, J, B, v in (('Fluid', 7, 30, .0493), ('AnchorPoints', 16, 110, .0189), ('Random', 10, 110, .0195),
+                         ('Fluid', 16, 55, .0345)):
         m = float(np.mean(ERR[sel][J][B]))
         assert abs(m - v) < .0003, (sel, J, B, m)
     print('anchors OK')

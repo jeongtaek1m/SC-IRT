@@ -19,21 +19,35 @@ past a failed anchor.
 
 | script | asserts |
 |---|---|
-| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid/metabench/Random cells, SC-IRT macro .0365 |
-| `run_tau_calibration.py --merge` | tau_hat per (K_cal, target) + LOO expected-budget table |
-| `run_adaptive.py --merge` | Table 2 adaptive SR-MAE cells |
-| `run_ablation.py --merge` | component table at K7/K10 B30 and K16 B55 (full and off-arms) |
+| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid / Random-strat / Random cells, SC-IRT macro .0296 |
+| `run_tau_calibration.py --merge` | risk-scale medians c per K_cal (SC-IRT) + one matched-cost tau_hat median |
+| `run_adaptive.py --merge` | fixed-t track errors of SC-IRT / Random / Fluid at representative (K_cal, t) |
+| `run_ablation.py --merge` | full and each off-arm at representative cells |
 | `run_us.py` | Table 3A: null, the two hand-crafted rows, RelGraph 3-run means |
 | `run_ups.py` | Table 3B: representative MAE cells per policy (tol .003) |
 | `run_navhard.py --merge` | Table 4 cells |
-| `run_readout_dropin.py` | the drop-in deltas |
-| `tests/` | split pinning (draw 0), panel shape 22 x 220 / 4796 cells, r1_pick determinism, IES definition |
+| `run_readout_dropin.py` | the drop-in cells |
+| `tests/` | grids and index identities, exact-posterior and testlet invariants, split pinning (draw 0), panel shape, r1_pick determinism, IES definition |
+
+## Protocol constants (`scirt/curves.py`, `scirt/calibration.py`)
+
+| constant | value |
+|---|---|
+| theta grid THG | 241 points on [-6, 6]; prior N(0, 1) |
+| extended axis XG | 361 points on [-9, 9] (theta + u lookups) |
+| difficulty grid BG | 801 points on [-10, 10] (exact item posterior) |
+| testlet grid UG | 61 points on [-3, 3] |
+| calibration priors | theta ~ N(0, 1); b ~ N(0, sigma_b^2), sigma_b by empirical Bayes on {.5, .75, 1, 1.5, 2, 3}; log a ~ N(0, .5^2); logit c ~ N(-2.2, 1) |
+| testlet SD grid | sigma_g on {0, .25, .5, .75, 1, 1.25, 1.5, 2} by profile marginal likelihood |
+| optimiser | Adam lr .05, 800 iterations, zero init, theta-mean centring |
+| risk scale | c = 90th percentile of realised / predicted error over LOO trajectories, t in [10, 110] |
+| stopping targets | eps in {.03, .05}; matched-cost appendix targets 30 / 55 rollouts |
 
 ## RNG registry
 
-All randomness is `np.random.RandomState` with fixed formulas; nothing reads
-global seed state except the top-of-script `np.random.seed(0); torch.manual_seed(0)`
-(which covers sklearn k-means inside tinyBenchmarks).
+All randomness is `np.random.RandomState` with fixed formulas (sklearn
+k-means inside tinyBenchmarks passes `random_state=0` explicitly); the
+top-of-script `np.random.seed(0); torch.manual_seed(0)` is belt-and-braces.
 
 | purpose | seed formula |
 |---|---|
@@ -41,8 +55,9 @@ global seed state except the top-of-script `np.random.seed(0); torch.manual_seed
 | K_cal subsample from the 16 calibration planners | `RandomState(9000 + 100*draw + 10*K_cal)` |
 | Random / Random-strat rollout order (per evaluation) | `RandomState(100 + 20*draw + planner_id)` |
 | leave-one-planner-out Random order (tau calibration) | `RandomState(700 + 20*draw + j)` |
+| navhard panel (Table 4) | same formulas on the 87 submissions: 6 evaluation planners `RandomState(1000 + draw)`, K_cal subsample `RandomState(9000 + 100*draw + 10*K_cal)`, Random order `RandomState(100 + 20*draw + planner_id)`; no scenario types |
 | model-adequacy simulation | `RandomState(2000 + draw)` |
-| paired bootstrap | `RandomState(0)`; 4,000 resamples over 16 draw-clusters of 6 planner evaluations |
+| paired bootstrap | `RandomState(0)`; 4,000 resamples of the unique planner ids (planner clusters, 22 on Bench2Drive), every evaluation of a resampled planner weighted equally |
 
 Policy: no prediction or run ensembling anywhere — single-run numbers with
 across-draw dispersion only. The RelGraph rows report 3 independent runs as
@@ -53,8 +68,9 @@ mean +- SD, never an averaged prediction.
 - `data/matrices/b2d_e2e22_response_matrix.csv` — 22 planners x 220
   Bench2Drive routes, pass/fail from official closed-loop evaluation; the
   per-planner sources and re-driven cells are recorded in the research-side
-  build report, and `experiments/build_data.py` verifies the shipped copies
-  against the research tree. The 16-planner matrix it extends is kept
+  build report; `experiments/build_data.py` md5-checks the 16-planner matrix
+  against the research tree and `tests/` pins the 22-planner panel's shape
+  (22 x 220, 4,796 cells). The 16-planner matrix it extends is kept
   alongside.
   `SCIRT_RESPONSE_CSV` overrides the panel for new matrices.
 - `data/features/` — per-route descriptor sets (cmdkin, gtrisk, routegeom,
@@ -73,6 +89,12 @@ mean +- SD, never an averaged prediction.
   also carries `draw{r}_sigma`, the shared residual SD the encoder learned
   on that draw's calibration block (the UPS prior width). Training code
   depends on Bench2Drive raw rollouts and is staged for a separate release.
+- `data/live/risk_scale.json` — cached risk scales c of `scirt.live.LiveEvaluator`,
+  keyed by a bank fingerprint (planner set, route list, iterations) and
+  validated against a digest of the responses; the shipped entries are the
+  22-planner bank (c = 2.08) and the three 21-planner banks of the dry-runs
+  in RESULTS.md. `calibrate_risk()` recomputes an entry when the matrix
+  changes (~22 GPU calibrations).
 - `data/navhard/navhard_binary_panel.npz` — NAVSIM navhard leaderboard
   (two-stage pseudo-closed-loop EPDMS): 115 submissions scraped from the
   public leaderboard, near-duplicate resubmissions collapsed to 87 unique
@@ -89,7 +111,7 @@ pytest tests/ -q
 for lo in 0 4 8 12; do python experiments/run_up_frontier.py --seeds $lo $((lo+4)) & done; wait
 python experiments/run_up_frontier.py --merge          # Table 1, anchors OK
 for lo in 0 2 4 6 8 10 12 14; do python experiments/run_tau_calibration.py --seeds $lo $((lo+2)) & done; wait
-python experiments/run_tau_calibration.py --merge      # tau_hat ledger
+python experiments/run_tau_calibration.py --merge      # risk scale c (+ matched-cost tau_hat)
 for lo in 0 4 8 12; do python experiments/run_adaptive.py --seeds $lo $((lo+4)) & done; wait
 python experiments/run_adaptive.py --merge             # Table 2
 for lo in 0 4 8 12; do python experiments/run_ablation.py --seeds $lo $((lo+4)) & done; wait

@@ -1,73 +1,190 @@
-"""Evaluation-side inference: grid posterior over the new planner's ability,
-the MAP-fill success-rate readout, and the posterior L1 risk that drives
-adaptive stopping (PROTOCOL sections 2 and 5).
+"""Evaluation-side inference (PROTOCOL sections 3-4): one posterior over the
+new planner's ability theta and its planner x scenario-type testlet effects
+u_g, the posterior-median success-rate readout (the L1 Bayes action), and
+the posterior L1 risk R1 that drives both acquisition and stopping.
 
-All of it runs on the difficulty-marginalised Rasch curves
-m_i(theta) = E_{b_i | A}[sigmoid(theta - b_i)] (`scirt.curves`). The
-acquisition model never enters here.
+    logit P(y_s = 1) = theta - b_s + u_{g(s)},   u_g ~ N(0, sigma_g^2)
+
+Difficulties enter through their exact conditional posteriors: the bank
+curves m_s(x) = E_{b_s | A}[sigmoid(x - b_s)] are tabulated on the extended
+axis XG so that m_s(theta + u) is an index lookup (`Bank.M3`). Given theta,
+types are independent and each u_g integrates on the grid UG, so the
+posterior factorises as q(theta) prod_g l_g(theta) with per-type
+(theta x u) log-likelihood tables (`State.A`).
 """
 import numpy as np
 from scipy.stats import norm
 
-from .curves import PRIOR
+from .curves import PRIOR, THG, UG, USHIFT, I0, curves_from_posterior
+
+EPS = 1e-12
 
 
-def post_from(M, y, S, prior=PRIOR):
-    """Posterior over the theta grid given administered items S.
-    M: (grid, n_items) curves; y: 0/1 responses (full row, only S read)."""
-    if not len(S):
-        return prior.copy()
-    ll = (y[S][None, :] * np.log(M[:, S] + 1e-12)
-          + (1 - y[S][None, :]) * np.log(1 - M[:, S] + 1e-12)).sum(1)
-    q = np.exp(ll - ll.max()) * prior
-    return q / q.sum()
+class Bank:
+    """Curves of one bank on the (theta, u) grid.
+    C: (361, n) curves on XG; types: (n,) scenario-type ids; sigma_g: testlet SD
+    (0 -> independent items, the single-grid special case)."""
+
+    def __init__(self, C, types, sigma_g=0.0):
+        self.n = C.shape[1]
+        self.types = np.asarray(types)
+        self.tids = {t: [int(i) for i in np.where(self.types == t)[0]] for t in np.unique(self.types)}
+        if sigma_g < 1e-9:
+            self.pu, shifts = np.ones(1), np.zeros(1, int)
+        else:
+            lp = -0.5 * (UG / sigma_g) ** 2
+            self.pu = np.exp(lp - lp.max())
+            self.pu = self.pu / self.pu.sum()
+            shifts = USHIFT
+        self.lpu = np.log(self.pu + EPS)
+        idx = I0 + np.arange(len(THG))[:, None] + shifts[None, :]            # (241, J)
+        self.M3 = C[idx]                                                      # (241, J, n)
+        self.V3 = self.M3 * (1 - self.M3)
+        self.lM = np.log(self.M3 + EPS)
+        self.l1M = np.log(1 - self.M3 + EPS)
 
 
-def map_fill(M, y, S, q=None):
-    """Success-rate readout: observed successes + curve fill of the
-    unobserved items at the MAP ability."""
-    n = M.shape[1]
-    S = list(S)
-    if q is None:
-        q = post_from(M, y, S)
-    un = [i for i in range(n) if i not in set(S)]
-    ih = int(np.argmax(q))
-    return float((y[S].sum() + M[ih, un].sum()) / n)
+def bank_from_fit(f, bi, types, sigma_g=None):
+    """Bank of one planner's observed bank rows `bi` from a Rasch calibration
+    `f` (needs f['W'], f['sigma_g']); `types` indexes the full calibration
+    route list. sigma_g overrides the fitted testlet SD."""
+    return Bank(curves_from_posterior(f['W'][bi]), np.asarray(types)[bi],
+                f['sigma_g'] if sigma_g is None else sigma_g)
 
 
-def r1_risk(M, y, S, q=None, s_hat=None):
-    """Posterior expected absolute error of the readout, E|S - S_hat | D|,
-    in closed form: unobserved responses given theta are approximated by a
-    normal with mean sum m_i and variance sum m_i(1 - m_i); the mixture over
-    the theta grid then gives E|X - c| = sigma [2 phi(z) + z (2 Phi(z) - 1)]."""
-    n = M.shape[1]
-    S = list(S)
-    if q is None:
-        q = post_from(M, y, S)
-    if s_hat is None:
-        s_hat = map_fill(M, y, S, q)
-    un = [i for i in range(n) if i not in set(S)]
-    if not un:
-        return 0.0
-    Mu = M[:, un]
-    mu = Mu.sum(1)
-    sd = np.sqrt((Mu * (1 - Mu)).sum(1) + 1e-9)
-    z = (s_hat * n - y[S].sum() - mu) / sd
-    return float((q * sd * (2 * norm.pdf(z) + z * (2 * norm.cdf(z) - 1))).sum() / n)
+def _logmix(A, lpu):
+    """log sum_j pu_j exp(A_ij) row-wise."""
+    m = A.max(1, keepdims=True)
+    return m[:, 0] + np.log((np.exp(A - m) * np.exp(lpu)[None, :]).sum(1) + EPS)
 
 
-def track(M, y, order):
+def mix_median(q, mu, sd, hi, iters=40):
+    """Median of the normal mixture sum_i q_i N(mu_i, sd_i^2) on [0, hi];
+    columns are independent problems. q, mu, sd: (241, C)."""
+    lo = np.zeros(q.shape[1])
+    hi = np.full(q.shape[1], float(hi))
+    for _ in range(iters):
+        c = (lo + hi) / 2
+        F = (q * norm.cdf((c[None, :] - mu) / sd)).sum(0)
+        m_ = F < 0.5
+        lo = np.where(m_, c, lo)
+        hi = np.where(m_, hi, c)
+    return (lo + hi) / 2
+
+
+def mix_l1(q, mu, sd, c):
+    """E|X - c| under the normal mixture, closed form per component."""
+    z = (c[None, :] - mu) / sd
+    return (q * sd * (2 * norm.pdf(z) + z * (2 * norm.cdf(z) - 1))).sum(0)
+
+
+class State:
+    """Posterior state of one evaluation planner on a bank after observing
+    the items in `S`. `add` is incremental; `readout` returns the
+    posterior-median success rate and its posterior expected absolute
+    error; `predictive_all` gives P(Y_s = 1 | D) for every item."""
+
+    def __init__(self, bank, y):
+        self.bank, self.y = bank, np.asarray(y, float)
+        self.S, self.yo = [], 0.0
+        self.logq = np.log(PRIOR)
+        self.A, self.logl = {}, {}
+        self.cache = {}
+        for t, ix in bank.tids.items():
+            self._set(t, bank.M3[:, :, ix].sum(2), bank.V3[:, :, ix].sum(2))
+
+    def w(self, t):
+        """Posterior over u_t on the theta grid: (241, J)."""
+        if t in self.A:
+            W = self.bank.pu[None, :] * np.exp(self.A[t] - self.A[t].max(1, keepdims=True))
+            return W / W.sum(1, keepdims=True)
+        return np.broadcast_to(self.bank.pu[None, :], (len(THG), len(self.bank.pu)))
+
+    def _set(self, t, S1, S2):
+        w = self.w(t)
+        mean = (w * S1).sum(1)
+        var = (w * S2).sum(1) + (w * S1 ** 2).sum(1) - mean ** 2
+        self.cache[t] = (S1, S2, mean, np.maximum(var, 0.0))
+
+    def add(self, s, ys=None):
+        s = int(s)
+        ys = self.y[s] if ys is None else float(ys)
+        t = self.bank.types[s]
+        b = self.bank
+        ll = b.lM[:, :, s] if ys > 0.5 else b.l1M[:, :, s]
+        A = self.A.get(t, 0.0) + ll
+        new = _logmix(A, b.lpu)
+        self.logq = self.logq + new - self.logl.get(t, 0.0)
+        self.A[t], self.logl[t] = A, new
+        self.S.append(s)
+        self.yo += ys
+        S1, S2, _, _ = self.cache[t]
+        self._set(t, S1 - b.M3[:, :, s], S2 - b.V3[:, :, s])
+        return self
+
+    @property
+    def q(self):
+        q = np.exp(self.logq - self.logq.max())
+        return q / q.sum()
+
+    def stats(self):
+        """Mean and SD of the unobserved-success total given theta: (241,), (241,)."""
+        mu = sum(c[2] for c in self.cache.values())
+        var = sum(c[3] for c in self.cache.values())
+        return mu, np.sqrt(var + 1e-9)
+
+    def readout(self):
+        """(S_hat, R1): posterior-median success rate and E|SR - S_hat | D|."""
+        n = self.bank.n
+        if len(self.S) == n:
+            return float(self.yo / n), 0.0
+        q = self.q[:, None]
+        mu, sd = self.stats()
+        c = mix_median(q, mu[:, None], sd[:, None], float(n - len(self.S)))
+        r = mix_l1(q, mu[:, None], sd[:, None], c)
+        return float((self.yo + c[0]) / n), float(r[0] / n)
+
+    def predictive_all(self):
+        """P(Y_s = 1 | D) for every item (observed ones return their curve fill)."""
+        q = self.q
+        out = np.zeros(self.bank.n)
+        for t, ix in self.bank.tids.items():
+            wt = self.w(t)
+            out[ix] = np.einsum('i,ij,ijs->s', q, wt, self.bank.M3[:, :, ix])
+        return out
+
+
+def state_from(bank, y, S):
+    st = State(bank, y)
+    for s in S:
+        st.add(s)
+    return st
+
+
+def readout(bank, y, S):
+    """Posterior-median success rate after observing items S."""
+    return state_from(bank, y, S).readout()[0]
+
+
+def track(bank, y, order):
     """Readout and risk along a bank order: (S_hat[t], R1[t]) for
     t = 1..len(order). Fixed budgets read S_hat[B-1]; the stopping rule
-    reads the first t with R1[t] <= tau."""
+    reads the first t with the (calibrated) risk below its target."""
+    st = State(bank, y)
     Sh, R1 = [], []
-    for t in range(1, len(order) + 1):
-        S = order[:t]
-        q = post_from(M, y, S)
-        sh = map_fill(M, y, S, q)
+    for s in order:
+        sh, r = st.add(s).readout()
         Sh.append(sh)
-        R1.append(r1_risk(M, y, S, q, sh))
+        R1.append(r)
     return Sh, R1
+
+
+def transfer(q, bank_d):
+    """Transport a theta posterior to a block with no observations (UPS):
+    returns (posterior-median success rate on the block, per-item P(Y=1))."""
+    st = State(bank_d, np.zeros(bank_d.n))
+    st.logq = np.log(np.asarray(q) + EPS)
+    return st.readout()[0], st.predictive_all()
 
 
 def stop_at(R1, tau):

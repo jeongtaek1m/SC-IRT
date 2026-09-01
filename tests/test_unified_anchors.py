@@ -14,10 +14,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS, H_P, H_S
-from scirt.curves import THG, PRIOR, GX, GW, marginal_curves, sig
-from scirt.bayes import post_from, map_fill, r1_risk, track, stop_at
-from scirt.acquisition import r1_pick, eig_pick
-from scirt.baselines import fluid_order, metabench_order, population_fisher
+from scirt.curves import (THG, XG, I0, PRIOR, BG, UG, USHIFT, GX, GW, marginal_curves, sig,
+                          item_loglik, item_posteriors, curves_from_posterior, posterior_sd)
+from scirt.bayes import Bank, State, state_from, readout, track, transfer, stop_at
+from scirt.acquisition import r1_pick, r1_scores, eig_pick, r1_traj
 from scirt.metrics import ies
 
 
@@ -62,59 +62,87 @@ def test_splits_are_paired_across_regimes(panel):
 
 def test_grid_constants():
     assert THG.shape == (241,) and THG[0] == -6 and THG[-1] == 6
+    assert np.allclose(XG[I0:I0 + 241], THG) and XG.shape == (361,)
     assert abs(PRIOR.sum() - 1) < 1e-12
+    assert BG.shape == (801,) and UG.shape == (61,)
+    assert np.allclose(XG[I0 + 100 + USHIFT], THG[100] + UG)       # theta + u is an index shift
     assert GX.shape == (21,) and abs(GW.sum() - 1) < 1e-12
 
 
 def test_marginal_curves_reduce_to_point():
-    mu = np.array([0.0, 1.0])
+    mu = np.array([-1.0, 0.5])
     m = marginal_curves(mu, np.array([1e-9, 1e-9]))
-    assert np.allclose(m, sig(THG[:, None] - mu[None, :]), atol=1e-6)
+    assert m.shape == (361, 2)
+    assert np.allclose(m, sig(XG[:, None] - mu[None, :]), atol=1e-6)
 
 
-def _toy():
-    mu = np.linspace(-2, 2, 40)
-    M = marginal_curves(mu, np.full(40, 0.3))
-    y = (mu < 0.3).astype(float)
-    return mu, M, y
+def _toy_bank(sigma_g=0.6, seed=0):
+    rng = np.random.RandomState(seed)
+    n = 40
+    types = np.repeat(np.arange(8), 5)
+    b, th = rng.randn(n), rng.randn(6)
+    R = (rng.rand(n, 6) < sig(th[None, :] - b[:, None])).astype(float)
+    R[rng.rand(n, 6) < 0.1] = np.nan
+    W = item_posteriors(item_loglik(R, th), 1.5)
+    assert np.allclose(W.sum(1), 1) and (posterior_sd(W) > 0).all()
+    y = (rng.rand(n) < sig(0.3 - b + 0.6 * rng.randn(8)[types])).astype(float)
+    return Bank(curves_from_posterior(W), types, sigma_g), y
+
+
+def test_exact_item_posterior_sharpens_with_more_planners():
+    rng = np.random.RandomState(1)
+    b = rng.randn(30)
+    sds = []
+    for K in (4, 16, 64):
+        th = rng.randn(K)
+        R = (rng.rand(30, K) < sig(th[None, :] - b[:, None])).astype(float)
+        sds.append(posterior_sd(item_posteriors(item_loglik(R, th), 1.5)).mean())
+    assert sds[0] > sds[1] > sds[2]
 
 
 def test_readout_and_risk_are_deterministic_and_consistent():
-    mu, M, y = _toy()
-    S = [0, 3, 7]
-    q = post_from(M, y, S)
-    assert abs(q.sum() - 1) < 1e-12
-    assert map_fill(M, y, S, q) == map_fill(M, y, S)
-    r = r1_risk(M, y, S, q)
-    assert r > 0
-    assert r1_risk(M, y, list(range(40))) == 0.0            # nothing left to fill
-    Sh, R1 = track(M, y, list(range(40)))
-    assert len(Sh) == 40 and abs(Sh[-1] - y.mean()) < 1e-12 and R1[-1] == 0.0
-    assert stop_at(R1, 1e-9) == 40 and stop_at(R1, 10.0) == 1
+    bank, y = _toy_bank()
+    S = [3, 17, 25, 8, 31]
+    st = state_from(bank, y, S)
+    sh, r1 = st.readout()
+    assert 0 <= sh <= 1 and r1 > 0
+    assert readout(bank, y, S) == sh
+    assert abs(st.q.sum() - 1) < 1e-12
+    Sh, R1 = track(bank, y, S)
+    assert Sh[-1] == sh and R1[-1] == r1
+    Shf, R1f = track(bank, y, list(range(bank.n)))
+    assert abs(Shf[-1] - y.mean()) < 1e-12 and R1f[-1] == 0.0      # full observation is exact
+    assert stop_at(R1, 1.0) == 1 and stop_at(R1, 0.0) == len(R1)
+    p = st.predictive_all()
+    assert p.shape == (bank.n,) and ((p >= 0) & (p <= 1)).all()
+
+
+def test_no_testlet_is_the_independent_model():
+    bank, y = _toy_bank(sigma_g=0.0)
+    C = bank.M3[:, 0, :]
+    XC = np.zeros((361, bank.n))
+    XC[I0:I0 + 241] = C
+    flat = Bank(XC, np.arange(bank.n), 0.0)          # every item its own type, no u
+    assert bank.M3.shape[1] == 1 and flat.M3.shape[1] == 1
+    S = [1, 2, 3, 20, 21]
+    assert abs(readout(bank, y, S) - readout(flat, y, S)) < 1e-12
+    assert r1_pick(State(bank, y), list(range(bank.n))) == r1_pick(State(flat, y), list(range(bank.n)))
 
 
 def test_acquisition_rules_are_deterministic():
-    mu, M, y = _toy()
-    a = np.ones(40)
-    th = np.linspace(-1, 1, 7)
-    S, q = [], post_from(M, y, [])
-    for _ in range(8):
-        rem = [i for i in range(40) if i not in S]
-        S.append(r1_pick(M, y, S, q, rem))
-        q = post_from(M, y, S)
-    assert len(set(S)) == 8
-    S2, q = [], post_from(M, y, [])
-    for _ in range(8):
-        rem = [i for i in range(40) if i not in S2]
-        S2.append(r1_pick(M, y, S2, q, rem))
-        q = post_from(M, y, S2)
-    assert S == S2
-    q = post_from(M, y, [0, 3, 7])
-    rem = [i for i in range(40) if i not in (0, 3, 7)]
-    assert eig_pick(q, M, rem) == eig_pick(q, M, rem)
-    assert len(population_fisher(a, mu, th)) == 40
-    mb = metabench_order(a, mu, 20, 40)
-    assert mb[:10] == metabench_order(a, mu, 10, 40)        # prefix property
+    bank, y = _toy_bank()
+    st = State(bank, y)
+    rem = list(range(bank.n))
+    ev = r1_scores(st, rem)
+    assert ev.shape == (bank.n,) and r1_pick(st, rem) == rem[int(np.argmin(ev))]
+    S1 = r1_traj(bank, y, 8)
+    S2 = r1_traj(bank, y, 8)
+    assert S1 == S2 and len(set(S1)) == 8
+    e = eig_pick(State(bank, y), rem)
+    assert e in rem
+    st2 = state_from(bank, y, S1)
+    sr_d, pD = transfer(st2.q, bank)
+    assert 0 <= sr_d <= 1 and pD.shape == (bank.n,)
 
 
 def test_ies_definition():

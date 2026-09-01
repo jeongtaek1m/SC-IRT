@@ -7,16 +7,18 @@ ability — and uses it for everything: reconstructing the benchmark success
 rate, choosing which scene to roll out next, and deciding when to stop.
 
 ```
-evaluation model   y_sk ~ Bernoulli(sigmoid(theta_k - b_s)),  b_s | A ~ N(b_hat_s, s_s^2)
-readout            SR_hat = (1/S) [ sum observed y + sum m_s(theta_hat) ]
+evaluation model   y_sk ~ Bernoulli(sigmoid(theta_k - b_s + u_kg)),  b_s | A exact grid posterior,  u_kg ~ N(0, sigma_g^2)
+readout            SR_hat_t = posterior median of SR                     (the L1 Bayes action)
 acquisition        argmax_s  R1(D_t) - E_{Y_s}[ R1(D_t + (s, Y_s)) ]      (Delta-R1)
-stopping           R1(D_t) <= tau_hat,  R1 = E[ |SR - SR_hat_t| | D_t ]
+stopping           c * R1(D_t) <= eps,  R1 = E[ |SR - SR_hat_t| | D_t ],  c fixed on the calibration panel
 ```
 
-*Same posterior, same target for inference, acquisition and stopping.* No
-auxiliary discrimination model, no phase switch, no localisation budget: an
-acquisition-criterion ablation shows every posterior-based criterion within
-the paired intervals, so the target-aligned one is used.
+*Same posterior, same loss, same action for inference, acquisition and
+stopping.* No auxiliary discrimination model, no phase switch, no
+localisation budget. The posterior knows two things a plug-in Rasch does
+not: how uncertain each scene's difficulty is on a small calibration panel
+(exact, not Gaussian), and that routes of one scenario type move together
+(a planner x type testlet effect).
 
 Everything in the paper runs from this repository: the data ships in
 `data/` (under 1 MB, no external downloads) and every table-producing entry
@@ -29,15 +31,17 @@ point ends by asserting the published numbers (`anchors OK`).
 ## Contributions
 
 - **C1 Uncertain item-bank inference.** A small calibration panel makes
-  every scene difficulty uncertain; SC-IRT keeps p(b_s | A) (conditional
-  Laplace) and marginalises it into every probability it computes.
+  every scene difficulty uncertain; SC-IRT keeps the exact conditional
+  posterior p(b_s | A) and the planner x type dependence, and marginalises
+  both into every probability it computes.
 - **C2 Target-aligned acquisition.** *Acquire for the quantity that must
-  generalise*: the posterior L1 risk of the reported success rate in UP,
-  evaluation-model information for the transported ability in UPS, nothing
-  in US.
-- **C3 Risk-based adaptive stopping.** Stop when the same risk falls below
-  tau_hat, which is fixed on the calibration panel (leave-one-planner-out,
-  cost-matched) and never selected on evaluation planners.
+  generalise*: the posterior L1 risk of the reported success rate in UP, of
+  the transported block-D success rate in UPS (Delta-R1 on D), nothing in
+  US.
+- **C3 Risk-based adaptive stopping.** Stop when the calibrated risk
+  c * R1 falls below the error target eps; c is fixed on the calibration
+  panel (leave-one-planner-out) and never selected on evaluation planners,
+  and the realised coverage P(|SR_hat - SR| <= eps) is reported.
 - **C4 Scene-conditioned difficulty.** scene -> b via the RelGraph
   relational scene-graph encoder (learned per draw on the calibration
   types, shipped as per-run out-of-fold predictions), enabling unseen-scene
@@ -46,8 +50,9 @@ point ends by asserting the published numbers (`anchors OK`).
 ## The primary protocol
 
 22-planner x 220-route Bench2Drive panel; per draw (R = 16), 16 calibration
-: 6 evaluation planners and 36 : 8 scenario types. Rollout budgets are whole
-scenario types: B = 5 x {6, 11, 22} = {30, 55, 110}; calibration-panel sizes
+: 6 evaluation planners and 36 : 8 scenario types. B = number of routes
+rolled out (30/55/110 = 5 x {6, 11, 22}, so the type-stratified baseline
+can execute whole scenario types); calibration-panel sizes
 K_cal in {7, 10, 16}. 96 evaluations per cell. A second, two-stage panel
 (NAVSIM navhard leaderboard, 87 unique submissions x 225 units) reproduces
 the UP comparison off Bench2Drive.
@@ -65,9 +70,9 @@ pytest tests/ -q            # fast invariants, CPU
 
 # Reproduce the paper (GPU). Heavy scripts accept --seeds lo hi shards + --merge.
 python experiments/run_up_frontier.py       # Table 1 (fixed budgets)
-python experiments/run_tau_calibration.py   # calibration-fixed stopping thresholds
-python experiments/run_adaptive.py          # Table 2 (adaptive) + cost-error data
-python experiments/run_ablation.py          # component ablation (2 x 2)
+python experiments/run_tau_calibration.py   # calibration-fixed risk scale (+ matched-cost thresholds)
+python experiments/run_adaptive.py          # Table 2 (risk-target stopping) + cost-error data
+python experiments/run_ablation.py          # component ablation (one component off at a time)
 python experiments/run_us.py                # Table 3A
 python experiments/run_ups.py               # Table 3B
 python experiments/run_navhard.py           # Table 4: the two-stage NAVSIM panel
@@ -75,6 +80,10 @@ python experiments/run_readout_dropin.py    # analysis: the readout under every 
 python experiments/run_model_adequacy.py    # appendix diagnostics
 python experiments/run_calibration_stability.py
 python experiments/make_figures.py          # figures from the results jsons
+
+# Use it inside a real closed-loop evaluation (UP): pick routes, ingest outcomes, stop on risk
+python tools/b2d_adaptive_eval.py --dry-run VAD --eps 0.03          # simulate from the matrix
+python tools/b2d_adaptive_eval.py --name my_planner --agent ... --agent-config ... --eps 0.03
 ```
 
 ## What is in the box
@@ -82,6 +91,7 @@ python experiments/make_figures.py          # figures from the results jsons
 ```
 scirt/          the library (PROTOCOL.md has the maths)
 experiments/    one entry point per paper table + build_data.py (provenance)
+tools/          b2d_adaptive_eval.py — SC-IRT inside a real Bench2Drive evaluation (scirt/live.py)
 data/
   matrices/     22 x 220 pass/fail response panel (+ the 16-planner panel it extends)
   features/     scene-descriptor sets used as US baselines (cmdkin, gtrisk, ...)
@@ -89,6 +99,7 @@ data/
   encoder/      RelGraph R2 per-run out-of-fold difficulty predictions + the
                 learned residual SD per draw (3 independent runs; no ensembling)
   navhard/      the two-stage NAVSIM leaderboard panel (provenance in REPRODUCIBILITY.md)
+  live/         cached leave-one-planner-out risk scales for the live evaluator (keyed by bank)
 results/        written by the scripts (gitignored); numbers of record are RESULTS.md
 tests/          fast invariants
 ```
@@ -97,15 +108,23 @@ tests/          fast invariants
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
   at 96 evaluations per cell; the tables mark which cells are.
-- SC-IRT's advantage concentrates where evaluation is hard: small
-  calibration panels (K_cal <= 10) and low-to-medium budgets. With a rich
-  panel at B = 110 (61% of the per-draw bank executed) representative random
-  sampling wins — that saturation column is part of the result.
+- SC-IRT's advantage is largest where evaluation is hard — small
+  calibration panels at medium budgets (K7 B55: .0287 vs .0352 for the
+  best baseline). With the full 16-planner panel at B <= 55 it ties the
+  best published orderings and stratified random sampling; on the navhard
+  panel with an 81-planner calibration set the 2PL Fisher orderings win the
+  low budgets outright. Those cells are part of the result.
+- The stopping rule is conservative in the mean (the calibration gap is
+  negative in every cell) but not at the nominal level: the 90th-percentile
+  risk scale fixed on the calibration panel yields 81-88% realised coverage
+  on evaluation planners for eps = .05.
+- The RelGraph encoder is tied with the hand-crafted descriptor stack on
+  AUROC / scene-MAE and behind it on rank correlation (-.05 +- .02); its
+  contribution is the input (the raw scene graph), not extra accuracy.
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,
-  the UPS prior) is reproducible here, and the hand-crafted descriptor
-  baselines in Table 3A tie it.
+  the UPS prior) is reproducible here.
 - The navhard panel is dominated by a few teams' submission sweeps;
   near-duplicate submissions can appear on both sides of the planner split
   (this affects every method identically). See RESULTS.md for the caveats.

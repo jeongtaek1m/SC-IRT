@@ -8,6 +8,7 @@ differences are both reported, and b shifts are scaled by each route's own
 posterior SD s_i.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,10 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
+from scirt.curves import posterior_sd
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(__file__).resolve().parents[1] / 'results'
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 
 
 def main():
@@ -37,8 +39,9 @@ def main():
         calR, _ = panel.split_routes(ht)
         fA = calibrate(panel.Y, calR, cols, mode='1pl')
         bF = np.array([full['b'][idx_full[r]] for r in calR])
-        bA, sA = fA['b'], fA['s']
-        sF = np.array([full['s'][idx_full[r]] for r in calR])
+        bA, sA = fA['b'], posterior_sd(fA['W'])
+        sFull = posterior_sd(full['W'])
+        sF = np.array([sFull[idx_full[r]] for r in calR])
         off_b = float((bA - bF).mean())
         d = bA - bF - off_b
         B.append(dict(pearson=float(np.corrcoef(bA, bF)[0, 1]),

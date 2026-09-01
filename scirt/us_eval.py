@@ -47,7 +47,7 @@ class USEvaluator:
             cols = [c for c in range(self.panel.J) if c not in hp]
             tr = [i for i in range(self.N) if self.panel.sn[self.panel.allr[i]] not in ht]
             te = [i for i in range(self.N) if self.panel.sn[self.panel.allr[i]] in ht]
-            _, th = calibrate_dense(self.Y0, self.MK, tr, cols, device=device)
+            _, th, _ = calibrate_dense(self.Y0, self.MK, tr, cols, device=device)
             _, th0 = calibrate_dense(self.Y0, self.MK, tr, cols, device=device, freeze_b0=True)
             self.draws[seed] = dict(cols=cols, tr=tr, te=te, th=th, th0=th0)
 

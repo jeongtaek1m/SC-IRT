@@ -8,6 +8,7 @@ than the Rasch model and a-hat is unreliable, the 1PL is the adequate
 model, not a simplification.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from scirt.metrics import mean_se
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(__file__).resolve().parents[1] / 'results'
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 
 
 def cell_nll(f, mode, i, k, y):

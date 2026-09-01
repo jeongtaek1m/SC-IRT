@@ -4,7 +4,7 @@
   figs/fig_cost_error.{pdf,png}   rollouts vs SR-MAE for the four bank orders
                                   under the common readout (continuous curves
                                   from the adaptive tracks) + SC-IRT's
-                                  adaptive stop at the tau sweep, per K_cal
+                                  risk-target stops (eps = .05, .03), per K_cal
   figs/fig_kb_map.{pdf,png}       K_cal x B map of SC-IRT minus the best
                                   native baseline (Table 1)
 
@@ -26,7 +26,6 @@ FIGS = Path(os.environ.get('SCIRT_FIGS_DIR', ROOT / 'figs'))
 KCALS = (7, 10, 16)
 BGRID = (30, 55, 110)
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
-TAUS = (0.05, 0.04, 0.035, 0.03)
 
 
 def main():
@@ -44,10 +43,11 @@ def main():
             ys = [np.mean([abs(r[o]['Shat'][t - 1] - r['SR']) for r in rs]) for t in ts]
             ax.plot(ts, ys, lw=1.8 if o == 'SC-IRT' else 1.0, label=o)
         pts = []
-        for tau in TAUS:
-            st = [stop_at(r['SC-IRT']['R1'], tau) for r in rs]
+        cal = json.load(open(RES / 'risk_cal.json'))
+        for eps in (0.05, 0.03):
+            st = [stop_at(cal[f"{r['seed']}|{K}|SC-IRT"] * np.array(r['SC-IRT']['R1']), eps) for r in rs]
             pts.append((np.mean(st), np.mean([abs(r['SC-IRT']['Shat'][t - 1] - r['SR']) for r, t in zip(rs, st)])))
-        ax.plot([p[0] for p in pts], [p[1] for p in pts], 'k--', marker='s', ms=4, label='SC-IRT, R1 stop')
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], 'k--', marker='s', ms=4, label='SC-IRT, c*R1 <= eps (.05, .03)')
         ax.set_title(f'K_cal = {K}')
         ax.set_xlabel('rollouts')
         ax.grid(alpha=.3)

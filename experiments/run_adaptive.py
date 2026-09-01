@@ -4,8 +4,13 @@
 Four bank orders (SC-IRT's Delta-R1 selection, Fluid, metabench, Random) run
 with the same Rasch readout and the same stopping risk R1(D_t) <= tau; every
 step's readout and risk is recorded so any budget or threshold can be scored.
-Thresholds come from `run_tau_calibration.py` (calibration-panel LOO, target
-mean budgets 30 / 55) and are never selected on evaluation planners.
+Table 2 is the risk-target rule: stop at the first t with c * R1_t <= epsilon,
+epsilon in {.03, .05}, with the risk scale c fixed by `run_tau_calibration.py`
+(calibration-panel LOO, results/risk_cal.json); it reports rollouts, SR-MAE,
+coverage (|err| <= epsilon) and the calibration gap mean|err| - mean c*R1 at
+the stop. The matched-cost rule (tau_hat at target mean budgets 30 / 55,
+results/tau_hat.json) is kept as the appendix table. Nothing is selected on
+evaluation planners.
 
     python experiments/run_adaptive.py --seeds 0 4     # shard (GPU)
     python experiments/run_adaptive.py --merge         # Table 2, sweeps, anchors
@@ -24,11 +29,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.b2d import Panel
 from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
-from scirt.curves import marginal_curves, PRIOR
-from scirt.bayes import post_from, track, stop_at
-from scirt.acquisition import r1_pick
+from scirt.bayes import bank_from_fit, track, stop_at
+from scirt.acquisition import r1_traj
 from scirt.baselines import fluid_order, metabench_order
-from scirt.metrics import paired_seed_boot, ies
+from scirt.metrics import paired_cluster_boot, ies
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
@@ -37,6 +41,7 @@ BGRID = [30, 55, 110]
 T = 110
 TAU_SWEEP = (0.05, 0.04, 0.035, 0.03)
 TARGETS = (30, 55)
+EPS = (0.03, 0.05)
 
 
 def subsample(cols, seed, Kc):
@@ -46,19 +51,12 @@ def subsample(cols, seed, Kc):
     return sorted(np.array(cols)[rs.choice(len(cols), Kc, replace=False)].tolist())
 
 
-def r1_traj(M, y, n):
-    S, q = [], PRIOR.copy()
-    for _ in range(min(T, n)):
-        rem = [i for i in range(n) if i not in S]
-        S.append(r1_pick(M, y, S, q, rem))
-        q = post_from(M, y, S)
-    return S
 
 
-def orders_for(f1, f2, bi, yy, seed, js):
+def orders_for(f1, f2, bi, yy, seed, js, typ):
     n = len(bi)
-    M1 = marginal_curves(f1['b'][bi], f1['s'][bi])
-    return M1, {'SC-IRT': r1_traj(M1, yy, n),
+    bank = bank_from_fit(f1, bi, typ)
+    return bank, {'SC-IRT': r1_traj(bank, yy, T),
                 'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, T),
                 'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], T, n)],
                 'Random': [int(i) for i in np.random.RandomState(100 + seed * 20 + js).permutation(n)[:T]]}
@@ -71,16 +69,17 @@ def run(seeds):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
+        typ = np.array([panel.sn[r] for r in calR])
         for Kc in KCALS:
             cs = subsample(cols, seed, Kc)
-            f1 = calibrate(panel.Y, calR, cs, mode='1pl')
-            f2 = calibrate(panel.Y, calR, cs, mode='2pl')
+            f1 = calibrate(panel.Y, calR, cs, mode='1pl', types=typ)
+            f2 = calibrate(panel.Y, calR, cs, mode='2pl', sigma_b=f1['sigma_b'])
             for js in hp:
                 bi, yy = panel.bank_rows(calR, js)
-                M1, od = orders_for(f1, f2, bi, yy, seed, js)
-                rec = {'seed': seed, 'K': Kc, 'js': int(js), 'SR': float(yy.mean())}
+                bank, od = orders_for(f1, f2, bi, yy, seed, js, typ)
+                rec = {'seed': seed, 'K': Kc, 'js': int(js), 'SR': float(yy.mean()), 'sigma_g': f1['sigma_g']}
                 for k, o in od.items():
-                    Sh, R1 = track(M1, yy, o)
+                    Sh, R1 = track(bank, yy, o)
                     rec[k] = {'Shat': [float(x) for x in Sh], 'R1': [float(x) for x in R1]}
                 recs.append(rec)
             print(f'seed {seed} K{Kc} done', flush=True)
@@ -90,6 +89,12 @@ def run(seeds):
 def stopped(r, o, tau):
     t = stop_at(r[o]['R1'], tau)
     return t, abs(r[o]['Shat'][t - 1] - r['SR'])
+
+
+def risk_stopped(r, o, c, eps):
+    """(rollouts, |err|, c*R1) at the first t with c * R1_t <= eps (110 if never)."""
+    t = stop_at(c * np.array(r[o]['R1']), eps)
+    return t, abs(r[o]['Shat'][t - 1] - r['SR']), c * r[o]['R1'][t - 1]
 
 
 def report(recs):
@@ -117,7 +122,7 @@ def report(recs):
     T2 = {}
     if tau_path.exists():
         TAU = json.load(open(tau_path))
-        print('\n===== Table 2 (each method at its own calibration-fixed tau; IES ref = Random at fixed 55) =====')
+        print('\n===== Table 2 (matched-cost, appendix): each method at its own calibration-fixed tau; IES ref = Random at fixed 55 =====')
         for K in KCALS:
             rs = [r for r in recs if r['K'] == K]
             ref = np.mean(FX[K]['Random'][55])
@@ -133,13 +138,31 @@ def report(recs):
                     res[o] = (np.array(Bs), np.array(es))
                 for o in ORD:
                     Bs, es = res[o]
-                    d, lo, hi = paired_seed_boot(es, res['SC-IRT'][1], n_seeds=16, per_seed=6) if o != 'SC-IRT' else (0, 0, 0)
+                    d, lo, hi = paired_cluster_boot(es, res['SC-IRT'][1], [r['js'] for r in rs]) if o != 'SC-IRT' else (0, 0, 0)
                     print(f'   target {tg:2d} {o:10s} rollouts {Bs.mean():5.1f}  SR-MAE {es.mean():.4f}  '
                           f'IES {ies(es.mean(), Bs.mean(), ref):.2f}'
                           + ('' if o == 'SC-IRT' else f'   d {d:+.4f} [{lo:+.4f},{hi:+.4f}]'))
                     T2[(K, tg, o)] = es.mean()
     else:
         print('\n(results/tau_hat.json not found: run run_tau_calibration.py for Table 2)')
+    cal_path = OUT / 'risk_cal.json'
+    if cal_path.exists():
+        C = json.load(open(cal_path))
+        print('\n===== Table 2 — risk-target stopping: first t with c*R1_t <= eps, c = LOO 90th pct |err|/R1 (risk_cal.json) =====')
+        for K in KCALS:
+            rs = [r for r in recs if r['K'] == K]
+            js = [r['js'] for r in rs]
+            print(f'-- K_cal = {K} --')
+            for eps in EPS:
+                res = {o: np.array([risk_stopped(r, o, C[f"{r['seed']}|{K}|{o}"], eps) for r in rs]) for o in ORD}
+                for o in ORD:
+                    Bs, es, cr = res[o].T
+                    d, lo, hi = paired_cluster_boot(es, res['SC-IRT'][:, 1], js) if o != 'SC-IRT' else (0, 0, 0)
+                    print(f'   eps {eps:.2f} {o:10s} rollouts {Bs.mean():5.1f}  SR-MAE {es.mean():.4f}  '
+                          f'coverage {np.mean(es <= eps):.2f}  gap {es.mean() - cr.mean():+.4f}'
+                          + ('' if o == 'SC-IRT' else f'   d {d:+.4f} [{lo:+.4f},{hi:+.4f}]'))
+    else:
+        print('\n(results/risk_cal.json not found: run run_tau_calibration.py --merge for the risk-target table)')
     return FX, T2
 
 
@@ -163,10 +186,10 @@ def main():
         json.dump(recs, open(OUT / 'adaptive.json', 'w'))
     FX, T2 = report(recs)
     assert len(recs) == len(KCALS) * 96
-    for (K, B, ref) in ((7, 30, .0497), (10, 110, .0189), (16, 55, .0419)):
-        assert abs(np.mean(FX[K]['SC-IRT'][B]) - ref) < .002
-    if T2:
-        assert abs(T2[(7, 55, 'SC-IRT')] - .0342) < .003 and abs(T2[(16, 30, 'SC-IRT')] - .0543) < .003
+    fx = lambda K, o, t: np.mean([abs(r[o]['Shat'][t - 1] - r['SR']) for r in recs if r['K'] == K])
+    for K, o, t, v in ((7, 'SC-IRT', 30, .0464), (7, 'SC-IRT', 55, .0287), (10, 'SC-IRT', 110, .0135),
+                       (7, 'Random', 55, .0384), (16, 'Fluid', 55, .0345)):
+        assert abs(fx(K, o, t) - v) < .002, (K, o, t, fx(K, o, t))
     print('anchors OK')
 
 

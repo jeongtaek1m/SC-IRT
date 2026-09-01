@@ -12,8 +12,8 @@ Rows
   (three independent runs summarised as metric mean +- SD; prediction
   ensembling is banned).
 
-Anchors: null .694/.199; kinematics rho +.514; hand-crafted risk rho +.541;
-RelGraph mean AUROC .754 / rho +.532.
+Anchors: null .694/.199; kinematics rho +.526; hand-crafted risk rho +.558;
+RelGraph mean AUROC .747 / rho +.506.
 """
 import json
 import os
@@ -91,7 +91,7 @@ def main():
         cols = [c for c in range(panel.J) if c not in hp]
         tr = [i for i in range(N) if sn[allr[i]] not in ht]
         te = [i for i in range(N) if sn[allr[i]] in ht]
-        bA, th = calibrate_dense(Y0, MK, tr, cols)
+        bA, th, sb = calibrate_dense(Y0, MK, tr, cols)
         _, th0 = calibrate_dense(Y0, MK, tr, cols, freeze_b0=True)
         obs_fail = np.array([1 - Y0[i, [c for c in cols if MK[i, c]]].mean() if MK[i, cols].any()
                              else 1.0 for i in te])
@@ -103,7 +103,7 @@ def main():
             NULLP['y'] += ys.tolist()
             NULLP['rp'].append(float(ps.mean()))
             NULLP['ro'].append(float(ys.mean()))
-        bC = frozen_b_dense(Y0, MK, te, cols, th)
+        bC = frozen_b_dense(Y0, MK, te, cols, th, sb)
         for name in ROWS:
             if name.startswith('Oracle'):
                 bte = bC
@@ -153,13 +153,11 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({'table3a': results}, open(OUT / 'us.json', 'w'))
 
-    assert abs(auc0 - 0.694) < 0.002 and abs(mae0 - 0.199) < 0.002
-    assert abs(results['Kinematics (cmdkin)']['rho'] - 0.514) < 0.005
-    assert abs(rho_hc - 0.541) < 0.005
-    assert abs(mn('auroc') - 0.754) < 0.003 and abs(mn('rho') - 0.532) < 0.005
     k, h = results['Kinematics (cmdkin)'], results['Hand-crafted risk (cmdkin+gtrisk)']
-    assert abs(k['auroc'] - 0.753) < 0.002 and abs(k['mae'] - 0.173) < 0.002
-    assert abs(h['auroc'] - 0.751) < 0.002 and abs(h['mae'] - 0.175) < 0.002
+    assert abs(auc0 - 0.694) < 0.002 and abs(mae0 - 0.199) < 0.002
+    assert abs(k['auroc'] - 0.752) < 0.002 and abs(k['mae'] - 0.172) < 0.002 and abs(k['rho'] - 0.526) < 0.005
+    assert abs(h['auroc'] - 0.753) < 0.002 and abs(h['mae'] - 0.171) < 0.002 and abs(h['rho'] - 0.558) < 0.005
+    assert abs(mn('auroc') - 0.747) < 0.003 and abs(mn('mae') - 0.184) < 0.003 and abs(mn('rho') - 0.506) < 0.005
     print('anchors OK')
 
 

@@ -1,8 +1,7 @@
 """Target-aligned acquisition (PROTOCOL section 4): one posterior, one target.
 
-The same uncertainty-aware Rasch posterior that produces the readout and the
-stopping risk also chooses the next scene. No auxiliary model, no phase
-switch, no localisation budget.
+The same posterior that produces the readout and the stopping risk also
+chooses the next scene. No auxiliary model, no phase switch.
 
   UP   the reported quantity is the full-bank success rate SR, so the next
        scene is the one whose outcome most reduces the posterior L1 risk of
@@ -10,60 +9,135 @@ switch, no localisation budget.
 
            Delta R1_s = R1(D_t) - E_{Y_s | D_t}[ R1(D_t + (s, Y_s)) ]
 
-       R1 inside the acquisition is evaluated at the branch posterior median
-       (the L1-optimal point) in the same closed form as `scirt.bayes.r1_risk`;
-       the reported point estimate is the MAP fill, which differs from the
-       median by < .0005 SR on this panel.
+       Each branch is scored at its own posterior median — the same L1
+       Bayes action the readout reports — in the closed form of
+       `scirt.bayes.mix_l1`. Candidates of one scenario type share the
+       type's (theta x u) table, so the branch posteriors are vectorised
+       per type.
 
-  UPS  the quantity that must generalise is the evaluation-scale ability, so
-       the probe rule maximises expected information about theta under the
-       same curves (`eig_pick`).
-
+  UPS  the quantity that must generalise is the block-D success rate, so the
+       probe rule is the same Delta-R1 with the risk evaluated on the D bank
+       (`r1_pick_transfer`); theta-EIG (`eig_pick`) is kept as an ablation.
 """
 import numpy as np
-from scipy.stats import norm
 
 from .curves import h_
+from .bayes import mix_median, mix_l1, State, EPS
 
 
-def r1_pick(M, y, S, q, rem):
-    """argmax Delta R1 over candidate scenes `rem`, vectorised over the
-    candidate set (closed form; a bisection over the mixture CDF finds each
-    branch's posterior median)."""
-    n = M.shape[1]
-    un = [i for i in range(n) if i not in S]
-    yo = y[S].sum() if len(S) else 0.0
-    Mu = M[:, un]
-    idx = {j: k for k, j in enumerate(un)}
-    mu_all = Mu.sum(1)
-    var_all = (Mu * (1 - Mu)).sum(1)
-    cols = np.array([idx[i] for i in rem])
-    mi = Mu[:, cols]                                        # (grid, K)
-    p1 = q @ mi
-    q1 = (q[:, None] * mi) / np.maximum(p1[None, :], 1e-12)
-    q0 = (q[:, None] * (1 - mi)) / np.maximum(1 - p1[None, :], 1e-12)
-    mup = mu_all[:, None] - mi
-    sdp = np.sqrt(np.maximum(var_all[:, None] - mi * (1 - mi), 0) + 1e-9)
-
-    def branch(qb, yb):
-        lo, hi = np.zeros(len(rem)), np.full(len(rem), float(n))
-        for _ in range(30):
-            c = (lo + hi) / 2
-            F = (qb * norm.cdf((c[None, :] - yb - mup) / sdp)).sum(0)
-            m_ = F < 0.5
-            lo = np.where(m_, c, lo)
-            hi = np.where(m_, hi, c)
-        c = (lo + hi) / 2
-        z = (c[None, :] - yb - mup) / sdp
-        return (qb * sdp * (2 * norm.pdf(z) + z * (2 * norm.cdf(z) - 1))).sum(0)
-
-    ev = p1 * branch(q1, yo + 1.0) + (1 - p1) * branch(q0, yo)
-    return rem[int(np.argmin(ev))]
+def r1_pick(state, rem):
+    """argmin over candidate scenes `rem` of the expected branch risk."""
+    ev = r1_scores(state, rem)
+    return int(rem[int(np.argmin(ev))])
 
 
-def eig_pick(q, M, rem):
-    """UPS probe rule: expected information gain about the evaluation-model
-    ability, h(E[m]) - E[h(m)] on the theta grid."""
-    mi = M[:, rem]
-    mbar = (q[:, None] * mi).sum(0)
-    return rem[int(np.argmax(h_(mbar) - (q[:, None] * h_(mi)).sum(0)))]
+def r1_scores(state, rem):
+    """Expected branch risk E_{Y_s}[R1(D + (s, Y_s))] for every candidate in
+    `rem` (same order), on the per-route scale of `State.readout`;
+    Delta R1_s = R1(D) - this."""
+    b = state.bank
+    q = state.q
+    mu_all, sd_all = state.stats()
+    var_all = sd_all ** 2
+    n_left = b.n - len(state.S) - 1
+    by_type = {}
+    for s in rem:
+        by_type.setdefault(b.types[s], []).append(int(s))
+    pos = {int(s): k for k, s in enumerate(rem)}
+    out = np.zeros(len(rem))
+    for t, cands in by_type.items():
+        cands = np.array(cands)
+        S1, S2, mean_t, var_t = state.cache[t]
+        A = state.A.get(t)
+        logl_t = state.logl.get(t, 0.0)
+        w = state.w(t)
+        M, V = b.M3[:, :, cands], b.V3[:, :, cands]                        # (241, J, C)
+        p1 = np.einsum('i,ij,ijc->c', q, w, M)
+        S1c, S2c = S1[:, :, None] - M, S2[:, :, None] - V
+        mu_o = (mu_all - mean_t)[:, None]
+        var_o = (var_all - var_t)[:, None]
+        ev = np.zeros(len(cands))
+        for py, L in ((p1, b.lM[:, :, cands]), (1 - p1, b.l1M[:, :, cands])):
+            A1 = (A[:, :, None] if A is not None else 0.0) + L                # (241, J, C)
+            m = A1.max(1, keepdims=True)
+            E = np.exp(A1 - m) * b.pu[None, :, None]
+            l1 = E.sum(1)                                                    # (241, C)
+            lq = state.logq[:, None] + m[:, 0, :] + np.log(l1 + EPS) - (logl_t[:, None] if A is not None else 0.0)
+            q1 = np.exp(lq - lq.max(0, keepdims=True))
+            q1 = q1 / q1.sum(0, keepdims=True)
+            w1 = E / (l1[:, None, :] + EPS)
+            mean1 = (w1 * S1c).sum(1)
+            var1 = (w1 * S2c).sum(1) + (w1 * S1c ** 2).sum(1) - mean1 ** 2
+            mu1 = mu_o + mean1
+            sd1 = np.sqrt(np.maximum(var_o + var1, 0.0) + 1e-9)
+            c = mix_median(q1, mu1, sd1, float(max(n_left, 0)))
+            ev += py * mix_l1(q1, mu1, sd1, c)
+        for k, c_ in enumerate(cands):
+            out[pos[int(c_)]] = ev[k]
+    return out / b.n
+
+
+def r1_pick_transfer(state, bank_d, rem):
+    """UPS probe rule (`Delta-R1 on D`): the probe-bank candidate whose
+    outcome most reduces the posterior L1 risk of the transported block-D
+    success rate. The candidate's branch posteriors come from the probe
+    bank; the risk is evaluated on the D bank, whose types are unobserved
+    (prior u), so its per-theta statistics are fixed."""
+    b = state.bank
+    q = state.q
+    st_d = State(bank_d, np.zeros(bank_d.n))
+    mu_d, sd_d = st_d.stats()
+    mu_d, sd_d = mu_d[:, None], sd_d[:, None]
+
+    def risk(qq):
+        c = mix_median(qq, mu_d, sd_d, float(bank_d.n))
+        return mix_l1(qq, mu_d, sd_d, c) / bank_d.n
+
+    by_type = {}
+    for s in rem:
+        by_type.setdefault(b.types[s], []).append(int(s))
+    pos = {int(s): k for k, s in enumerate(rem)}
+    out = np.zeros(len(rem))
+    for t, cands in by_type.items():
+        cands = np.array(cands)
+        A = state.A.get(t)
+        logl_t = state.logl.get(t, 0.0)
+        w = state.w(t)
+        p1 = np.einsum('i,ij,ijc->c', q, w, b.M3[:, :, cands])
+        ev = np.zeros(len(cands))
+        for py, L in ((p1, b.lM[:, :, cands]), (1 - p1, b.l1M[:, :, cands])):
+            A1 = (A[:, :, None] if A is not None else 0.0) + L
+            m = A1.max(1, keepdims=True)
+            l1 = (np.exp(A1 - m) * b.pu[None, :, None]).sum(1)
+            lq = state.logq[:, None] + m[:, 0, :] + np.log(l1 + EPS) - (logl_t[:, None] if A is not None else 0.0)
+            q1 = np.exp(lq - lq.max(0, keepdims=True))
+            q1 = q1 / q1.sum(0, keepdims=True)
+            ev += py * risk(q1)
+        for k, c_ in enumerate(cands):
+            out[pos[int(c_)]] = ev[k]
+    return int(rem[int(np.argmin(out))])
+
+
+def eig_pick(state, rem):
+    """theta-EIG probe rule (UPS ablation): expected information gain about
+    the evaluation-model ability, h(E[p]) - E[h(p)] on the theta grid, with
+    the testlet effect of each candidate's type integrated out."""
+    q = state.q
+    b = state.bank
+    ws = {}
+    for s in rem:
+        if b.types[s] not in ws:
+            ws[b.types[s]] = state.w(b.types[s])
+    ps = np.stack([(ws[b.types[s]] * b.M3[:, :, s]).sum(1) for s in rem], 1)
+    mbar = (q[:, None] * ps).sum(0)
+    return rem[int(np.argmax(h_(mbar) - (q[:, None] * h_(ps)).sum(0)))]
+
+
+def r1_traj(bank, y, T):
+    """Greedy Delta-R1 rollout order of length T on a bank (the SC-IRT order)."""
+    st, S = State(bank, y), []
+    for _ in range(min(T, bank.n)):
+        s = r1_pick(st, [i for i in range(bank.n) if i not in S])
+        S.append(s)
+        st.add(s)
+    return S

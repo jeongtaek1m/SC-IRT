@@ -9,23 +9,23 @@ budgets are unit counts and Random has no stratified variant).
 
 Usage: --seeds lo hi to run a shard; --merge to pool shards and print the table.
 """
-import argparse, glob, json, sys
+import argparse, glob, json, os, sys
 from pathlib import Path
 import numpy as np, torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scirt.calibration import calibrate
-from scirt.curves import marginal_curves, PRIOR
-from scirt.bayes import post_from, map_fill
-from scirt.acquisition import r1_pick
+from scirt.curves import curves_from_posterior
+from scirt.bayes import Bank, readout
+from scirt.acquisition import r1_traj
 from scirt.baselines import (fluid_order, total_fisher_order, marginal_fisher_order,
                              disco_order, kmeans_anchors, metabench_order,
                              anchorpoints_estimate, pirt)
-from scirt.metrics import paired_seed_boot
+from scirt.metrics import paired_cluster_boot
 
 np.random.seed(0); torch.manual_seed(0)
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'results'; OUT.mkdir(exist_ok=True)
+OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', ROOT / 'results')); OUT.mkdir(exist_ok=True)
 KC = (7, 10, 16, 81); BB = (30, 55, 110); T = 110
 METHODS = ['Random (IRT-free)', 'Random + IRT', 'DISCO', 'AnchorPoints', 'Total-Fisher',
            'Marginal-Fisher', 'tinyBenchmarks', 'metabench', 'Fluid', 'SC-IRT']
@@ -35,12 +35,6 @@ Yb = d['Y']; units = [str(x) for x in d['cols']]; P = Yb.shape[0]; U = len(units
 Ydict = {(units[u], k): float(Yb[k, u]) for k in range(P) for u in range(U)}
 
 
-def r1_traj(M, y, n):
-    S, q = [], PRIOR.copy()
-    for _ in range(min(T, n)):
-        rem = [i for i in range(n) if i not in S]
-        S.append(r1_pick(M, y, S, q, rem)); q = post_from(M, y, S)
-    return S
 
 
 def run(lo, hi):
@@ -51,16 +45,16 @@ def run(lo, hi):
         for Kc in KC:
             cs = pool if Kc >= len(pool) else sorted(np.array(pool)[
                 np.random.RandomState(9000 + seed * 100 + Kc * 10).choice(len(pool), Kc, replace=False)].tolist())
-            f1 = calibrate(Ydict, units, cs, mode='1pl'); f2 = calibrate(Ydict, units, cs, mode='2pl')
+            f1 = calibrate(Ydict, units, cs, mode='1pl'); f2 = calibrate(Ydict, units, cs, mode='2pl', sigma_b=f1['sigma_b'])
+            bank = Bank(curves_from_posterior(f1['W']), np.zeros(U, int), 0.0)   # no scenario-type structure on this panel
             Rb = Yb[cs].T; pbar = Rb.mean(1)
             for js in hp:
                 yy = Yb[js]; n = U; SR = float(yy.mean())
-                b1, s1 = f1['b'], f1['s']; a2, b2 = f2['a'], f2['b']
-                M1 = marginal_curves(b1, s1); ones = np.ones(n)
+                b1 = f1['b']; a2, b2 = f2['a'], f2['b']; ones = np.ones(n)
                 perm = [int(i) for i in np.random.RandomState(100 + seed * 20 + js).permutation(n)]
                 od = {'disco': disco_order(pbar), 'tf': total_fisher_order(a2, b2, f2['th']),
                       'mf': marginal_fisher_order(a2, b2), 'fluid': fluid_order(a2, b2, yy, T),
-                      'ours': r1_traj(M1, yy, n)}
+                      'ours': r1_traj(bank, yy, T)}
                 err = {m: {} for m in METHODS}
                 for B in BB:
                     est = {'Random (IRT-free)': yy[perm[:B]].mean(),
@@ -72,7 +66,7 @@ def run(lo, hi):
                            'tinyBenchmarks': pirt(b2, a2, yy, kmeans_anchors(a2, b2, B, n)),
                            'metabench': pirt(b2, a2, yy, metabench_order(a2, b2, B, n)),
                            'Fluid': pirt(b2, a2, yy, od['fluid'][:B]),
-                           'SC-IRT': map_fill(M1, yy, od['ours'][:B])}
+                           'SC-IRT': readout(bank, yy, od['ours'][:B])}
                     for m in METHODS: err[m][str(B)] = abs(float(est[m]) - SR)
                 recs.append({'seed': seed, 'K': Kc, 'js': int(js), 'SR': SR, 'err': err})
             print(f'seed {seed} K{Kc} done', flush=True)
@@ -95,17 +89,15 @@ def merge():
                 if m == 'SC-IRT':
                     row += f'{np.mean(e):7.4f} '
                 else:
-                    d_, lo_, hi_ = paired_seed_boot(e, [r["err"]["SC-IRT"][str(B)] for r in sub], per_seed=6)
+                    d_, lo_, hi_ = paired_cluster_boot(e, [r["err"]["SC-IRT"][str(B)] for r in sub], [r['js'] for r in sub])
                     row += f'{np.mean(e):7.4f}{"*" if (lo_ > 0 or hi_ < 0) else " "}'
             print(row)
     json.dump({str(K): {m: {str(B): float(np.mean([r['err'][m][str(B)] for r in recs if r['K'] == K]))
                             for B in BB} for m in METHODS} for K in KC},
               open(OUT / 'navhard.json', 'w'))
     mean = lambda K, m, B: np.mean([r['err'][m][str(B)] for r in recs if r['K'] == K])
-    for K, m, B, v in ((7, 'SC-IRT', 30, .0419), (7, 'SC-IRT', 55, .0312),
-                       (10, 'SC-IRT', 110, .0203), (16, 'SC-IRT', 110, .0197),
-                       (81, 'SC-IRT', 110, .0166), (7, 'Random (IRT-free)', 30, .0674),
-                       (7, 'metabench', 30, .0479), (81, 'DISCO', 30, .0396)):
+    for K, m, B, v in ((7, 'SC-IRT', 55, .0342), (16, 'SC-IRT', 110, .0185), (81, 'SC-IRT', 110, .0172),
+                       (16, 'SC-IRT', 30, .0450), (81, 'Fluid', 30, .0304), (7, 'Random (IRT-free)', 30, .0674)):
         assert abs(mean(K, m, B) - v) < .0003, (K, m, B, mean(K, m, B))
     print('anchors OK')
 

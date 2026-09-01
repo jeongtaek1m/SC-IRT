@@ -36,48 +36,75 @@ calibration planners are subsampled once per draw
 baseline's own — is re-fitted from those planners only; the evaluation
 planners are unchanged.
 
-**Budgets.** Rollout budgets are whole scenario types:
-B = 5 x {6, 11, 22} = {30, 55, 110} (14% / 25% / 50% of the benchmark;
-110 executes 61% of the per-draw bank and is the saturation reference where
-any representative sampler converges).
+**Budgets.** B = number of routes rolled out (the acquisition of Section 4
+selects one route at a time); B = 5 x {6, 11, 22} = {30, 55, 110} so the
+type-stratified baseline can execute whole scenario types (14% / 25% / 50%
+of the benchmark; 110 executes 61% of the per-draw bank, the reference
+budget at which representative samplers have largely converged).
 
 ## 3. The model — one uncertainty-aware Rasch posterior
 
 ```
-y_sk ~ Bernoulli( sigmoid(theta_k - b_s) )
+y_sk ~ Bernoulli( sigmoid(theta_k - b_s + u_{k,g(s)}) ),   u_kg ~ N(0, sigma_g^2)
 ```
 
-Calibration on the block A is a regularised MAP (`scirt/calibration.py`,
-Adam lr 0.05, 800 iterations, zero init, theta-mean centring):
+g(s) is the scenario type of route s and u_kg a planner x type testlet
+effect: on this panel the Rasch residuals of two routes of the same type
+correlate +.21 (different types: .00), so routes are not conditionally
+independent given theta and a rule that assumes they are under-states its
+own risk.
+
+**Calibration** on the block A (`scirt/calibration.py`) is a MAP fit with
+explicit priors — the same prior forms the evaluation posterior uses (after
+the theta-mean centring the fitted b prior sits c = mean theta_hat, about
+.03, away from the centred frame; the difficulty posterior below is taken in
+the centred frame):
 
 ```
-(theta_hat, b_hat) = argmax  sum_A log Bern(y_sk | sigmoid(theta_k - b_s))
-                              - 1e-2 mean_k theta_k^2 - 1e-3 mean_s b_s^2
+theta_k ~ N(0, 1)          b_s ~ N(0, sigma_b^2)          (2PL/3PL baselines: log a_s ~ N(0, .5^2), logit c_s ~ N(-2.2, 1))
 ```
 
-The scene difficulty is kept as a distribution — the conditional Laplace
-curvature at the fitted calibration abilities:
+Adam lr .05, 800 iterations, zero init, theta-mean centring. sigma_b is
+chosen by empirical Bayes on the grid {.5, .75, 1, 1.5, 2, 3} — the exact
+marginal likelihood sum_s log int prod_k Bern(y_sk | theta_hat_k, b) N(b; 0, sigma_b^2) db
+on the difficulty grid below (1.5 in 45 of the 48 (draw, K_cal) fits on
+this panel, 1.0 or 2.0 in the rest). The testlet SD sigma_g is the profile
+marginal likelihood at (theta_hat, b_hat) over {0, .25, .5, .75, 1, 1.25,
+1.5, 2} with u integrated on the u grid (.5-1.25 at K_cal = 7, 1.0-1.25 at
+K_cal = 16; u itself is not a MAP parameter — the calibration block has one
+u_kg per cell block and only its variance is identified).
+
+**Difficulty posterior — exact, conditional on the fitted abilities.**
+Given theta_hat the items are independent and one-dimensional, so every
+difficulty keeps its full posterior on an 801-point grid over [-10, 10]:
 
 ```
-p(b_s | A) ~ N( b_hat_s, s_s^2 ),   s_s^2 = 1 / sum_{k:(s,k) in A} p_hat_sk (1 - p_hat_sk)
+p(b_s | A) ∝ N(b_s; 0, sigma_b^2) prod_{k:(s,k) in A} Bern(y_sk | sigmoid(theta_hat_k - b_s))
 ```
 
-(A joint (theta, b) Laplace with the prior curvature and a centring
-constraint changes s_s by ~1% on this panel and no downstream number —
-each calibration planner answers ~180 scenes, so theta_cal is precise; the
-conditional form is used.) Every downstream probability marginalises it
-(21-node Gauss-Hermite, `scirt/curves.py`):
+No Gaussian approximation: the all-pass / all-fail routes of a K_cal = 7
+panel (19-28 of 180 in the first four draws) get their one-sided posterior. Every downstream probability
+marginalises it:
 
 ```
-m_s(theta) = E_{b_s | A}[ sigmoid(theta - b_s) ]
+m_s(x) = E_{b_s | A}[ sigmoid(x - b_s) ]      tabulated on XG = [-9, 9], step .05 (`scirt/curves.py`)
 ```
 
-For a new planner with administered set 𝒜_t and outcomes y, the ability
-posterior lives on a 241-point grid over [-6, 6] with a N(0,1) prior:
+so that m_s(theta + u) is an index lookup.
+
+**Evaluation posterior.** For a new planner with administered set 𝒜_t and
+outcomes y, theta lives on a 241-point grid over [-6, 6] with the N(0, 1)
+prior and each u_g on a 61-point grid over [-3, 3] with N(0, sigma_g^2).
+Given theta the types factorise, so the posterior is one theta vector plus
+one (theta x u) table per observed type (`scirt/bayes.State`):
 
 ```
-q_t(theta) ∝ N(theta; 0, 1) prod_{s in 𝒜_t} m_s(theta)^{y_s} (1 - m_s(theta))^{1 - y_s}
+q_t(theta) ∝ N(theta; 0, 1) prod_g l_g(theta),
+l_g(theta) = sum_u p(u) prod_{s in 𝒜_t ∩ g} m_s(theta + u)^{y_s} (1 - m_s(theta + u))^{1 - y_s}
 ```
+
+Types without observations keep the prior on u. sigma_g = 0 recovers the
+independent-item model exactly (one grid point for u).
 
 ### 3.1 Unseen scenes — the difficulty prior from the scene
 
@@ -94,50 +121,54 @@ Gauss-Hermite and sigma learned jointly (the encoder's shared residual SD,
 ~.65 on this panel); the release
 ships its per-run out-of-fold predictions (`data/encoder/relgraph_r2_s*.npz`,
 three independent runs, no ensembling). Table 3A scores these point predictions; on this panel the encoder is
-statistically tied with the hand-crafted descriptor baselines (RelGraph
-minus cmdkin+gtrisk: Delta rho -.008 +- .019 across runs).
+tied with the hand-crafted descriptor baselines on AUROC / scene-MAE and
+behind them on rank correlation (RelGraph minus cmdkin+gtrisk: Delta rho
+-.052 +- .024 across runs, about two run-SDs).
 
 ## 4. UP — one posterior for inference, acquisition and stopping
 
-The reported quantity is the full-bank success rate SR and its point
-estimate is the MAP fill (`scirt/bayes.py`):
+The reported quantity is the full-bank success rate
 
 ```
-theta_hat_t = argmax q_t ,   SR_hat_t = (1/S) [ sum_{s in 𝒜_t} y_s + sum_{s not in 𝒜_t} m_s(theta_hat_t) ]
+SR = (1/S) [ sum_{s in 𝒜_t} y_s + T ],   T = sum_{s not in 𝒜_t} Y_s
 ```
 
-The stopping quantity is the posterior L1 risk of that estimate, in closed
-form on the grid (unobserved successes given theta approximated by a
-normal; mixture over q_t):
+Given theta the unobserved total T is approximated by a normal whose mean
+is sum_s p_s(theta), p_s(theta) = E_{u_g | D_t}[m_s(theta + u_g)], and whose
+variance sums per type E_u[Var(T_g | u)] + Var_u[E(T_g | u)] — routes of
+one type share their u_g, so the variance is not the independent
+sum_s p_s(1 - p_s). Mixing over q_t gives the posterior of T
+(`scirt/bayes.State.stats`). The evaluation loss is L1, so one action
+serves everywhere:
 
 ```
-R1(D_t) = E[ |SR - SR_hat_t| | D_t ]          stop when  R1(D_t) <= tau_hat
+readout      SR_hat_t = (1/S) [ sum_{s in 𝒜_t} y_s + median(T | D_t) ]                (the L1 Bayes action)
+risk         R1(D_t)  = E[ |SR - SR_hat_t| | D_t ]                                      (closed form on the mixture)
+acquisition  s* = argmax_s  R1(D_t) - E_{Y_s | D_t}[ R1(D_t + (s, Y_s)) ]               (`scirt/acquisition.r1_pick`)
+stopping     stop when  c * R1(D_t) <= eps
 ```
 
-The acquisition selects the scene whose outcome most reduces the same risk
-(`scirt/acquisition.r1_pick`):
+Each acquisition branch is scored at its own posterior median, i.e. with
+the same action the readout would report; candidates of one type share the
+type's (theta x u) table, so branches are vectorised per type. No
+auxiliary model, no phase switch, no localisation budget. The component
+ablation (`run_ablation.py`) switches off, one at a time, the difficulty
+posterior (point curves at b_hat), the testlet (sigma_g = 0) and the risk
+acquisition (a random order); 2PL selection survives only inside the
+published baselines.
 
-```
-s* = argmax_s  R1(D_t) - E_{Y_s | D_t}[ R1(D_t + (s, Y_s)) ]
-```
-
-(Inside the acquisition the branch risk is evaluated at the branch
-posterior median — the L1-optimal point — which differs from the MAP fill
-by < .0005 SR on this panel.) No auxiliary model, no phase switch, no
-localisation budget: an acquisition-criterion comparison run at protocol
-freeze (theta-EIG, uncertainty-aware marginal Fisher, the former two-phase
-2PL selector; research-side, not shipped as an entry point) showed every
-posterior-based criterion within the paired intervals of every cell, so the
-target-aligned one is used. The component ablation
-(`run_ablation.py`) switches the two model components off independently;
-2PL selection survives only inside the published baselines.
-
-**tau_hat is fixed on the calibration panel, never on evaluation
-planners** (`run_tau_calibration.py`): leave-one-planner-out simulation,
-tau_hat(draw, K_cal, method, B*) = argmin_tau |E_LOO[rollouts(tau)] - B*|
-for target budgets B* in {30, 55} — a cost target, so evaluation SR-MAE and
-efficiency are measured, not selected. Table 2 reports achieved mean
-rollouts; MAE / tau is the honesty diagnostic.
+**The risk scale c is fixed on the calibration panel, never on evaluation
+planners** (`run_tau_calibration.py`, results/risk_cal.json):
+leave-one-planner-out Delta-R1 trajectories on the calibration panel give
+realised errors |SR_hat_t - SR| and predicted risks R1(D_t); c is the 90th
+percentile of their ratio over the left-out planners and t in [10, 110].
+The stopping rule c * R1 <= eps is therefore an *error* target: eps in
+{.03, .05}, and Table 2 reports the mean rollouts it spends, the SR-MAE at
+the stop, the coverage P(|SR_hat - SR| <= eps) and the calibration gap
+(mean realised error minus mean c * R1 at the stop). The reliability of raw
+R1 against realised error, by deciles, is printed with the same merge. The
+earlier matched-cost rule (tau_hat chosen so that the LOO mean rollouts hit
+30 / 55) is kept as the appendix table.
 
 ## 5. UPS — theta transport to unseen scenes
 
@@ -145,17 +176,23 @@ The probe bank exists only to learn the evaluation-scale ability that is
 transported to the evaluation-type routes D:
 
 ```
-probes: theta-EIG under the evaluation model (scirt/acquisition.eig_pick)
-P(y = 1 | scene, B) = int sigmoid(theta_hat - b) N(b; b_tilde_s, sigma^2) db,   zero rollouts on D
+probes: Delta-R1 on the block-D success rate (scirt/acquisition.r1_pick_transfer) — the probe-bank
+        route whose outcome most reduces E|SR_D - SR_hat_D|; theta-EIG and 2PL Fisher are ablations
+D:      b_s | scene_s ~ N(b_tilde_s, sigma^2),  u_g ~ N(0, sigma_g^2) for the (unobserved) evaluation types
 ```
 
 with b_tilde_s the RelGraph R2 out-of-fold prediction of that draw and
 sigma the residual SD the encoder learned on the calibration block — the
 same prior as Section 3.1, so US and UPS share one difficulty model (run
-s0 is canonical; the across-run SD is reported). Choosing probes by the
-2PL Fisher rule brings no additional gain (ablation in Table 3B): the
-principle is *acquire for the quantity that must generalise* — full-bank SR
-in UP, the transportable ability in UPS, nothing in US.
+s0 is canonical; the across-run SD is reported). The probe posterior q_B
+is transported as is (`scirt/bayes.transfer`): the D-block success rate is
+its posterior median (the quantity the MAE scores) and each D cell is
+scored by its posterior predictive probability (the quantity the NLL
+scores) — two Bayes actions for two losses, one posterior. The probe rule
+is the same Delta-R1 machinery with the risk evaluated on D instead of on
+the probe bank: the principle is *acquire for the quantity that must
+generalise* — full-bank SR in UP, the block-D SR in UPS, nothing in US;
+theta-EIG and the 2PL Fisher rule are reported as ablations (Table 3B).
 
 ## 6. Published baselines (`scirt/baselines.py`)
 
@@ -173,13 +210,18 @@ stopping rule of its own.
 
 - **UP (primary)**: SR-MAE at the fixed budgets; the primary protocol is
   K_cal in {7, 10, 16} x B in {30, 55, 110} with the macro average. Ties
-  are reported when the paired 95% interval (cluster bootstrap over the 16
-  draws, 6 planners per cluster) includes zero.
-- **Adaptive**: achieved mean rollouts and SR-MAE at the calibration-fixed
-  tau; IES = (MAE / MAE_ref) x (rollouts / 55), reference = the random
-  order at fixed B = 55 under the common readout (secondary).
+  are reported when the paired 95% interval (cluster bootstrap over
+  planners — the unique planner ids resampled with replacement, since the
+  same planners recur across draws) includes zero.
+- **Adaptive (risk target)**: at eps in {.03, .05}, mean rollouts spent,
+  SR-MAE at the stop, coverage P(|SR_hat - SR| <= eps) and the calibration
+  gap; every order (SC-IRT, Fluid, metabench, Random) stops on its own
+  calibration-fixed c under the common readout. Appendix (matched cost):
+  SR-MAE at the tau_hat that spends 30 / 55 rollouts on average and
+  IES = (MAE / MAE_ref) x (rollouts / 55), reference = the random order at
+  fixed B = 55.
 - **US**: rho_scene = Spearman of predicted difficulty vs observed fail
   rate (primary); pooled cell AUROC and Scene-MAE vs the planner-only null.
 - **UPS**: D-SR MAE at zero rollouts on the evaluation-type routes
   (primary), at probe budgets {30, 55, 110}; D-cell NLL.
-- Resampling: paired cluster bootstrap — (draw) 16 clusters of 6 for planner-side deltas; US encoder-vs-baseline deltas are reported as mean +- SD across the three encoder runs.
+- Resampling: paired cluster bootstrap — (planner) the unique evaluation-planner ids (22 on Bench2Drive) resampled with replacement for planner-side deltas, every evaluation of a resampled planner weighted equally (the same planners recur across the 16 draws, so draws are not independent clusters); US encoder-vs-baseline deltas are reported as mean +- SD across the three encoder runs.
