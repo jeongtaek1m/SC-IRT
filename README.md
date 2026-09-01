@@ -32,8 +32,11 @@ point ends by asserting the published numbers (`anchors OK`).
 
 - **C1 Uncertain item-bank inference.** A small calibration panel makes
   every scene difficulty uncertain; SC-IRT keeps the exact conditional
-  posterior p(b_s | A) and the planner x type dependence, and marginalises
-  both into every probability it computes.
+  posterior p(b_s | A) and the planner x scenario-type dependence (a
+  testlet effect over the benchmark's own route grouping, fitted to zero
+  when the grouping is uninformative), and marginalises both into every
+  probability it computes. Inputs: the response matrix and the grouping,
+  nothing else.
 - **C2 Target-aligned acquisition.** *Acquire for the quantity that must
   generalise*: the posterior L1 risk of the reported success rate in UP, of
   the transported block-D success rate in UPS (Delta-R1 on D), nothing in
@@ -108,16 +111,19 @@ tests/          fast invariants
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
   at 96 evaluations per cell; the tables mark which cells are.
-- SC-IRT's advantage is largest where evaluation is hard — small
-  calibration panels at medium budgets (K7 B55: .0287 vs .0352 for the
-  best baseline). With the full 16-planner panel at B <= 55 it ties the
-  best published orderings and stratified random sampling; on the navhard
-  panel with an 81-planner calibration set the 2PL Fisher orderings win the
-  low budgets outright. Those cells are part of the result.
+- SC-IRT's advantage is largest at the medium budget (B = 55: .0296 /
+  .0307 / .0317 vs .0333-.0352 for the best baseline) and at B = 110; at
+  B = 30 with 10-16 calibration planners it ties DISCO / Fluid / metabench.
+  On the navhard panel with an 81-planner calibration set the 2PL Fisher
+  orderings win the low budgets outright. Those cells are part of the
+  result.
 - The stopping rule is conservative in the mean (the calibration gap is
   negative in every cell) but not at the nominal level: the 90th-percentile
-  risk scale fixed on the calibration panel yields 81-88% realised coverage
-  on evaluation planners for eps = .05.
+  risk scale fixed on the calibration panel yields 82-85% realised coverage
+  on evaluation planners.
+- Exact ties in the acquisition score (routes of one type with identical
+  posteriors) are broken by bank order; this arbitrary but documented
+  choice moves individual cells by up to .004 SR-MAE, inside the intervals.
 - The RelGraph encoder is tied with the hand-crafted descriptor stack on
   AUROC / scene-MAE and behind it on rank correlation (-.05 +- .02); its
   contribution is the input (the raw scene graph), not extra accuracy.

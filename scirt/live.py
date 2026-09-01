@@ -28,7 +28,7 @@ from .b2d import Panel, DATA
 from .calibration import calibrate
 from .curves import curves_from_posterior
 from .bayes import Bank, State, track
-from .acquisition import r1_pick, r1_scores, r1_traj
+from .acquisition import r1_pick, r1_scores, r1_traj, TIE_DECIMALS
 
 RISK_T0 = 10
 
@@ -82,8 +82,8 @@ class LiveEvaluator:
             return []
         if k == 1:
             return [self.routes[r1_pick(self.state, rem)]]
-        ev = r1_scores(self.state, rem)
-        return [self.routes[rem[j]] for j in np.argsort(ev)[:k]]
+        ev = np.round(r1_scores(self.state, rem), TIE_DECIMALS)
+        return [self.routes[rem[j]] for j in np.argsort(ev, kind='stable')[:k]]
 
     def observe(self, route_id, passed):
         i = self.rid2i[str(route_id)]

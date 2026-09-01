@@ -46,6 +46,7 @@ KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
 TMAX = 110
 TARGETS = (30, 55)
+NO_TESTLET = os.environ.get('SCIRT_NO_TESTLET', '0') == '1'   # ablation: sigma_g = 0 (independent items)
 TAUS = np.round(np.arange(0.010, 0.0801, 0.001), 3)
 RISK_T0 = 10
 
@@ -75,7 +76,7 @@ def run(seeds):
                 bi, yy = panel.bank_rows(calR, j)
                 n = len(bi)
                 T = min(TMAX, n)
-                bank = bank_from_fit(f1, bi, typ, sigma_g=f0['sigma_g'])
+                bank = bank_from_fit(f1, bi, typ, sigma_g=0.0 if NO_TESTLET else f0['sigma_g'])
                 a, b = f2['a'][bi], f2['b'][bi]
                 orders = {'SC-IRT': r1_traj(bank, yy, T),
                           'Fluid': fluid_order(a, b, yy, T),
@@ -164,10 +165,10 @@ def main():
     C = risk_scale(recs)
     json.dump(C, open(OUT / 'risk_cal.json', 'w'))
     print('risk_cal.json written')
-    for J, v in ((7, 1.79), (10, 1.97), (16, 2.10)):
+    for J, v in ((7, 1.89), (10, 1.88), (16, 2.04)):
         cm = float(np.median([C[f'{s}|{J}|SC-IRT'] for s in sorted(set(r['seed'] for r in recs))]))
         assert abs(cm - v) < .03, (J, cm)
-    assert abs(float(np.median(summary[(16, 'SC-IRT', 55)])) - .029) < .0015
+    assert abs(float(np.median(summary[(16, 'SC-IRT', 55)])) - 0.029) < .0015
     print('anchors OK')
 
 

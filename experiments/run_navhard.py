@@ -96,8 +96,8 @@ def merge():
                             for B in BB} for m in METHODS} for K in KC},
               open(OUT / 'navhard.json', 'w'))
     mean = lambda K, m, B: np.mean([r['err'][m][str(B)] for r in recs if r['K'] == K])
-    for K, m, B, v in ((7, 'SC-IRT', 55, .0342), (16, 'SC-IRT', 110, .0185), (81, 'SC-IRT', 110, .0172),
-                       (16, 'SC-IRT', 30, .0450), (81, 'Fluid', 30, .0304), (7, 'Random (IRT-free)', 30, .0674)):
+    for K, m, B, v in ((7, 'SC-IRT', 55, .0347), (16, 'SC-IRT', 110, .0191), (81, 'SC-IRT', 110, .0169),
+                       (16, 'SC-IRT', 30, .0488), (81, 'Fluid', 30, .0304), (7, 'Random (IRT-free)', 30, .0674)):
         assert abs(mean(K, m, B) - v) < .0003, (K, m, B, mean(K, m, B))
     print('anchors OK')
 

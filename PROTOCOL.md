@@ -14,6 +14,19 @@ type). Scene descriptors (`data/features/`) serve only as US baselines;
 the scene encoder consumes the raw scene graph (Section 3.1). Route order
 is the response-matrix CSV column order — part of the reproduction contract.
 
+**What the UP model is given.** Exactly two things: the pass/fail response
+matrix, and the benchmark's item grouping g(s) (the scenario type of each
+route). The grouping enters only as a dependence structure (Section 3):
+no difficulty, feature or parameter is read from the type label, the
+prior on the type effect is the same zero-mean N(0, sigma_g^2) for every
+type, and sigma_g is estimated on the calibration panel — when the grouping
+carries no information it is fitted to 0 and the model reduces to the
+independent-item model (as on navhard, which has no grouping). The grouping
+is public metadata available to every method: the type-stratified Random
+baseline uses it, and the component ablation reports SC-IRT without it.
+Scenario-definition parameters (trigger distances, flow speeds, ...) are
+not used anywhere.
+
 ## 2. The split
 
 16 calibration : 6 evaluation planners and 36 calibration : 8 evaluation
@@ -150,7 +163,11 @@ stopping     stop when  c * R1(D_t) <= eps
 
 Each acquisition branch is scored at its own posterior median, i.e. with
 the same action the readout would report; candidates of one type share the
-type's (theta x u) table, so branches are vectorised per type. No
+type's (theta x u) table, so branches are vectorised per type. Ties — exact
+ones are common, because all-pass / all-fail routes of one type have
+identical posteriors and are exchangeable — are broken by rounding the
+score to 1e-10 and taking the lowest bank index (`acquisition.argmin_stable`),
+so the choice does not depend on floating-point rescaling. No
 auxiliary model, no phase switch, no localisation budget. The component
 ablation (`run_ablation.py`) switches off, one at a time, the difficulty
 posterior (point curves at b_hat), the testlet (sigma_g = 0) and the risk

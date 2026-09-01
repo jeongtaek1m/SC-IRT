@@ -19,7 +19,7 @@ past a failed anchor.
 
 | script | asserts |
 |---|---|
-| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid / Random-strat / Random cells, SC-IRT macro .0296 |
+| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid / Random-strat / Random cells, SC-IRT macro .0307 |
 | `run_tau_calibration.py --merge` | risk-scale medians c per K_cal (SC-IRT) + one matched-cost tau_hat median |
 | `run_adaptive.py --merge` | fixed-t track errors of SC-IRT / Random / Fluid at representative (K_cal, t) |
 | `run_ablation.py --merge` | full and each off-arm at representative cells |
@@ -41,6 +41,7 @@ past a failed anchor.
 | testlet SD grid | sigma_g on {0, .25, .5, .75, 1, 1.25, 1.5, 2} by profile marginal likelihood |
 | optimiser | Adam lr .05, 800 iterations, zero init, theta-mean centring |
 | risk scale | c = 90th percentile of realised / predicted error over LOO trajectories, t in [10, 110] |
+| acquisition ties | score rounded to 1e-10, lowest bank index (`TIE_DECIMALS`) |
 | stopping targets | eps in {.03, .05}; matched-cost appendix targets 30 / 55 rollouts |
 
 ## RNG registry

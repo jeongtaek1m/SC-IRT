@@ -25,10 +25,21 @@ from .curves import h_
 from .bayes import mix_median, mix_l1, State, EPS
 
 
+TIE_DECIMALS = 10
+
+
+def argmin_stable(ev, rem):
+    """Lowest-index candidate among the minimisers of `ev` rounded to
+    TIE_DECIMALS (all-pass / all-fail routes of one type share a posterior,
+    so exact ties are common; rounding keeps the choice invariant to
+    floating-point rescaling)."""
+    evr = np.round(np.asarray(ev, float), TIE_DECIMALS)
+    return int(rem[int(np.argmin(evr))])
+
+
 def r1_pick(state, rem):
     """argmin over candidate scenes `rem` of the expected branch risk."""
-    ev = r1_scores(state, rem)
-    return int(rem[int(np.argmin(ev))])
+    return argmin_stable(r1_scores(state, rem), rem)
 
 
 def r1_scores(state, rem):
@@ -115,7 +126,7 @@ def r1_pick_transfer(state, bank_d, rem):
             ev += py * risk(q1)
         for k, c_ in enumerate(cands):
             out[pos[int(c_)]] = ev[k]
-    return int(rem[int(np.argmin(out))])
+    return argmin_stable(out, rem)
 
 
 def eig_pick(state, rem):
@@ -130,7 +141,7 @@ def eig_pick(state, rem):
             ws[b.types[s]] = state.w(b.types[s])
     ps = np.stack([(ws[b.types[s]] * b.M3[:, :, s]).sum(1) for s in rem], 1)
     mbar = (q[:, None] * ps).sum(0)
-    return rem[int(np.argmax(h_(mbar) - (q[:, None] * h_(ps)).sum(0)))]
+    return argmin_stable(-(h_(mbar) - (q[:, None] * h_(ps)).sum(0)), rem)
 
 
 def r1_traj(bank, y, T):
