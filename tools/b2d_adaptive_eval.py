@@ -124,17 +124,20 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / 'xml').mkdir(exist_ok=True)
     (out / 'checkpoints').mkdir(exist_ok=True)
-    ev = LiveEvaluator(exclude=(name,))
+    truth = None
+    if a.dry_run:
+        from scirt.b2d import Panel
+        pn = Panel()
+        k = pn.names.index(a.dry_run)
+        truth = {r: pn.Y[(r, k)] for r in pn.allr if (r, k) in pn.Y}
+    ev = LiveEvaluator(exclude=(name,), routes=list(truth) if truth is not None else None)
     if a.no_risk_scale:
         ev.c = 1.0
         print('[warn] --no-risk-scale: stopping on raw R1 (the mean error, not a tail bound)')
     else:
         ev.calibrate_risk(a.risk_cache)
-    truth = None
-    if a.dry_run:
-        k = ev.panel.names.index(a.dry_run)
-        truth = {r: ev.panel.Y[(r, k)] for r in ev.routes if (r, k) in ev.panel.Y}
-        print(f'[dry-run] {a.dry_run}: true SR {np.mean(list(truth.values())):.4f} on {len(truth)} routes')
+    if truth is not None:
+        print(f'[dry-run] {a.dry_run}: true SR {np.mean(list(truth.values())):.4f} on {len(truth)} routes (= the bank)')
 
     logp = out / 'adaptive_log.json'
     log = json.load(open(logp)) if logp.exists() else []

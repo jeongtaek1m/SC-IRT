@@ -2,8 +2,8 @@
 """Table 3B — UPS: unseen planner x unseen scenes on the primary protocol.
 
 The evaluation planner runs probes on the calibrated bank (budgets
-B = {30, 55, 110}); its evaluation-scale ability is the MAP of the Rasch
-posterior on those probes; its success rate on the evaluation-type routes D
+B = {30, 55, 110}); its evaluation-scale ability posterior on the theta grid comes from
+those probes (16 calibration planners); its success rate on the evaluation-type routes D
 (zero rollouts there) is predicted by transporting the probe posterior as
 is (scirt.bayes.transfer) through the scene-conditioned difficulty prior
 N(b; b_tilde_s, sigma^2) with the testlet prior on the evaluation types:
@@ -78,7 +78,7 @@ def main():
             bi, yb = panel.bank_rows(calR, js)
             n = len(bi)
             bank = bank_from_fit(f1, bi, typ)
-            S = {'Random': [int(i) for i in np.random.RandomState(100 + seed * 20 + js).permutation(n)[:T]]}
+            S = {'Random': [int(i) for i in np.random.RandomState(100 + seed * panel.J + js).permutation(n)[:T]]}
             s_, st = [], State(bank, yb)
             for _ in range(T):
                 rem = [i for i in range(n) if i not in s_]
@@ -119,7 +119,7 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({p: {str(B): {m: [float(x) for x in v] for m, v in d.items()} for B, d in bb.items()}
                for p, bb in RES.items()}, open(OUT / 'ups.json', 'w'))
-    for (p, B, ref) in (('naive', 30, .1290), ('Random', 30, .1085), (CAN, 30, .1030), (CAN, 55, .0971),
+    for (p, B, ref) in (('naive', 30, .1233), ('Random', 30, .1047), (CAN, 30, .1030), (CAN, 55, .0971),
                         (CAN, 110, .0927), ('theta-EIG (abl.)', 30, .1041), ('2PL Fisher (abl.)', 110, .0873)):
         assert abs(np.mean(RES[p][B]['mae']) - ref) < .003, (p, B, np.mean(RES[p][B]['mae']))
     print('anchors OK')

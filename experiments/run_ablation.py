@@ -65,7 +65,7 @@ def run(seeds):
                 bank = bank_from_fit(f1, bi, typ)
                 bank_p = Bank(marginal_curves(f1['b'][bi], np.full(n, 1e-9)), typ[bi], f1['sigma_g'])
                 bank_t = bank_from_fit(f1, bi, typ, sigma_g=0.0)
-                perm = [int(i) for i in np.random.RandomState(100 + seed * 20 + js).permutation(n)[:T]]
+                perm = [int(i) for i in np.random.RandomState(100 + seed * panel.J + js).permutation(n)[:T]]
                 sets = {'SC-IRT (full)': (bank, r1_traj(bank, yy, T)),
                         'w/o b-uncertainty': (bank_p, r1_traj(bank_p, yy, T)),
                         'w/o testlet': (bank_t, r1_traj(bank_t, yy, T)),

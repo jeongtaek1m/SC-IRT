@@ -37,6 +37,9 @@ point ends by asserting the published numbers (`anchors OK`).
   when the grouping is uninformative), and marginalises both into every
   probability it computes. Inputs: the response matrix and the grouping,
   nothing else.
+- **Baselines.** tinyBenchmarks-lite, metabench-lite, Fluid-style,
+  AnchorPoints, DISCO-sel + IRT, Fisher-static, Random (+IRT, stratified):
+  each adaptation is spelled out in PROTOCOL.md section 6.
 - **C2 Target-aligned acquisition.** *Acquire for the quantity that must
   generalise*: the posterior L1 risk of the reported success rate in UP, of
   the transported block-D success rate in UPS (Delta-R1 on D), nothing in
@@ -55,7 +58,7 @@ point ends by asserting the published numbers (`anchors OK`).
 22-planner x 220-route Bench2Drive panel; per draw (R = 16), 16 calibration
 : 6 evaluation planners and 36 : 8 scenario types. B = number of routes
 rolled out (30/55/110 = 5 x {6, 11, 22}, so the type-stratified baseline
-can execute whole scenario types); calibration-panel sizes
+are multiples of the 5 routes per scenario type); calibration-panel sizes
 K_cal in {7, 10, 16}. 96 evaluations per cell. A second, two-stage panel
 (NAVSIM navhard leaderboard, 87 unique submissions x 225 units) reproduces
 the UP comparison off Bench2Drive.
@@ -111,9 +114,11 @@ tests/          fast invariants
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
   at 96 evaluations per cell; the tables mark which cells are.
-- SC-IRT's advantage is largest at the medium budget (B = 55: .0296 /
-  .0307 / .0317 vs .0333-.0352 for the best baseline) and at B = 110; at
-  B = 30 with 10-16 calibration planners it ties DISCO / Fluid / metabench.
+- SC-IRT's advantage is at the medium budget (B = 55: .0296 / .0307 /
+  .0317 vs .0333-.0340 for type-stratified Random, the best baseline) and
+  at B = 110 for K_cal >= 10; at B = 30 and at K7 B110 the stratified
+  random order (which uses the same scenario grouping) is within the
+  intervals. Random-policy rows are expected errors over five orders.
   On the navhard panel with an 81-planner calibration set the 2PL Fisher
   orderings win the low budgets outright. Those cells are part of the
   result.

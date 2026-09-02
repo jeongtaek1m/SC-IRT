@@ -54,17 +54,22 @@ def subsample(cols, seed, Kc):
 
 
 
+PJ = 22   # planner count, set from the panel in run()
+
+
 def orders_for(f1, f2, bi, yy, seed, js, typ):
     n = len(bi)
     bank = bank_from_fit(f1, bi, typ, sigma_g=0.0 if NO_TESTLET else None)
     return bank, {'SC-IRT': r1_traj(bank, yy, T),
                 'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, T),
                 'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], T, n)],
-                'Random': [int(i) for i in np.random.RandomState(100 + seed * 20 + js).permutation(n)[:T]]}
+                'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:T]]}
 
 
 def run(seeds):
+    global PJ
     panel = Panel()
+    PJ = panel.J
     recs = []
     for seed in seeds:
         hp, ht = unified_split(seed, panel.utypes, panel.J)
@@ -189,7 +194,7 @@ def main():
     assert len(recs) == len(KCALS) * 96
     fx = lambda K, o, t: np.mean([abs(r[o]['Shat'][t - 1] - r['SR']) for r in recs if r['K'] == K])
     for K, o, t, v in ((7, 'SC-IRT', 30, .0492), (7, 'SC-IRT', 55, .0296), (10, 'SC-IRT', 110, .0137),
-                       (7, 'Random', 55, .0384), (16, 'Fluid', 55, .0345)):
+                       (7, 'Random', 55, .0403), (16, 'Fluid', 55, .0345)):
         assert abs(fx(K, o, t) - v) < .002, (K, o, t, fx(K, o, t))
     print('anchors OK')
 

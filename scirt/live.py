@@ -34,12 +34,13 @@ RISK_T0 = 10
 
 
 class LiveEvaluator:
-    def __init__(self, exclude=(), device='cuda', it=800, verbose=True):
+    def __init__(self, exclude=(), routes=None, device='cuda', it=800, verbose=True):
         """exclude: planner names to drop from the calibration panel (e.g. the
-        planner under evaluation if it is already in the matrix)."""
+        planner under evaluation if it is already in the matrix); routes: the
+        bank as a subset of the panel's routes (default: all 220)."""
         self.panel = Panel()
         self.cols = [k for k, nm in enumerate(self.panel.names) if nm not in set(exclude)]
-        self.routes = list(self.panel.allr)
+        self.routes = [r for r in self.panel.allr if r in set(routes)] if routes is not None else list(self.panel.allr)
         self.types = np.array([self.panel.sn[r] for r in self.routes])
         self.rid2i = {r: i for i, r in enumerate(self.routes)}
         self.device, self.it, self.verbose = device, it, verbose

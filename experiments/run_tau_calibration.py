@@ -2,7 +2,9 @@
 """Stopping thresholds fixed on the calibration panel (never on evaluation planners).
 
 For each draw and K_cal, every calibration planner j is held out in turn, the
-bank is re-calibrated from the other K_cal - 1 planners, and the four bank
+bank difficulties are re-calibrated from the other K_cal - 1 planners (the
+panel-level hyperparameters sigma_b and sigma_g of the (draw, K_cal) fit are
+kept), and the four bank
 orders of `run_adaptive.py` are run on j with the same readout and the same
 posterior L1 risk R1. For a target mean budget B* in {30, 55} the threshold
 is
@@ -81,7 +83,7 @@ def run(seeds):
                 orders = {'SC-IRT': r1_traj(bank, yy, T),
                           'Fluid': fluid_order(a, b, yy, T),
                           'metabench': [int(i) for i in metabench_order(a, b, T, n)],
-                          'Random': [int(i) for i in np.random.RandomState(700 + seed * 20 + j).permutation(n)[:T]]}
+                          'Random': [int(i) for i in np.random.RandomState(700 + seed * panel.J + j).permutation(n)[:T]]}
                 rec = {'seed': seed, 'J': Jc, 'j': int(j), 'SR': float(yy.mean()), 'sigma_g': f0['sigma_g']}
                 for k, o in orders.items():
                     Sh, R1 = track(bank, yy, o)

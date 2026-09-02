@@ -50,10 +50,12 @@ baseline's own — is re-fitted from those planners only; the evaluation
 planners are unchanged.
 
 **Budgets.** B = number of routes rolled out (the acquisition of Section 4
-selects one route at a time); B = 5 x {6, 11, 22} = {30, 55, 110} so the
-type-stratified baseline can execute whole scenario types (14% / 25% / 50%
-of the benchmark; 110 executes 61% of the per-draw bank, the reference
-budget at which representative samplers have largely converged).
+selects one route at a time); B = 5 x {6, 11, 22} = {30, 55, 110}, i.e.
+14% / 25% / 50% of the benchmark; 110 executes 61% of the per-draw bank,
+the reference budget at which representative samplers have largely
+converged. (The grid was chosen as multiples of the 5 routes per scenario
+type; the stratified baseline visits types round-robin, so no budget
+corresponds to whole types for any method.)
 
 ## 3. The model — one uncertainty-aware Rasch posterior
 
@@ -68,10 +70,12 @@ independent given theta and a rule that assumes they are under-states its
 own risk.
 
 **Calibration** on the block A (`scirt/calibration.py`) is a MAP fit with
-explicit priors — the same prior forms the evaluation posterior uses (after
-the theta-mean centring the fitted b prior sits c = mean theta_hat, about
-.03, away from the centred frame; the difficulty posterior below is taken in
-the centred frame):
+explicit priors — the same prior forms the evaluation posterior uses. After
+the theta-mean centring the MAP's b prior sits c = mean theta_hat away from
+the centred frame (|c| up to .65 at K_cal = 7, median .2; .05 at K_cal =
+16); the difficulty posterior below is taken in the centred frame, i.e. the
+frame of the evaluation prior, and only the MAP point b_hat (baselines,
+point-curve ablation, sigma_g estimate) carries the offset:
 
 ```
 theta_k ~ N(0, 1)          b_s ~ N(0, sigma_b^2)          (2PL/3PL baselines: log a_s ~ N(0, .5^2), logit c_s ~ N(-2.2, 1))
@@ -213,15 +217,60 @@ theta-EIG and the 2PL Fisher rule are reported as ablations (Table 3B).
 
 ## 6. Published baselines (`scirt/baselines.py`)
 
-Native-vs-native (Table 1): each method runs in its published operating
-mode on the same bank and the same calibration panel with its own readout —
-tinyBenchmarks, metabench-lite, Fluid-style, AnchorPoints-adapted,
-DISCO-adapted, Total-/Marginal-Fisher static, Random and type-stratified
-Random with plug-in IRT, and the IRT-free random mean. "-style / -lite /
--adapted" marks re-implementations from the method descriptions. The
-adaptive comparison (Table 2) runs the bank orders of Random, Fluid and
-metabench under SC-IRT's readout and stopping rule — none defines a
-stopping rule of its own.
+Native-vs-native (Table 1): each method's *selection rule* runs on the same
+bank and the same calibration panel, with the readout its published
+description implies where that is possible on 7-16 calibration planners.
+All 2PL item parameters come from one calibration (`calibrate(mode='2pl')`,
+explicit priors log a ~ N(0, .5^2), b ~ N(0, sigma_b^2) with sigma_b from
+the 1PL empirical-Bayes fit) — not from the methods' own fitting code. The
+adaptations, per row:
+
+- **Random (IRT-free)** — mean of the rolled-out outcomes.
+- **Random (IRT-free) / Random + IRT / Random-strat + IRT** — random order
+  (type round-robin for the stratified one) read with the sample mean or
+  the Rasch plug-in (1PL b_hat, a = 1, Newton-MAP theta with the N(0, 1)
+  prior). The stratified order visits scenario types round-robin (one route
+  per type per pass), not whole types. Table 1 / Table 4 report these rows
+  as the expected error over five independent orders per evaluation
+  (`NREP = 5`); the adaptive tables use one order (the stopping rule is
+  applied to a single trajectory).
+- **tinyBenchmarks-lite** (Polo et al., 2024) — K-means with K = B on the
+  (a_hat, b_hat) embedding, one medoid per cluster, read with the p-IRT
+  plug-in; duplicate (a, b) points (routes with identical calibration
+  responses) leave clusters empty, so the budget is filled with the routes
+  closest to their centroid. Their gp-IRT blend and the anchor-weighted
+  correctness estimate are not used.
+- **metabench-lite** (Kipnis et al., 2024) — greedy maximum 2PL information
+  over a fixed 25-point quantile grid of b_hat (prefix order), read with the
+  p-IRT plug-in; the published subset-size tuning and GAM readout are
+  replaced by the budget grid and the plug-in.
+- **Fluid-style** (Hofmann et al., 2025) — adaptive Fisher selection at the
+  Newton-MAP 2PL ability, read with the p-IRT plug-in on the SR scale
+  (Fluid reports the ability itself).
+- **AnchorPoints** (Vivek et al., 2023) — K-medoids (PAM) with K = B on
+  1 - correlation of the calibration response vectors (identical rows at
+  distance 0; a constant row at distance 1 from every non-identical row),
+  cluster-size-weighted mean of the anchors' outcomes — their own estimator,
+  no IRT.
+- **DISCO-sel + IRT** (Rubinstein et al., 2025, arXiv:2510.07959) — DISCO's
+  selection stage only: routes ordered by the calibration planners'
+  disagreement pbar (1 - pbar) (order-equivalent to its Jensen-Shannon
+  criterion on 0/1 outcomes), read with the p-IRT plug-in. DISCO's own
+  prediction stage is a signature metamodel (kNN / random forest over
+  source models), which cannot be trained on 7-16 source planners and is
+  far worse here (macro SR-MAE about .08 on two draws vs .03 with the
+  plug-in); the substitution helps the baseline.
+- **Total-/Marginal-Fisher static** — classical IRT information orders
+  (population-integrated / marginal), read with the p-IRT plug-in.
+
+The adaptive comparison (Table 2) runs the bank orders of Random, Fluid and
+metabench under SC-IRT's readout, risk and stopping rule, each with its own
+calibration-fixed risk scale. metabench and Random define no stopping rule;
+Fluid's published procedure is fixed-budget, and its dynamic-stopping
+demonstration (ability standard error below a leaderboard rank-gap
+threshold) targets ability precision with a threshold that has no
+counterpart on this panel, so all orders are compared under the common
+SR-error rule — the Table 2 "Fluid" row is Fluid's item order only.
 
 ## 7. Metrics
 

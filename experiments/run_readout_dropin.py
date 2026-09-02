@@ -24,7 +24,7 @@ from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
 from scirt.bayes import bank_from_fit, readout
 from scirt.baselines import (fluid_order, total_fisher_order, metabench_order, kmeans_anchors,
-                             stratified_order)
+                             anchorpoints_select)
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
@@ -40,14 +40,7 @@ def subsample(cols, seed, Jc):
 
 
 def anchor_set(Rb, budget):
-    from sklearn.cluster import KMeans
-    km = KMeans(n_clusters=min(budget, len(Rb)), n_init=4, random_state=0).fit(Rb)
-    out = []
-    for cl in range(km.n_clusters):
-        mem = np.where(km.labels_ == cl)[0]
-        if len(mem):
-            out.append(int(mem[np.argmin(((Rb[mem] - km.cluster_centers_[cl]) ** 2).sum(1))]))
-    return out
+    return anchorpoints_select(Rb, budget)[0]
 
 
 def main():
@@ -78,7 +71,7 @@ def main():
                 a2, b2 = f2['a'][bi], f2['b'][bi]
                 fl = fluid_order(a2, b2, yy, max(BG))
                 tf = total_fisher_order(a2, b2, f2['th'])
-                perm = list(np.random.RandomState(100 + seed * 20 + js).permutation(n))
+                perm = list(np.random.RandomState(100 + seed * panel.J + js).permutation(n))
                 for B in BG:
                     sets = {'Fluid': fl[:B], 'Total-Fisher': tf[:B], 'metabench': metabench_order(a2, b2, B, n),
                             'tinyBenchmarks': kmeans_anchors(a2, b2, B, n), 'AnchorPoints': anchor_set(Rf[bi], B),
@@ -105,7 +98,7 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({s: {str(J): {str(B): [float(x) for x in ERR[s][J][B]] for B in BG} for J in KCALS} for s in SELS},
               open(OUT / 'readout_dropin.json', 'w'))
-    for sel, J, B, v in (('Fluid', 7, 30, .0493), ('AnchorPoints', 16, 110, .0189), ('Random', 10, 110, .0195),
+    for sel, J, B, v in (('Fluid', 7, 30, .0493), ('AnchorPoints', 16, 110, .0207), ('Random', 10, 110, .0171),
                          ('Fluid', 16, 55, .0345)):
         m = float(np.mean(ERR[sel][J][B]))
         assert abs(m - v) < .0003, (sel, J, B, m)

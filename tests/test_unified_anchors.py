@@ -18,7 +18,8 @@ from scirt.curves import (THG, XG, I0, PRIOR, BG, UG, USHIFT, GX, GW, marginal_c
                           item_loglik, item_posteriors, curves_from_posterior, posterior_sd)
 from scirt.bayes import Bank, State, state_from, readout, track, transfer, stop_at
 from scirt.acquisition import r1_pick, r1_scores, eig_pick, r1_traj
-from scirt.metrics import ies
+from scirt.metrics import ies, paired_cluster_boot
+from scirt.baselines import kmeans_anchors, anchorpoints_select, phi_distance, pam_medoids
 
 
 @pytest.fixture(scope='module')
@@ -157,3 +158,51 @@ def test_slow_anchor_entry_points_exist():
                  'run_ablation', 'run_navhard',
                  'run_calibration_stability', 'eval_us_predictions', 'build_data', 'make_figures'):
         assert (exp / f'{name}.py').exists(), name
+
+
+def test_acquisition_and_readout_never_peek():
+    bank, y = _toy_bank()
+    S = r1_traj(bank, y, 6)
+    y2 = y.copy()
+    for i in range(bank.n):
+        if i not in S:
+            y2[i] = 1 - y2[i]                           # flip every unobserved outcome
+    assert r1_traj(bank, y2, 6) == S
+    assert readout(bank, y, S) == readout(bank, y2, S)
+    st, st2 = state_from(bank, y, S), state_from(bank, y2, S)
+    assert np.array_equal(r1_scores(st, [i for i in range(bank.n) if i not in S]),
+                          r1_scores(st2, [i for i in range(bank.n) if i not in S]))
+    assert eig_pick(st, [i for i in range(bank.n) if i not in S]) == eig_pick(st2, [i for i in range(bank.n) if i not in S])
+
+
+def test_mixture_median_and_l1_against_brute_force():
+    from scirt.bayes import mix_median, mix_l1
+    from scipy.stats import norm
+    q = np.array([[0.3], [0.7]]); mu = np.array([[10.0], [20.0]]); sd = np.array([[2.0], [3.0]])
+    c = mix_median(q, mu, sd, 40.0)[0]
+    assert abs((q[:, 0] * norm.cdf((c - mu[:, 0]) / sd[:, 0])).sum() - 0.5) < 1e-6
+    x = np.linspace(-20, 60, 200001)
+    dens = (q[:, 0][:, None] * norm.pdf((x[None, :] - mu[:, 0][:, None]) / sd[:, 0][:, None]) / sd[:, 0][:, None]).sum(0)
+    brute = np.trapz(np.abs(x - c) * dens, x)
+    assert abs(mix_l1(q, mu, sd, np.array([c]))[0] - brute) < 1e-3
+
+
+def test_paired_cluster_boot_weights_evaluations_equally():
+    a = np.array([1.0, 1.0, 1.0, 5.0]); b = np.zeros(4); cl = np.array([0, 0, 0, 1])
+    m, lo, hi = paired_cluster_boot(a, b, cl, B=200)
+    assert m == 2.0 and lo <= m <= hi
+    assert stop_at([0.5, 0.2, 0.1, 0.05], 0.15) == 3
+
+
+def test_anchor_selectors_spend_the_budget():
+    rng = np.random.RandomState(0)
+    a2 = np.repeat(np.array([1.0, 1.2, 0.8]), 20); b2 = np.repeat(rng.randn(3), 20)   # 3 distinct (a, b) points
+    sel = kmeans_anchors(a2, b2, 25, 60)
+    assert len(sel) == 25 and len(set(sel)) == 25
+    R = (rng.rand(60, 7) < 0.5).astype(float); R[10:20] = R[0]                          # duplicate rows
+    med, w = anchorpoints_select(R, 15)
+    assert len(med) == 15 and len(set(med)) == 15 and w.sum() == 60
+    D = phi_distance(R)
+    assert D.shape == (60, 60) and np.allclose(np.diag(D), 0) and (D >= -1e-12).all() and D[0, 10] == 0
+    m2, _ = pam_medoids(D, 3)
+    assert len(m2) == 3

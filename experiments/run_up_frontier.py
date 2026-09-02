@@ -3,14 +3,13 @@
 
 22-planner panel, 16 calibration : 6 evaluation planners per draw (random,
 RandomState(1000 + draw)), budgets B = number of routes rolled out,
-5 x {6, 11, 22} = {30, 55, 110} (so the type-stratified baseline can execute
-whole scenario types), calibration-panel sizes K_cal in {7, 10, 16}
+5 x {6, 11, 22} = {30, 55, 110}, calibration-panel sizes K_cal in {7, 10, 16}
 (K_cal < 16: RandomState(9000 + 100 draw + 10 K_cal) subsample, bank
 re-calibrated from those planners only). 96 evaluations per cell.
 
 Baselines use their native readouts; SC-IRT selects by Delta-R1 (the same
-posterior L1 risk the stopping rule uses) and reads out with the Rasch MAP
-fill (PROTOCOL sections 2-5).
+posterior L1 risk the stopping rule uses) and reads out the posterior median
+of the full-bank SR (scirt.bayes.readout; PROTOCOL sections 2-5).
 
     python experiments/run_up_frontier.py                  # all 16 draws (GPU)
     python experiments/run_up_frontier.py --seeds 0 4      # shard
@@ -40,6 +39,7 @@ from scirt.metrics import paired_cluster_boot
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
 BGRID = [30, 55, 110]
+NREP = 5          # random-policy rows: expected |error| over NREP independent orders per evaluation
 T = max(BGRID)
 METHODS = ['Random (IRT-free)', 'Random + IRT', 'Random-strat + IRT', 'DISCO', 'AnchorPoints',
            'Total-Fisher', 'Marginal-Fisher', 'tinyBenchmarks', 'metabench', 'Fluid', 'SC-IRT']
@@ -82,18 +82,18 @@ def run(seeds):
                 a2, b2 = f2['a'][bi], f2['b'][bi]
                 bank = bank_from_fit(f1, bi, typ)
                 ones = np.ones(n)
-                rng = np.random.RandomState(100 + seed * 20 + js)
-                perm = list(rng.permutation(n))
-                strat = stratified_order(typ[bi], rng)
+                RNG = [np.random.RandomState(100 + seed * panel.J + js + 100000 * rep) for rep in range(NREP)]
+                perms = [list(r_.permutation(n)) for r_ in RNG]
+                strats = [stratified_order(typ[bi], r_) for r_ in RNG]
                 orders = {'disco': disco_order(pbar[bi]), 'tf': total_fisher_order(a2, b2, f2['th']),
                           'mf': marginal_fisher_order(a2, b2), 'fluid': fluid_order(a2, b2, yy, T),
                           'ours': r1_traj(bank, yy, T)}
                 err = {m: {} for m in METHODS}
                 for B in BGRID:
                     est = {
-                        'Random (IRT-free)': yy[perm[:B]].mean(),
-                        'Random + IRT': pirt(b1, ones, yy, perm[:B]),
-                        'Random-strat + IRT': pirt(b1, ones, yy, strat[:B]),
+                        'Random (IRT-free)': np.mean([yy[pm[:B]].mean() for pm in perms]),
+                        'Random + IRT': np.mean([pirt(b1, ones, yy, pm[:B]) for pm in perms]),
+                        'Random-strat + IRT': np.mean([pirt(b1, ones, yy, st[:B]) for st in strats]),
                         'DISCO': pirt(b2, a2, yy, orders['disco'][:B]),
                         'AnchorPoints': anchorpoints_estimate(Rf[bi], yy, B),
                         'Total-Fisher': pirt(b2, a2, yy, orders['tf'][:B]),
@@ -105,6 +105,10 @@ def run(seeds):
                     }
                     for m in METHODS:
                         err[m][B] = abs(float(est[m]) - SR)
+                    for m, ests in (('Random (IRT-free)', [yy[pm[:B]].mean() for pm in perms]),
+                                    ('Random + IRT', [pirt(b1, ones, yy, pm[:B]) for pm in perms]),
+                                    ('Random-strat + IRT', [pirt(b1, ones, yy, st[:B]) for st in strats])):
+                        err[m][B] = float(np.mean([abs(e - SR) for e in ests]))   # expected error of the random policy
                 recs.append({'seed': seed, 'K': Kc, 'js': int(js), 'SR': SR,
                              'sel': [calR[bi[i]] for i in orders['ours']],
                              'sigma_b': f1['sigma_b'], 'sigma_g': f1['sigma_g'],
@@ -160,8 +164,8 @@ def main():
     for (K, B, ref) in ((7, 30, .0492), (7, 55, .0296), (10, 110, .0137), (16, 55, .0317)):
         assert abs(np.mean(E[K]['SC-IRT'][B]) - ref) < .002, (K, B, np.mean(E[K]['SC-IRT'][B]))
     assert abs(np.mean(E[7]['Fluid'][30]) - .0515) < .002
-    assert abs(np.mean(E[16]['Random-strat + IRT'][55]) - .0352) < .002
-    assert abs(np.mean(E[7]['Random (IRT-free)'][30]) - .0670) < .002
+    assert abs(np.mean(E[16]['Random-strat + IRT'][55]) - .0335) < .002
+    assert abs(np.mean(E[7]['Random (IRT-free)'][30]) - .0625) < .002
     macro = np.mean([np.mean(E[K]['SC-IRT'][B]) for K in KCALS for B in BGRID])
     assert abs(macro - .0307) < .0005, macro
     print('anchors OK')

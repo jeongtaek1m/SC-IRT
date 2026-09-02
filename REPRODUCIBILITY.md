@@ -42,6 +42,7 @@ past a failed anchor.
 | optimiser | Adam lr .05, 800 iterations, zero init, theta-mean centring |
 | risk scale | c = 90th percentile of realised / predicted error over LOO trajectories, t in [10, 110] |
 | acquisition ties | score rounded to 1e-10, lowest bank index (`TIE_DECIMALS`) |
+| random-policy rows (Tables 1, 4) | expected error over `NREP = 5` orders, seeds `100 + K*draw + planner_id + 100000*rep` |
 | stopping targets | eps in {.03, .05}; matched-cost appendix targets 30 / 55 rollouts |
 
 ## RNG registry
@@ -54,9 +55,9 @@ top-of-script `np.random.seed(0); torch.manual_seed(0)` is belt-and-braces.
 |---|---|
 | planner/type split (draw = 0..15) | `RandomState(1000 + draw)`: first 6 of 22 planners, then 8 of 44 types, from the same stream |
 | K_cal subsample from the 16 calibration planners | `RandomState(9000 + 100*draw + 10*K_cal)` |
-| Random / Random-strat rollout order (per evaluation) | `RandomState(100 + 20*draw + planner_id)` |
-| leave-one-planner-out Random order (tau calibration) | `RandomState(700 + 20*draw + j)` |
-| navhard panel (Table 4) | same formulas on the 87 submissions: 6 evaluation planners `RandomState(1000 + draw)`, K_cal subsample `RandomState(9000 + 100*draw + 10*K_cal)`, Random order `RandomState(100 + 20*draw + planner_id)`; no scenario types |
+| Random / Random-strat rollout order (per evaluation) | `RandomState(100 + K*draw + planner_id)`, K = number of planners in the panel (22; 87 on navhard) — injective |
+| leave-one-planner-out Random order (tau calibration) | `RandomState(700 + K*draw + j)` |
+| navhard panel (Table 4) | same formulas on the 87 submissions: 6 evaluation planners `RandomState(1000 + draw)`, K_cal subsample `RandomState(9000 + 100*draw + 10*K_cal)`, Random order `RandomState(100 + 87*draw + planner_id)`; no scenario types |
 | model-adequacy simulation | `RandomState(2000 + draw)` |
 | paired bootstrap | `RandomState(0)`; 4,000 resamples of the unique planner ids (planner clusters, 22 on Bench2Drive), every evaluation of a resampled planner weighted equally |
 
@@ -93,7 +94,7 @@ mean +- SD, never an averaged prediction.
 - `data/live/risk_scale.json` — cached risk scales c of `scirt.live.LiveEvaluator`,
   keyed by a bank fingerprint (planner set, route list, iterations) and
   validated against a digest of the responses; the shipped entries are the
-  22-planner bank (c = 2.08) and the three 21-planner banks of the dry-runs
+  22-planner bank (c = 2.36) and the three 21-planner banks of the dry-runs
   in RESULTS.md. `calibrate_risk()` recomputes an entry when the matrix
   changes (~22 GPU calibrations).
 - `data/navhard/navhard_binary_panel.npz` — NAVSIM navhard leaderboard

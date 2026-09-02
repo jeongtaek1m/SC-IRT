@@ -66,18 +66,25 @@ def disco_order(pbar):
 
 def kmeans_anchors(a2, b2, budget, n_items):
     """tinyBenchmarks-style anchors: K-means on (a-hat, b-hat), K = budget,
-    medoid per cluster (budget-specific, not a prefix order)."""
+    one medoid per non-empty cluster (budget-specific, not a prefix order).
+    Duplicate (a, b) points (routes with identical calibration responses)
+    leave clusters empty; the budget is then filled with the remaining
+    routes closest to their centroid, so exactly min(budget, n) routes are
+    rolled out."""
     from sklearn.cluster import KMeans
     from sklearn.exceptions import ConvergenceWarning
     E = np.stack([a2, b2], 1)
     warnings.simplefilter("ignore", ConvergenceWarning)
-    km = KMeans(n_clusters=min(budget, n_items), n_init=4, random_state=0).fit(E)
+    k = min(budget, n_items)
+    km = KMeans(n_clusters=k, n_init=4, random_state=0).fit(E)
+    d = ((E - km.cluster_centers_[km.labels_]) ** 2).sum(1)
     anchors = []
     for cl in range(km.n_clusters):
         mem = np.where(km.labels_ == cl)[0]
         if len(mem):
-            anchors.append(int(mem[np.argmin(((E[mem] - km.cluster_centers_[cl]) ** 2).sum(1))]))
-    return anchors[:budget]
+            anchors.append(int(mem[np.argmin(d[mem])]))
+    rest = [int(i) for i in np.argsort(d, kind='stable') if int(i) not in set(anchors)]
+    return (anchors + rest)[:k]
 
 
 def metabench_order(a2, b2, budget, n_items):
@@ -97,22 +104,73 @@ def metabench_order(a2, b2, budget, n_items):
     return order
 
 
+def phi_distance(Rb):
+    """1 - phi (Pearson on binary rows) between calibration response vectors;
+    identical rows are at distance 0, a constant row is at distance 1 from
+    every non-identical row (its correlation is undefined)."""
+    R = np.asarray(Rb, float)
+    n = len(R)
+    Rc = R - R.mean(1, keepdims=True)
+    nrm = np.sqrt((Rc ** 2).sum(1))
+    D = np.ones((n, n))
+    ok = nrm > 1e-12
+    if ok.any():
+        C = (Rc[ok] @ Rc[ok].T) / np.outer(nrm[ok], nrm[ok])
+        D[np.ix_(ok, ok)] = 1 - np.clip(C, -1, 1)
+    same = (np.abs(R[:, None, :] - R[None, :, :]).sum(2) == 0)
+    D[same] = 0.0
+    np.fill_diagonal(D, 0.0)
+    return D
+
+
+def pam_medoids(D, k, max_iter=50):
+    """Partitioning Around Medoids (BUILD + SWAP) on a distance matrix;
+    returns (medoid indices, cluster label of every point)."""
+    n = len(D)
+    k = min(k, n)
+    med = [int(np.argmin(D.sum(1)))]
+    while len(med) < k:                                     # BUILD
+        cur = D[:, med].min(1)
+        gain = np.maximum(cur[:, None] - D, 0).sum(0)
+        gain[med] = -1
+        med.append(int(np.argmax(gain)))
+    med = list(med)
+    for _ in range(max_iter):                               # SWAP
+        Dm = D[:, med]
+        order = np.argsort(Dm, 1)
+        near = np.array(med)[order[:, 0]]
+        d1 = Dm[np.arange(n), order[:, 0]]
+        d2 = Dm[np.arange(n), order[:, 1]] if k > 1 else np.full(n, np.inf)
+        best, best_delta = None, -1e-12
+        for j, m in enumerate(med):
+            newd = np.where((near == m)[:, None], np.minimum(d2[:, None], D), np.minimum(d1[:, None], D))
+            delta = newd.sum(0) - d1.sum()
+            delta[med] = np.inf
+            h = int(np.argmin(delta))
+            if delta[h] < best_delta:
+                best, best_delta = (j, h), delta[h]
+        if best is None:
+            break
+        med[best[0]] = best[1]
+    med = sorted(int(m) for m in med)
+    labels = np.argmin(D[:, med], 1)
+    return med, labels
+
+
+def anchorpoints_select(Rb, budget):
+    """AnchorPoints (Vivek et al.): K-medoids on 1 - correlation of the
+    calibration response vectors, K = budget; returns (anchors, weights)
+    with weights = cluster sizes (exactly min(budget, n) anchors)."""
+    med, labels = pam_medoids(phi_distance(Rb), budget)
+    w = np.array([(labels == c).sum() for c in range(len(med))], float)
+    return med, w
+
+
 def anchorpoints_estimate(Rb, yy, budget):
-    """AnchorPoints-adapted: K-means on calibration response vectors,
-    cluster-weighted medoid mean (its own estimator, no IRT)."""
-    from sklearn.cluster import KMeans
-    from sklearn.exceptions import ConvergenceWarning
-    warnings.simplefilter("ignore", ConvergenceWarning)
-    km = KMeans(n_clusters=min(budget, len(Rb)), n_init=4, random_state=0).fit(Rb)
-    est, tot = 0.0, 0
-    for cl in range(km.n_clusters):
-        mem = np.where(km.labels_ == cl)[0]
-        if not len(mem):
-            continue
-        med = mem[np.argmin(((Rb[mem] - km.cluster_centers_[cl]) ** 2).sum(1))]
-        est += len(mem) * yy[med]
-        tot += len(mem)
-    return est / tot
+    """AnchorPoints readout: cluster-size-weighted mean of the anchors'
+    outcomes (its own estimator, no IRT)."""
+    med, w = anchorpoints_select(Rb, budget)
+    return float((w * yy[med]).sum() / w.sum())
 
 
 def stratified_order(types, rng):

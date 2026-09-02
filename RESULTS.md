@@ -14,33 +14,38 @@ cells by up to .004 (PROTOCOL section 4).
 ## Table 1 — UP at fixed budgets (`run_up_frontier.py`)
 
 Unseen-planner SR reconstruction on the 22 x 220 Bench2Drive panel, random
-16:6 planner split, B routes rolled out (30/55/110 = 5 x {6, 11, 22}, so the
-type-stratified baseline can execute whole scenario types).
+16:6 planner split, B routes rolled out (30/55/110 = 5 x {6, 11, 22}).
 
 | method | K7 B30 | K7 B55 | K7 B110 | K10 B30 | K10 B55 | K10 B110 | K16 B30 | K16 B55 | K16 B110 | macro |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Random (IRT-free) | .0670* | .0405* | .0224* | .0670* | .0405* | .0224* | .0670* | .0405* | .0224* | .0433 |
-| Random + IRT | .0587 | .0390* | .0208* | .0568 | .0367 | .0191* | .0584 | .0374 | .0191* | .0385 |
-| Random-strat + IRT | .0560 | .0352 | .0170 | .0542 | .0354 | .0171 | .0549 | .0352 | .0172 | .0358 |
-| DISCO | .0581 | .0384* | .0217* | .0499 | .0340 | .0202* | .0438 | .0355 | .0225* | .0360 |
-| AnchorPoints | .0805* | .0670* | .0649* | .0559 | .0387 | .0265* | .0554 | .0470* | .0243* | .0511 |
+| Random (IRT-free) | .0625* | .0417* | .0206 | .0625* | .0417* | .0206* | .0625* | .0417* | .0206* | .0416 |
+| Random + IRT | .0540 | .0368* | .0194 | .0530 | .0362 | .0192* | .0534 | .0360 | .0191* | .0363 |
+| Random-strat + IRT | .0509 | .0340 | .0164 | .0509 | .0333 | .0163 | .0510 | .0335 | .0163 | .0336 |
+| DISCO-sel + IRT | .0581 | .0384* | .0217* | .0499 | .0340 | .0202* | .0438 | .0355 | .0225* | .0360 |
+| AnchorPoints | .0786* | .0668* | .0649* | .0524 | .0377 | .0262* | .0545 | .0377 | .0255* | .0493 |
 | Total-Fisher | .0545 | .0386* | .0223* | .0517 | .0381 | .0209* | .0522 | .0404 | .0233* | .0380 |
 | Marginal-Fisher | .0566 | .0410* | .0220* | .0529 | .0401* | .0220* | .0568 | .0402 | .0246* | .0396 |
-| tinyBenchmarks | .0533 | .0402* | .0333* | .0465 | .0333 | .0214* | .0514 | .0377 | .0186 | .0373 |
-| metabench | .0606 | .0408* | .0215 | .0457 | .0386* | .0234* | .0477 | .0384 | .0226* | .0377 |
-| Fluid | .0515 | .0428* | .0256* | .0496 | .0367 | .0206* | .0443 | .0355 | .0217 | .0365 |
-| **SC-IRT** | **.0492** | **.0296** | **.0165** | .0460 | **.0307** | **.0137** | .0447 | **.0317** | **.0139** | **.0307** |
+| tinyBenchmarks-lite | .0533 | .0396* | .0215* | .0465 | .0333 | .0195* | .0514 | .0377 | .0186 | .0357 |
+| metabench-lite | .0606 | .0408* | .0215 | .0457 | .0386* | .0234* | .0477 | .0384 | .0226* | .0377 |
+| Fluid-style | .0515 | .0428* | .0256* | .0496 | .0367 | .0206* | .0443 | .0355 | .0217 | .0365 |
+| **SC-IRT** | **.0492** | **.0296** | .0165 | .0460 | **.0307** | **.0137** | .0447 | **.0317** | **.0139** | **.0307** |
 
-Reading. SC-IRT has the lowest error in 7 of 9 cells and ties in the other
-two (K10 B30: metabench .0457; K16 B30: DISCO .0438, Fluid .0443 — inside
-the intervals), with the best macro average by a margin (.0307 vs .0358 for
-the best baseline, type-stratified Random). The gap is largest at the
-medium budget (B = 55: .0296 / .0307 / .0317 vs .0352 / .0333 / .0352 for
-the best baseline at each K_cal) and at B = 110, where SC-IRT is best at
-every K_cal (.0137-.0165 vs .0170-.0186). The rich-panel regime the
-independent-item model of earlier versions lost is a tie now: with the
-planner x type testlet the acquisition spreads over scenario types by
-itself.
+The three random-policy rows are the expected error over five independent
+orders per evaluation (the single-order value moves by up to .004 per cell
+between seeds); every other row is deterministic.
+
+Reading. SC-IRT has the lowest error in 6 of 9 cells and ties in the other
+three (K7 B110: Random-strat .0164; K10 B30: metabench .0457; K16 B30:
+DISCO-sel .0438, Fluid .0443 — inside the intervals), with the best macro
+average (.0307 vs .0336 for the best baseline, type-stratified Random,
+which uses the same scenario grouping). The gap is at the medium budget
+(B = 55: .0296 / .0307 / .0317 vs .0340 / .0333 / .0335) and at B = 110 for
+K10 / K16 (.0137 / .0139 vs .0163); at B = 30 the type-stratified random
+order is within .002-.006, and at K7 B110 it is a tie. None of the
+random-policy rows differs from SC-IRT significantly under the
+planner-cluster bootstrap; the information-based orderings (Fisher,
+Fluid, metabench, DISCO-sel) are significantly worse in most cells at
+B >= 55.
 
 ## Table 2 — risk-target stopping (`run_tau_calibration.py`, `run_adaptive.py`)
 
@@ -59,39 +64,39 @@ negative = conservative). d = paired delta of the SR-MAE vs SC-IRT.
 | 7 | .05 | **SC-IRT** | **65.9** | .0284 | .85 | -.021 | — |
 | | | Fluid | 73.2 | .0323 | .80 | -.017 | +.0039 |
 | | | metabench | 94.5 | .0278 | .85 | -.024 | -.0006 |
-| | | Random | 82.5 | .0253 | .85 | -.025 | -.0031 |
+| | | Random | 86.7 | .0271 | .85 | -.023 | -.0013 |
 | 7 | .03 | **SC-IRT** | **99.0** | **.0186** | **.83** | -.013 | — |
 | | | Fluid | 102.0 | .0245 | .66 | -.009 | +.0059* |
 | | | metabench | 109.5 | .0210 | .73 | -.024 | +.0025 |
-| | | Random | 108.9 | .0209 | .74 | -.017 | +.0023 |
+| | | Random | 109.6 | .0182 | .80 | -.021 | -.0004 |
 | 10 | .05 | **SC-IRT** | **66.3** | .0269 | .84 | -.023 | — |
 | | | Fluid | 80.6 | .0268 | .85 | -.023 | -.0001 |
 | | | metabench | 91.9 | .0279 | .84 | -.024 | +.0010 |
-| | | Random | 85.3 | .0230 | .92 | -.027 | -.0039 |
+| | | Random | 90.1 | .0248 | .93 | -.025 | -.0020 |
 | 10 | .03 | **SC-IRT** | **99.3** | **.0166** | **.84** | -.015 | — |
 | | | Fluid | 106.4 | .0204 | .76 | -.016 | +.0037 |
 | | | metabench | 109.4 | .0235 | .68 | -.020 | +.0069 |
-| | | Random | 109.5 | .0197 | .78 | -.019 | +.0031 |
+| | | Random | 109.4 | .0172 | .81 | -.023 | +.0006 |
 | 16 | .05 | **SC-IRT** | **69.4** | **.0252** | .85 | -.024 | — |
 | | | Fluid | 82.2 | .0290 | .78 | -.021 | +.0038 |
 | | | metabench | 96.7 | .0282 | .86 | -.023 | +.0030 |
-| | | Random | 82.5 | .0245 | .91 | -.025 | -.0007 |
+| | | Random | 86.8 | .0246 | .89 | -.025 | -.0006 |
 | 16 | .03 | **SC-IRT** | **103.2** | **.0162** | **.82** | -.015 | — |
 | | | Fluid | 106.7 | .0212 | .74 | -.015 | +.0050 |
 | | | metabench | 110.0 | .0254 | .67 | -.020 | +.0092* |
-| | | Random | 109.6 | .0194 | .77 | -.018 | +.0031 |
+| | | Random | 109.4 | .0173 | .81 | -.021 | +.0011 |
 
 Reading. For an error target of .05, SC-IRT stops after 66-69 rollouts
 (37-39% of the per-draw bank, 30% of the 220-route benchmark) with 84-85%
-coverage; the same target costs Fluid 73-82, Random 83-85 and metabench
+coverage; the same target costs Fluid 73-82, Random 87-90 and metabench
 92-97 rollouts. For .03 every order needs most of the bank; SC-IRT reaches
 it earliest (99-103 rollouts) with the lowest error (.016-.019) and the
-highest coverage (.82-.84 vs .66-.78). The negative gaps say the scaled
+highest coverage (.82-.84 vs .66-.81). The negative gaps say the scaled
 risk is conservative in the mean; the 90th-percentile scale, fixed on the
 calibration panel, transfers to the evaluation planners as 82-85% coverage
 rather than the nominal 90%, because their error / risk ratio has a
 heavier tail. Random with its own calibrated scale is a fair competitor at
-eps = .05 — lower error at 13-19 more rollouts (ns). The raw R1 itself
+eps = .05 — a similar error at 17-24 more rollouts (ns). The raw R1 itself
 tracks the realised error: pooled over the LOO tracks, the decile means of
 raw R1 and of |SR_hat - SR| agree within .006 at every K_cal (e.g.
 K_cal = 7: .0137 / .0153 in the lowest decile, .0266 / .0243 in the middle,
@@ -103,15 +108,15 @@ IES = (SR-MAE / Random-at-fixed-55) x (rollouts / 55):
 
 | cell | SC-IRT | Fluid | metabench | Random |
 |---|---|---|---|---|
-| K7 target 30 | .0472 (29.5, IES .66) | .0486 (+.0014) | .0575 (+.0103) | .0591 (+.0119) |
-| K7 target 55 | .0314 (54.1, .80) | .0351 (+.0036) | .0423 (+.0109*) | .0373 (+.0059) |
-| K10 target 30 | .0481 (30.0, .72) | .0449 (-.0032) | .0451 (-.0030) | .0567 (+.0086) |
-| K10 target 55 | .0314 (55.2, .87) | .0330 (+.0016) | .0338 (+.0024) | .0371 (+.0057) |
-| K16 target 30 | .0459 (30.2, .69) | .0455 (-.0003) | .0462 (+.0003) | .0589 (+.0130) |
-| K16 target 55 | .0319 (55.2, .88) | .0333 (+.0014) | .0344 (+.0025) | .0362 (+.0043) |
+| K7 target 30 | .0472 (29.5, IES .63) | .0486 (+.0014) | .0575 (+.0103) | .0609 (+.0137*) |
+| K7 target 55 | .0314 (54.1, .77) | .0351 (+.0036) | .0423 (+.0109*) | .0383 (+.0069) |
+| K10 target 30 | .0481 (30.0, .65) | .0449 (-.0032) | .0451 (-.0030) | .0596 (+.0115) |
+| K10 target 55 | .0314 (55.2, .78) | .0330 (+.0016) | .0338 (+.0024) | .0379 (+.0065) |
+| K16 target 30 | .0459 (30.2, .63) | .0455 (-.0003) | .0462 (+.0003) | .0607 (+.0149*) |
+| K16 target 55 | .0319 (55.2, .80) | .0333 (+.0014) | .0344 (+.0025) | .0379 (+.0060) |
 
-Realised budgets land on target without post-hoc adjustment (29.2-30.7,
-54.1-55.9). SC-IRT is best or tied-best in every cell (K10 target 30 is a
+Realised budgets land on target without post-hoc adjustment (29.2-30.6,
+54.1-55.8). SC-IRT is best or tied-best in every cell (K10 target 30 is a
 tie against Fluid / metabench, -.003, ns).
 
 ## Component ablation (`run_ablation.py`)
@@ -134,7 +139,7 @@ posterior). Each is switched off alone; paired deltas vs full:
 | K16 B110 | .0139 | .0142 (+.0003) | .0187 (+.0048*) | .0193 (+.0054*) |
 
 Reading. The risk acquisition carries the fixed-budget error (+.004 to
-+.015 when removed, significant at K7 B55 and every B = 110 cell). The
++.015 when removed, significant at K7 B55 and at B = 110 for K10 / K16). The
 testlet is the second load-bearing piece: removing it costs +.004 to +.010
 in every cell, significantly at B = 110 for all K_cal and at K7 B55 — the
 independent-item model re-samples scenario types it has already seen and
@@ -223,8 +228,8 @@ target block; theta-EIG and the 2PL Fisher rule are ablations.
 
 | probe policy | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
 |---|---|---|---|---|---|---|
-| naive (no IRT) | .1290 | .6445 | .1189 | .6348 | .1146 | .6302 |
-| Random | .1085 | .6005 | .0983 | .5934 | .0934 | .5909 |
+| naive (no IRT) | .1233 | .6402 | .1215 | .6361 | .1151 | .6311 |
+| Random | .1047 | .5959 | .0990 | .5931 | .0914 | .5893 |
 | theta-EIG (abl.) | .1041 | .6001 | .0978 | .5949 | .0926 | .5899 |
 | 2PL Fisher (abl.) | .0999 | .5946 | .0928 | .5907 | .0873 | .5875 |
 | **SC-IRT (Delta-R1 on D)** | .1030 | .6003 | .0971 | .5942 | .0927 | .5900 |
@@ -232,7 +237,7 @@ target block; theta-EIG and the 2PL Fisher rule are ablations.
 Reading. Any transport beats the naive planner-mean by .02-.03 MAE; that
 transport, not the probe placement, is the UPS result — the bottleneck is
 the scene prior (rho about .5). Among probe rules the target-aligned
-Delta-R1 is at or ahead of theta-EIG (+.0008* at B55) and Random (+.0055 at
+Delta-R1 is at or ahead of theta-EIG (+.0008* at B55) and Random (+.0017 at
 B30, ns); the 2PL Fisher rule is .003-.005 better (significant at B110,
 -.0054*): with 16 calibration planners the item discriminations it uses
 are real information for placing probes. It stays an ablation because it
@@ -251,26 +256,27 @@ competitor per cell in parentheses:
 
 | K_cal | B=30 | B=55 | B=110 |
 |---|---|---|---|
-| 7 | **.0429** (metabench .0466) | **.0347** (Random+IRT .0351) | .0251 (Random+IRT .0236) |
-| 10 | .0482 (Random+IRT .0473) | .0348 (Random+IRT .0342) | **.0210** (Random+IRT .0225) |
-| 16 | **.0488** (Random+IRT .0495) | .0356 (Random+IRT .0334) | **.0191** (tinyB .0218) |
-| 81 | .0464 (Fluid .0304*) | .0360 (DISCO .0293*) | .0169 (Fluid .0150) |
+| 7 | **.0429** (metabench .0466) | **.0347** (Random+IRT .0361) | .0251 (Random+IRT .0232) |
+| 10 | **.0482** (Random+IRT .0493) | **.0348** (Random+IRT .0361) | **.0210** (tinyB .0221) |
+| 16 | .0488 (Random+IRT .0488) | .0356 (Random+IRT .0356) | **.0191** (tinyB .0218) |
+| 81 | .0464 (Fluid .0304*) | .0360 (DISCO-sel .0293*) | .0169 (Fluid .0150) |
 
 Reading. With the calibration panels the Bench2Drive protocol uses
 (K_cal <= 16) SC-IRT is best or tied-best in 8 of 9 cells of a panel it
 was never tuned on and has no grouping to exploit; several published
-orderings are significantly worse (K7: tinyBenchmarks .0423*, DISCO
-.0557*, Fluid .0584*). Random + IRT is the strongest competitor here — a
-plug-in IRT readout on a random subset is hard to beat when the units are
-exchangeable — and it edges SC-IRT at K7 / K16 B110 (ns). The picture
-inverts only with the full 81-planner calibration panel at the low
-budgets, where 2PL discrimination is precisely estimated and Fluid /
-Fisher orderings win by a margin (.0304* vs .0464 at B30) — a regime that
-does not exist on Bench2Drive (22 planners in total) and that the 1PL
-evaluation model does not try to exploit. Caveats (REPRODUCIBILITY.md):
-the leaderboard is dominated by a few teams' submission sweeps and
-near-duplicates can straddle the planner split; this affects all methods
-identically but limits reading the panel as 87 independent planners.
+orderings are significantly worse (K7: tinyBenchmarks .0535*, DISCO-sel
+.0557*, Fluid .0584*). Random + IRT (expected error over five orders) is
+the strongest competitor here — a plug-in IRT readout on a random subset
+is hard to beat when the units are exchangeable — and it edges SC-IRT at
+K7 B110 (ns). The picture inverts only with the full 81-planner
+calibration panel at the low budgets, where 2PL discrimination is
+precisely estimated and Fluid / Fisher orderings win by a margin (.0304*
+vs .0464 at B30) — a regime that does not exist on Bench2Drive (22 planners
+in total) and that the 1PL evaluation model does not try to exploit.
+Caveats (REPRODUCIBILITY.md): the leaderboard is dominated by a few teams'
+submission sweeps and near-duplicates can straddle the planner split; this
+affects all methods identically but limits reading the panel as 87
+independent planners.
 
 ## Readout drop-in (`run_readout_dropin.py`)
 
@@ -282,39 +288,39 @@ the SC-IRT readout (exact posteriors, testlet, posterior median). SR-MAE:
 | Fluid | .0493 | .0387 | .0212 | .0445 | .0345 | .0197 |
 | Total-Fisher | .0553 | .0428 | .0235 | .0485 | .0430 | .0286 |
 | metabench | .0591 | .0395 | .0209 | .0449 | .0366 | .0254 |
-| tinyBenchmarks | .0565 | .0397 | .0335 | .0503 | .0389 | .0185 |
-| AnchorPoints | .0536 | .0369 | .0343 | .0462 | .0387 | .0189 |
-| Random | .0591 | .0384 | .0209 | .0597 | .0364 | .0193 |
+| tinyBenchmarks | .0565 | .0398 | .0197 | .0503 | .0389 | .0185 |
+| AnchorPoints | .0549 | .0349 | .0211 | .0515 | .0345 | .0207 |
+| Random | .0576 | .0403 | .0182 | .0588 | .0399 | .0173 |
 | SC-IRT (own order, Table 1) | .0492 | .0296 | .0165 | .0447 | .0317 | .0139 |
 
 Reading. Under one readout the remaining differences are selection: the
-SC-IRT order beats every re-scored subset at K7 B55 / B110 by .007-.017 and
+SC-IRT order beats every re-scored subset at K7 B55 / B110 by .005-.013 and
 at K16 B55 / B110 by .003-.015, and ties the Fluid / metabench subsets at
-B = 30. The readout itself is a drop-in improvement for information-based
-selectors whose native readout is a 2PL plug-in on a scarce panel (compare
-the native Table 1 rows: AnchorPoints .0805 -> .0536 at K7 B30).
+B = 30. The readout itself is a drop-in improvement for selectors whose
+native readout is a plug-in on a scarce panel (compare the native Table 1
+rows: AnchorPoints .0786 -> .0549 at K7 B30).
 
 ## Inside a real evaluation (`tools/b2d_adaptive_eval.py`)
 
 The same posterior drives an actual Bench2Drive run: the bank is the full
 22 x 220 panel (excluding the planner under test if it is in it), the risk
 scale c is fixed by leave-one-planner-out on that bank (c = 2.36 for the
-22-planner bank; 2.67 / 2.32 / 2.03 for the three 21-planner banks below),
+22-planner bank; 2.55 / 2.32 / 2.16 for the three held-out banks below),
 and the driver picks one route at a time, runs it through the leaderboard
 evaluator, reads the outcome and stops at c * R1 <= eps. Simulated from the
 matrix (`--dry-run`, planner held out of the bank, eps = .03, cap 110
-routes; the true SR is over the planner's recorded routes, 213-220 of 220):
+routes; the bank is the planner's recorded routes, 211-220 of 220):
 
 | planner | true SR | routes run | stopped by | SR_hat | abs err | types covered |
 |---|---|---|---|---|---|---|
-| VAD | .155 | 110 | cap (c * R1 = .0305) | .166 | .011 | 39 / 44 |
+| VAD | .155 | 106 | risk (c * R1 = .0296) | .170 | .015 | 37 / 44 |
 | HiP-AD | .664 | 110 | cap (c * R1 = .039) | .645 | .019 | 42 / 44 |
-| LEAD-tfv6 | .777 | 97 | risk (c * R1 = .0296) | .815 | .038 | 36 / 44 |
+| LEAD-tfv6 | .777 | 99 | risk (c * R1 = .0300) | .814 | .036 | 38 / 44 |
 
-Half the benchmark and errors of .01-.02 SR for the two planners that hit
-the cap; the one early stop (LEAD-tfv6, at 97 routes) missed its .03
-target with a realised error of .038 — the kind of miss the 82-85%
-coverage of Table 2 predicts for roughly one run in six. The weakest
+Half the benchmark and errors of .015-.019 SR for VAD and HiP-AD; the
+LEAD-tfv6 stop (99 routes) missed its .03 target with a realised error of
+.036 — the kind of miss the 82-85% coverage of Table 2 predicts for
+roughly one run in six. The weakest
 planner remains the hardest case: an all-fail record only bounds theta
 from above, so its estimate leans on the prior early (SR_hat .22 after 40
 routes) and settles as the acquisition finds the routes it can pass.

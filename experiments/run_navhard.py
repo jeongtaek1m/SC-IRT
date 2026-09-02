@@ -27,6 +27,7 @@ np.random.seed(0); torch.manual_seed(0)
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', ROOT / 'results')); OUT.mkdir(exist_ok=True)
 KC = (7, 10, 16, 81); BB = (30, 55, 110); T = 110
+NREP = 5          # random-policy rows: expected |error| over NREP independent orders per evaluation
 METHODS = ['Random (IRT-free)', 'Random + IRT', 'DISCO', 'AnchorPoints', 'Total-Fisher',
            'Marginal-Fisher', 'tinyBenchmarks', 'metabench', 'Fluid', 'SC-IRT']
 
@@ -51,14 +52,14 @@ def run(lo, hi):
             for js in hp:
                 yy = Yb[js]; n = U; SR = float(yy.mean())
                 b1 = f1['b']; a2, b2 = f2['a'], f2['b']; ones = np.ones(n)
-                perm = [int(i) for i in np.random.RandomState(100 + seed * 20 + js).permutation(n)]
+                perms = [[int(i) for i in np.random.RandomState(100 + seed * P + js + 100000 * rep).permutation(n)] for rep in range(NREP)]
                 od = {'disco': disco_order(pbar), 'tf': total_fisher_order(a2, b2, f2['th']),
                       'mf': marginal_fisher_order(a2, b2), 'fluid': fluid_order(a2, b2, yy, T),
                       'ours': r1_traj(bank, yy, T)}
                 err = {m: {} for m in METHODS}
                 for B in BB:
-                    est = {'Random (IRT-free)': yy[perm[:B]].mean(),
-                           'Random + IRT': pirt(b1, ones, yy, perm[:B]),
+                    est = {'Random (IRT-free)': yy[perms[0][:B]].mean(),
+                           'Random + IRT': pirt(b1, ones, yy, perms[0][:B]),
                            'DISCO': pirt(b2, a2, yy, od['disco'][:B]),
                            'AnchorPoints': anchorpoints_estimate(Rb, yy, B),
                            'Total-Fisher': pirt(b2, a2, yy, od['tf'][:B]),
@@ -68,6 +69,8 @@ def run(lo, hi):
                            'Fluid': pirt(b2, a2, yy, od['fluid'][:B]),
                            'SC-IRT': readout(bank, yy, od['ours'][:B])}
                     for m in METHODS: err[m][str(B)] = abs(float(est[m]) - SR)
+                    err['Random (IRT-free)'][str(B)] = float(np.mean([abs(yy[pm[:B]].mean() - SR) for pm in perms]))
+                    err['Random + IRT'][str(B)] = float(np.mean([abs(pirt(b1, ones, yy, pm[:B]) - SR) for pm in perms]))
                 recs.append({'seed': seed, 'K': Kc, 'js': int(js), 'SR': SR, 'err': err})
             print(f'seed {seed} K{Kc} done', flush=True)
     json.dump(recs, open(OUT / f'navhard_{lo}_{hi}.json', 'w'))
@@ -97,7 +100,7 @@ def merge():
               open(OUT / 'navhard.json', 'w'))
     mean = lambda K, m, B: np.mean([r['err'][m][str(B)] for r in recs if r['K'] == K])
     for K, m, B, v in ((7, 'SC-IRT', 55, .0347), (16, 'SC-IRT', 110, .0191), (81, 'SC-IRT', 110, .0169),
-                       (16, 'SC-IRT', 30, .0488), (81, 'Fluid', 30, .0304), (7, 'Random (IRT-free)', 30, .0674)):
+                       (16, 'SC-IRT', 30, .0488), (81, 'Fluid', 30, .0304), (7, 'Random (IRT-free)', 30, .0599)):
         assert abs(mean(K, m, B) - v) < .0003, (K, m, B, mean(K, m, B))
     print('anchors OK')
 
