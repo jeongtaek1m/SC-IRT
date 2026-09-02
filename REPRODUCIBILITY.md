@@ -89,7 +89,11 @@ mean +- SD, never an averaged prediction.
   with the shared-sigma epsilon-marginalised objective and predicting the 8
   evaluation types out-of-fold; three seeds, one file per run. Each file
   also carries `draw{r}_sigma`, the shared residual SD the encoder learned
-  on that draw's calibration block (the UPS prior width). Training code
+  on that draw's calibration block (the UPS prior width).
+  `relgraph_r2_{noroute,sroute,sa2l}_s{0,1,2}.npz` are the structural
+  controls of Table 3A(b): the same architecture, recipe and seeds with the
+  ego-route relation removed / the route correspondence shuffled / the
+  agent-lane correspondence shuffled (shuffle seed = model seed). Training code
   depends on Bench2Drive raw rollouts and is staged for a separate release.
 - `data/live/risk_scale.json` — cached risk scales c of `scirt.live.LiveEvaluator`,
   keyed by a bank fingerprint (planner set, route list, iterations) and

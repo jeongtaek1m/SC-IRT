@@ -41,11 +41,11 @@ from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
 from scirt.bayes import bank_from_fit, track, stop_at
 from scirt.acquisition import r1_traj
-from scirt.baselines import fluid_order, metabench_order
+from scirt.baselines import fluid_order, metabench_order, stratified_order
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
-ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
+ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random', 'Random-strat')
 TMAX = 110
 TARGETS = (30, 55)
 NO_TESTLET = os.environ.get('SCIRT_NO_TESTLET', '0') == '1'   # ablation: sigma_g = 0 (independent items)
@@ -83,7 +83,8 @@ def run(seeds):
                 orders = {'SC-IRT': r1_traj(bank, yy, T),
                           'Fluid': fluid_order(a, b, yy, T),
                           'metabench': [int(i) for i in metabench_order(a, b, T, n)],
-                          'Random': [int(i) for i in np.random.RandomState(700 + seed * panel.J + j).permutation(n)[:T]]}
+                          'Random': [int(i) for i in np.random.RandomState(700 + seed * panel.J + j).permutation(n)[:T]],
+                          'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(700 + seed * panel.J + j))[:T]]}
                 rec = {'seed': seed, 'J': Jc, 'j': int(j), 'SR': float(yy.mean()), 'sigma_g': f0['sigma_g']}
                 for k, o in orders.items():
                     Sh, R1 = track(bank, yy, o)

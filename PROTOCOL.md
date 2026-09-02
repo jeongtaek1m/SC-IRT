@@ -137,7 +137,11 @@ marginalised over the residual b_s - b_tilde_s ~ N(0, sigma^2) by
 Gauss-Hermite and sigma learned jointly (the encoder's shared residual SD,
 ~.65 on this panel); the release
 ships its per-run out-of-fold predictions (`data/encoder/relgraph_r2_s*.npz`,
-three independent runs, no ensembling). Table 3A scores these point predictions; on this panel the encoder is
+three independent runs, no ensembling; the structural controls of
+Table 3A(b) — route relation removed, route or agent-lane correspondence
+shuffled — are the same architecture and recipe with different graph
+tensors, `data/encoder/relgraph_r2_{noroute,sroute,sa2l}_s*.npz`). Table 3A
+scores these point predictions; on this panel the encoder is
 tied with the hand-crafted descriptor baselines on AUROC / scene-MAE and
 behind them on rank correlation (RelGraph minus cmdkin+gtrisk: Delta rho
 -.052 +- .024 across runs, about two run-SDs).

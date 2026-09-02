@@ -36,6 +36,7 @@ np.random.seed(0)
 torch.manual_seed(0)
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 RUNS = (0, 1, 2)
+CONTROLS = {'noroute': 'R2 w/o route relation', 'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled'}
 
 
 def load_descriptor_arms():
@@ -83,7 +84,10 @@ def main():
     N = len(panel.allr)
     sn, allr = panel.sn, panel.allr
     RELG = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in RUNS}
-    ROWS = list(arms) + ['Oracle (resp-calibrated C)'] + [f'RelGraph R2 s{s_}' for s_ in RUNS]
+    CTRL = {c: {s_: np.load(DATA / 'encoder' / f'relgraph_r2_{c}_s{s_}.npz', allow_pickle=True) for s_ in RUNS}
+            for c in CONTROLS if all((DATA / 'encoder' / f'relgraph_r2_{c}_s{s_}.npz').exists() for s_ in RUNS)}
+    ROWS = list(arms) + ['Oracle (resp-calibrated C)'] + [f'RelGraph R2 s{s_}' for s_ in RUNS] \
+        + [f'{CONTROLS[c]} s{s_}' for c in CTRL for s_ in RUNS]
     POOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []} for a in ROWS}
     NULLP = {'p': [], 'y': [], 'rp': [], 'ro': []}
     for seed in range(R_DRAWS):
@@ -107,8 +111,8 @@ def main():
         for name in ROWS:
             if name.startswith('Oracle'):
                 bte = bC
-            elif name.startswith('RelGraph'):
-                pz = RELG[int(name[-1])]
+            elif name.startswith('RelGraph') or name.startswith('R2'):
+                pz = RELG[int(name[-1])] if name.startswith('RelGraph') else CTRL[next(c for c in CTRL if name.startswith(CONTROLS[c]))][int(name[-1])]
                 rt = [str(x) for x in pz[f'draw{seed}_rt']]
                 lut = {rt[k]: float(pz[f'draw{seed}_bt'][k]) for k in range(len(rt))}
                 bte = np.array([lut[allr[i]] for i in te])
@@ -149,6 +153,15 @@ def main():
     rho_hc = results['Hand-crafted risk (cmdkin+gtrisk)']['rho']
     d1 = [r['rho'] - rho_hc for r in rg]
     print(f'Delta rho (RelGraph - hand-crafted risk), per run: {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
+    if CTRL:
+        print('\n===== Table 3A(b) — RelGraph structural controls (same architecture, recipe and seeds; only the graph tensors differ) =====')
+        for c in CTRL:
+            rc = [results[f'{CONTROLS[c]} s{s_}'] for s_ in RUNS]
+            print('{:44s} AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}   Delta rho vs R2 (paired by seed) {:+.3f}+-{:.3f}'.format(
+                CONTROLS[c], np.mean([r['auroc'] for r in rc]), np.std([r['auroc'] for r in rc], ddof=1),
+                np.mean([r['mae'] for r in rc]), np.std([r['mae'] for r in rc], ddof=1),
+                np.mean([r['rho'] for r in rc]), np.std([r['rho'] for r in rc], ddof=1),
+                np.mean([a['rho'] - b['rho'] for a, b in zip(rc, rg)]), np.std([a['rho'] - b['rho'] for a, b in zip(rc, rg)], ddof=1)))
 
     OUT.mkdir(exist_ok=True)
     json.dump({'table3a': results}, open(OUT / 'us.json', 'w'))
@@ -158,6 +171,9 @@ def main():
     assert abs(k['auroc'] - 0.752) < 0.002 and abs(k['mae'] - 0.172) < 0.002 and abs(k['rho'] - 0.526) < 0.005
     assert abs(h['auroc'] - 0.753) < 0.002 and abs(h['mae'] - 0.171) < 0.002 and abs(h['rho'] - 0.558) < 0.005
     assert abs(mn('auroc') - 0.747) < 0.003 and abs(mn('mae') - 0.184) < 0.003 and abs(mn('rho') - 0.506) < 0.005
+    if CTRL:
+        for c, v in (('noroute', 0.548), ('sroute', 0.517), ('sa2l', 0.520)):
+            assert abs(np.mean([results[f'{CONTROLS[c]} s{s_}']['rho'] for s_ in RUNS]) - v) < 0.005, c
     print('anchors OK')
 
 

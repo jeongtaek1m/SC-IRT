@@ -131,7 +131,10 @@ tests/          fast invariants
   choice moves individual cells by up to .004 SR-MAE, inside the intervals.
 - The RelGraph encoder is tied with the hand-crafted descriptor stack on
   AUROC / scene-MAE and behind it on rank correlation (-.05 +- .02); its
-  contribution is the input (the raw scene graph), not extra accuracy.
+  contribution is the input (raw tracks), not extra accuracy. Structural
+  controls show the lane-graph relations are inert on this bank (removing
+  the ego-route relation improves rho by +.04; shuffling correspondences
+  changes nothing).
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,

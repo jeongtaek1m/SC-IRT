@@ -31,12 +31,12 @@ from scirt.splits import unified_split, R_DRAWS
 from scirt.calibration import calibrate
 from scirt.bayes import bank_from_fit, track, stop_at
 from scirt.acquisition import r1_traj
-from scirt.baselines import fluid_order, metabench_order
+from scirt.baselines import fluid_order, metabench_order, stratified_order
 from scirt.metrics import paired_cluster_boot, ies
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
-ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
+ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random', 'Random-strat')
 BGRID = [30, 55, 110]
 T = 110
 TAU_SWEEP = (0.05, 0.04, 0.035, 0.03)
@@ -63,7 +63,8 @@ def orders_for(f1, f2, bi, yy, seed, js, typ):
     return bank, {'SC-IRT': r1_traj(bank, yy, T),
                 'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, T),
                 'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], T, n)],
-                'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:T]]}
+                'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:T]],
+                'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(100 + seed * PJ + js))[:T]]}
 
 
 def run(seeds):

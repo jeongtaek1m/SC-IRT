@@ -36,4 +36,4 @@ from . import (  # noqa: F401
     us_eval,
 )
 
-__version__ = "5.2.0"
+__version__ = "5.3.0"

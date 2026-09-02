@@ -86,6 +86,11 @@ def main():
     print('encoder artifacts (unified split, per-run — no ensembling):')
     for s in (0, 1, 2):
         export_relgraph(RELG_RAW / f'r2_b2d_s{s}.npz', REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')
+    for tag, name in (('r2noroute', 'noroute'), ('sroute{s}', 'sroute'), ('sa2l{s}', 'sa2l')):   # structural controls (shuffle seed = model seed)
+        for s in (0, 1, 2):
+            src = RELG_RAW / (tag.format(s=s) + f'_b2d_s{s}.npz')
+            if src.exists():
+                export_relgraph(src, REPO / 'data/encoder' / f'relgraph_r2_{name}_s{s}.npz')
     print('navhard panel:')
     copy_checked(IRT / 'navhard/navhard_binary_panel.npz',
                  REPO / 'data/navhard/navhard_binary_panel.npz')

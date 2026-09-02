@@ -65,26 +65,32 @@ negative = conservative). d = paired delta of the SR-MAE vs SC-IRT.
 | | | Fluid | 73.2 | .0323 | .80 | -.017 | +.0039 |
 | | | metabench | 94.5 | .0278 | .85 | -.024 | -.0006 |
 | | | Random | 86.7 | .0271 | .85 | -.023 | -.0013 |
+| | | Random-strat | 83.5 | .0236 | .86 | -.027 | -.0048 |
 | 7 | .03 | **SC-IRT** | **99.0** | **.0186** | **.83** | -.013 | — |
 | | | Fluid | 102.0 | .0245 | .66 | -.009 | +.0059* |
 | | | metabench | 109.5 | .0210 | .73 | -.024 | +.0025 |
 | | | Random | 109.6 | .0182 | .80 | -.021 | -.0004 |
+| | | Random-strat | 108.4 | .0170 | .84 | -.022 | -.0016 |
 | 10 | .05 | **SC-IRT** | **66.3** | .0269 | .84 | -.023 | — |
 | | | Fluid | 80.6 | .0268 | .85 | -.023 | -.0001 |
 | | | metabench | 91.9 | .0279 | .84 | -.024 | +.0010 |
 | | | Random | 90.1 | .0248 | .93 | -.025 | -.0020 |
+| | | Random-strat | 87.9 | .0208 | .90 | -.029 | -.0061 |
 | 10 | .03 | **SC-IRT** | **99.3** | **.0166** | **.84** | -.015 | — |
 | | | Fluid | 106.4 | .0204 | .76 | -.016 | +.0037 |
 | | | metabench | 109.4 | .0235 | .68 | -.020 | +.0069 |
 | | | Random | 109.4 | .0172 | .81 | -.023 | +.0006 |
+| | | Random-strat | 109.7 | .0161 | .84 | -.023 | -.0005 |
 | 16 | .05 | **SC-IRT** | **69.4** | **.0252** | .85 | -.024 | — |
 | | | Fluid | 82.2 | .0290 | .78 | -.021 | +.0038 |
 | | | metabench | 96.7 | .0282 | .86 | -.023 | +.0030 |
 | | | Random | 86.8 | .0246 | .89 | -.025 | -.0006 |
+| | | Random-strat | 84.3 | .0214 | .92 | -.028 | -.0038 |
 | 16 | .03 | **SC-IRT** | **103.2** | **.0162** | **.82** | -.015 | — |
 | | | Fluid | 106.7 | .0212 | .74 | -.015 | +.0050 |
 | | | metabench | 110.0 | .0254 | .67 | -.020 | +.0092* |
 | | | Random | 109.4 | .0173 | .81 | -.021 | +.0011 |
+| | | Random-strat | 109.5 | .0165 | .84 | -.021 | +.0003 |
 
 Reading. For an error target of .05, SC-IRT stops after 66-69 rollouts
 (37-39% of the per-draw bank, 30% of the 220-route benchmark) with 84-85%
@@ -96,7 +102,11 @@ risk is conservative in the mean; the 90th-percentile scale, fixed on the
 calibration panel, transfers to the evaluation planners as 82-85% coverage
 rather than the nominal 90%, because their error / risk ratio has a
 heavier tail. Random with its own calibrated scale is a fair competitor at
-eps = .05 — a similar error at 17-24 more rollouts (ns). The raw R1 itself
+eps = .05 — a similar error at 17-24 more rollouts (ns) — and the
+type-stratified order, given the same readout and its own scale, spends
+15-22 more rollouts than SC-IRT for a lower error (-.004 to -.006, ns) and
+nominal coverage at K10 / K16: the stopping rule trades error for rollouts
+through the acquisition, which makes R1 fall faster, not through the scale. The raw R1 itself
 tracks the realised error: pooled over the LOO tracks, the decile means of
 raw R1 and of |SR_hat - SR| agree within .006 at every K_cal (e.g.
 K_cal = 7: .0137 / .0153 in the lowest decile, .0266 / .0243 in the middle,
@@ -106,18 +116,19 @@ K_cal = 7: .0137 / .0153 in the lowest decile, .0266 / .0243 in the middle,
 LOO mean rollouts hit 30 / 55 — is kept as the cost-matched comparison;
 IES = (SR-MAE / Random-at-fixed-55) x (rollouts / 55):
 
-| cell | SC-IRT | Fluid | metabench | Random |
-|---|---|---|---|---|
-| K7 target 30 | .0472 (29.5, IES .63) | .0486 (+.0014) | .0575 (+.0103) | .0609 (+.0137*) |
-| K7 target 55 | .0314 (54.1, .77) | .0351 (+.0036) | .0423 (+.0109*) | .0383 (+.0069) |
-| K10 target 30 | .0481 (30.0, .65) | .0449 (-.0032) | .0451 (-.0030) | .0596 (+.0115) |
-| K10 target 55 | .0314 (55.2, .78) | .0330 (+.0016) | .0338 (+.0024) | .0379 (+.0065) |
-| K16 target 30 | .0459 (30.2, .63) | .0455 (-.0003) | .0462 (+.0003) | .0607 (+.0149*) |
-| K16 target 55 | .0319 (55.2, .80) | .0333 (+.0014) | .0344 (+.0025) | .0379 (+.0060) |
+| cell | SC-IRT | Fluid | metabench | Random | Random-strat |
+|---|---|---|---|---|---|
+| K7 target 30 | .0472 (29.5, IES .63) | .0486 (+.0014) | .0575 (+.0103) | .0609 (+.0137*) | .0489 (+.0017) |
+| K7 target 55 | .0314 (54.1, .77) | .0351 (+.0036) | .0423 (+.0109*) | .0383 (+.0069) | .0332 (+.0018) |
+| K10 target 30 | .0481 (30.0, .65) | .0449 (-.0032) | .0451 (-.0030) | .0596 (+.0115) | .0483 (+.0003) |
+| K10 target 55 | .0314 (55.2, .78) | .0330 (+.0016) | .0338 (+.0024) | .0379 (+.0065) | .0320 (+.0006) |
+| K16 target 30 | .0459 (30.2, .63) | .0455 (-.0003) | .0462 (+.0003) | .0607 (+.0149*) | .0481 (+.0023) |
+| K16 target 55 | .0319 (55.2, .80) | .0333 (+.0014) | .0344 (+.0025) | .0379 (+.0060) | .0315 (-.0005) |
 
 Realised budgets land on target without post-hoc adjustment (29.2-30.6,
 54.1-55.8). SC-IRT is best or tied-best in every cell (K10 target 30 is a
-tie against Fluid / metabench, -.003, ns).
+tie against Fluid / metabench, -.003, ns; the type-stratified order under
+the common readout is within .002 everywhere).
 
 ## Component ablation (`run_ablation.py`)
 
@@ -213,6 +224,28 @@ is not visible from the scene. (Earlier versions reported a descriptor
 stack that included the scenario-definition parameters; it was removed
 because those values are the benchmark's own construction parameters, not
 observable scene content.)
+
+### Table 3A(b) — structural controls of the encoder (`run_us.py`)
+
+Same architecture, recipe, seeds and calibration; only the graph tensors
+differ (three runs each, Delta rho paired by seed against the R2 runs):
+
+| variant | AUROC | scene-MAE | rho | Delta rho vs R2 |
+|---|---|---|---|---|
+| RelGraph R2 (shipped) | .747 +- .006 | .184 +- .005 | +.506 +- .024 | — |
+| R2 without the ego-route relation | .756 +- .004 | .175 +- .006 | +.548 +- .020 | **+.041 +- .004** |
+| R2, route correspondence shuffled | .749 +- .003 | .183 +- .004 | +.517 +- .015 | +.011 +- .010 |
+| R2, agent-lane correspondence shuffled | .751 +- .003 | .183 +- .004 | +.520 +- .015 | +.014 +- .016 |
+
+Reading. The relational machinery is inert on this bank: destroying the
+route or agent-lane correspondence changes nothing, and removing the
+ego-route relation *helps* consistently across seeds (+.041 rho, all three
+runs), bringing the encoder level with the hand-crafted stack (.756 / .175 /
++.548 vs .753 / .171 / +.558). What the encoder learns is carried by the
+ego and agent tracks, not by the lane-graph relations. R2 stays the shipped
+encoder because it was fixed before these controls were scored; the paper's
+claim for the encoder is the learned-from-raw-tracks difficulty prior and
+its transport to UPS, not the graph structure.
 
 ## Table 3B — UPS: unseen planner x unseen scenes (`run_ups.py`)
 
