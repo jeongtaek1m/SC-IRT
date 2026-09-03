@@ -5,7 +5,7 @@
 RandomState(1000 + draw)), budgets B = number of routes rolled out,
 5 x {6, 11, 22} = {30, 55, 110}, calibration-panel sizes K_cal in {7, 10, 16}
 (K_cal < 16: RandomState(9000 + 100 draw + 10 K_cal) subsample, bank
-re-calibrated from those planners only). 96 evaluations per cell.
+re-calibrated from those planners only). 64 evaluations per cell (4 evaluation planners x 16 draws).
 
 Baselines use their native readouts; SC-IRT selects by Delta-R1 (the same
 posterior L1 risk the stopping rule uses) and reads out the posterior median
@@ -37,7 +37,7 @@ from scirt.baselines import (fluid_order, total_fisher_order, marginal_fisher_or
 from scirt.metrics import paired_cluster_boot
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
 BGRID = [30, 55, 110]
 NREP = 5          # random-policy rows: expected |error| over NREP independent orders per evaluation
 T = max(BGRID)
@@ -123,7 +123,7 @@ def report(recs):
          for K in KCALS}
     J = {K: [r['js'] for r in recs if r['K'] == K] for K in KCALS}
     cells = [(K, B) for K in KCALS for B in BGRID]
-    print(f'\n{len(recs)} planner evaluations ({len(recs) // len(KCALS)} per K_cal, 96 per cell)')
+    print(f'\n{len(recs)} planner evaluations ({len(recs) // len(KCALS)} per K_cal = per cell)')
     print('\n===== Table 1: SR-MAE, K_cal x B; * = paired 95% CI vs SC-IRT excludes 0 =====')
     print(f'{"method":20s} ' + ' '.join(f'K{K}B{B:<3d}' for K, B in cells) + '   macro')
     for m in METHODS:
@@ -159,15 +159,15 @@ def main():
         recs = run(range(R_DRAWS))
         json.dump(recs, open(OUT / 'up_frontier.json', 'w'))
     E = report(recs)
-    assert len(recs) == len(KCALS) * 96
+    assert len(recs) == len(KCALS) * 64
     macro = np.mean([np.mean(E[K]['SC-IRT'][B]) for K in KCALS for B in BGRID])
-    for (K, B, ref) in ((7, 30, .0492), (7, 55, .0296), (10, 110, .0137), (16, 55, .0317)):
+    for (K, B, ref) in ((4, 30, .0484), (4, 55, .0344), (8, 110, .0147), (12, 55, .0232)):
         assert abs(np.mean(E[K]['SC-IRT'][B]) - ref) < .002, (K, B, np.mean(E[K]['SC-IRT'][B]))
-    assert abs(np.mean(E[7]['Fluid'][30]) - .0515) < .002
-    assert abs(np.mean(E[16]['Random-strat + IRT'][55]) - .0335) < .002
-    assert abs(np.mean(E[7]['Random (IRT-free)'][30]) - .0625) < .002
+    assert abs(np.mean(E[4]['Fluid'][30]) - .0460) < .002
+    assert abs(np.mean(E[12]['Random-strat + IRT'][55]) - .0359) < .002
+    assert abs(np.mean(E[4]['Random (IRT-free)'][30]) - .0650) < .002
     macro = np.mean([np.mean(E[K]['SC-IRT'][B]) for K in KCALS for B in BGRID])
-    assert abs(macro - .0307) < .0005, macro
+    assert abs(macro - .0296) < .0005, macro
     print('anchors OK')
 
 

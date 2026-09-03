@@ -35,10 +35,10 @@ from scirt.baselines import fluid_order, metabench_order, stratified_order
 from scirt.metrics import paired_cluster_boot, ies
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random', 'Random-strat')
 BGRID = [30, 55, 110]
-T = 110
+T = None          # trajectory length = the whole bank (was 110): every order runs until the rule stops it or the bank is exhausted
 TAU_SWEEP = (0.05, 0.04, 0.035, 0.03)
 TARGETS = (30, 55)
 EPS = (0.03, 0.05)
@@ -54,17 +54,18 @@ def subsample(cols, seed, Kc):
 
 
 
-PJ = 22   # planner count, set from the panel in run()
+PJ = 16   # planner count, set from the panel in run()
 
 
 def orders_for(f1, f2, bi, yy, seed, js, typ):
     n = len(bi)
     bank = bank_from_fit(f1, bi, typ, sigma_g=0.0 if NO_TESTLET else None)
-    return bank, {'SC-IRT': r1_traj(bank, yy, T),
-                'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, T),
-                'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], T, n)],
-                'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:T]],
-                'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(100 + seed * PJ + js))[:T]]}
+    Tn = n if T is None else min(T, n)
+    return bank, {'SC-IRT': r1_traj(bank, yy, Tn),
+                'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, Tn),
+                'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], Tn, n)],
+                'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:Tn]],
+                'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(100 + seed * PJ + js))[:Tn]]}
 
 
 def run(seeds):
@@ -99,9 +100,9 @@ def stopped(r, o, tau):
 
 
 def risk_stopped(r, o, c, eps):
-    """(rollouts, |err|, c*R1) at the first t with c * R1_t <= eps (110 if never)."""
+    """(rollouts, |err|, c*R1, hit-cap) at the first t with c * R1_t <= eps (the bank size if never)."""
     t = stop_at(c * np.array(r[o]['R1']), eps)
-    return t, abs(r[o]['Shat'][t - 1] - r['SR']), c * r[o]['R1'][t - 1]
+    return t, abs(r[o]['Shat'][t - 1] - r['SR']), c * r[o]['R1'][t - 1], float(t == len(r[o]['R1']))
 
 
 def report(recs):
@@ -163,9 +164,9 @@ def report(recs):
             for eps in EPS:
                 res = {o: np.array([risk_stopped(r, o, C[f"{r['seed']}|{K}|{o}"], eps) for r in rs]) for o in ORD}
                 for o in ORD:
-                    Bs, es, cr = res[o].T
+                    Bs, es, cr, cap = res[o].T
                     d, lo, hi = paired_cluster_boot(es, res['SC-IRT'][:, 1], js) if o != 'SC-IRT' else (0, 0, 0)
-                    print(f'   eps {eps:.2f} {o:10s} rollouts {Bs.mean():5.1f}  SR-MAE {es.mean():.4f}  '
+                    print(f'   eps {eps:.2f} {o:12s} rollouts {Bs.mean():5.1f} (cap {cap.mean():.0%})  SR-MAE {es.mean():.4f}  '
                           f'coverage {np.mean(es <= eps):.2f}  gap {es.mean() - cr.mean():+.4f}'
                           + ('' if o == 'SC-IRT' else f'   d {d:+.4f} [{lo:+.4f},{hi:+.4f}]'))
     else:
@@ -192,10 +193,10 @@ def main():
         recs = run(range(R_DRAWS))
         json.dump(recs, open(OUT / 'adaptive.json', 'w'))
     FX, T2 = report(recs)
-    assert len(recs) == len(KCALS) * 96
+    assert len(recs) == len(KCALS) * 64
     fx = lambda K, o, t: np.mean([abs(r[o]['Shat'][t - 1] - r['SR']) for r in recs if r['K'] == K])
-    for K, o, t, v in ((7, 'SC-IRT', 30, .0492), (7, 'SC-IRT', 55, .0296), (10, 'SC-IRT', 110, .0137),
-                       (7, 'Random', 55, .0403), (16, 'Fluid', 55, .0345)):
+    for K, o, t, v in ((4, 'SC-IRT', 30, .0484), (4, 'SC-IRT', 55, .0344), (8, 'SC-IRT', 110, .0147),
+                       (4, 'Random', 55, .0371), (12, 'Fluid', 55, .0316)):
         assert abs(fx(K, o, t) - v) < .002, (K, o, t, fx(K, o, t))
     print('anchors OK')
 

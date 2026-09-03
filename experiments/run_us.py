@@ -167,12 +167,12 @@ def main():
     json.dump({'table3a': results}, open(OUT / 'us.json', 'w'))
 
     k, h = results['Kinematics (cmdkin)'], results['Hand-crafted risk (cmdkin+gtrisk)']
-    assert abs(auc0 - 0.694) < 0.002 and abs(mae0 - 0.199) < 0.002
-    assert abs(k['auroc'] - 0.752) < 0.002 and abs(k['mae'] - 0.172) < 0.002 and abs(k['rho'] - 0.526) < 0.005
-    assert abs(h['auroc'] - 0.753) < 0.002 and abs(h['mae'] - 0.171) < 0.002 and abs(h['rho'] - 0.558) < 0.005
-    assert abs(mn('auroc') - 0.747) < 0.003 and abs(mn('mae') - 0.184) < 0.003 and abs(mn('rho') - 0.506) < 0.005
+    assert abs(auc0 - 0.699) < 0.002 and abs(mae0 - 0.214) < 0.002
+    assert abs(k['auroc'] - 0.752) < 0.002 and abs(k['mae'] - 0.180) < 0.002 and abs(k['rho'] - 0.497) < 0.005
+    assert abs(h['auroc'] - 0.758) < 0.002 and abs(h['mae'] - 0.175) < 0.002 and abs(h['rho'] - 0.533) < 0.005
+    assert abs(mn('auroc') - 0.751) < 0.003 and abs(mn('mae') - 0.192) < 0.003 and abs(mn('rho') - 0.490) < 0.005
     if CTRL:
-        for c, v in (('noroute', 0.548), ('sroute', 0.517), ('sa2l', 0.520)):
+        for c, v in (('noroute', 0.520), ('sroute', 0.512), ('sa2l', 0.501)):
             assert abs(np.mean([results[f'{CONTROLS[c]} s{s_}']['rho'] for s_ in RUNS]) - v) < 0.005, c
     print('anchors OK')
 

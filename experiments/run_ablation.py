@@ -32,7 +32,7 @@ from scirt.acquisition import r1_traj
 from scirt.metrics import paired_cluster_boot
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
 BGRID = [30, 55, 110]
 T = max(BGRID)
 ARMS = ['SC-IRT (full)', 'w/o b-uncertainty', 'w/o testlet', 'w/o risk acquisition']
@@ -111,11 +111,11 @@ def main():
                                                     [r['js'] for r in rs])
                     row.append(f'{a}: {v:.4f} ({d:+.4f} [{lo:+.4f},{hi:+.4f}])')
             print(f'  K_cal={K:2d} B={B:>3d}  ' + '  '.join(row))
-    assert len(recs) == len(KCALS) * 96
+    assert len(recs) == len(KCALS) * 64
     m = lambda a, K, B: np.mean([r['err'][a][str(B)] for r in recs if r['K'] == K])
-    for a, K, B, v in (('SC-IRT (full)', 7, 30, .0492), ('SC-IRT (full)', 10, 55, .0307), ('SC-IRT (full)', 7, 110, .0165),
-                       ('w/o risk acquisition', 10, 30, .0581), ('w/o testlet', 10, 55, .0381),
-                       ('w/o b-uncertainty', 16, 55, .0334)):
+    for a, K, B, v in (('SC-IRT (full)', 4, 30, .0484), ('SC-IRT (full)', 8, 55, .0312), ('SC-IRT (full)', 4, 110, .0161),
+                       ('w/o risk acquisition', 8, 30, .0589), ('w/o testlet', 8, 55, .0383),
+                       ('w/o b-uncertainty', 12, 55, .0249)):
         assert abs(m(a, K, B) - v) < .0003, (a, K, B, m(a, K, B))
     print('anchors OK')
 

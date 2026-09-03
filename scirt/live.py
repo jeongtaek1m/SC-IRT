@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .b2d import Panel, DATA
+from .b2d import Panel, DATA, FULL_CSV
 from .calibration import calibrate
 from .curves import curves_from_posterior
 from .bayes import Bank, State, track
@@ -38,7 +38,7 @@ class LiveEvaluator:
         """exclude: planner names to drop from the calibration panel (e.g. the
         planner under evaluation if it is already in the matrix); routes: the
         bank as a subset of the panel's routes (default: all 220)."""
-        self.panel = Panel()
+        self.panel = Panel(csv_path=FULL_CSV)                 # the live bank uses every planner with a record
         self.cols = [k for k, nm in enumerate(self.panel.names) if nm not in set(exclude)]
         self.routes = [r for r in self.panel.allr if r in set(routes)] if routes is not None else list(self.panel.allr)
         self.types = np.array([self.panel.sn[r] for r in self.routes])

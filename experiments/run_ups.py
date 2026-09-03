@@ -119,8 +119,8 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({p: {str(B): {m: [float(x) for x in v] for m, v in d.items()} for B, d in bb.items()}
                for p, bb in RES.items()}, open(OUT / 'ups.json', 'w'))
-    for (p, B, ref) in (('naive', 30, .1233), ('Random', 30, .1047), (CAN, 30, .1030), (CAN, 55, .0971),
-                        (CAN, 110, .0927), ('theta-EIG (abl.)', 30, .1041), ('2PL Fisher (abl.)', 110, .0873)):
+    for (p, B, ref) in (('naive', 30, 0.1007), ('Random', 30, 0.1129), (CAN, 30, 0.0950), (CAN, 55, 0.0936),
+                        (CAN, 110, 0.0950), ('theta-EIG (abl.)', 30, 0.0966), ('2PL Fisher (abl.)', 110, 0.0953)):
         assert abs(np.mean(RES[p][B]['mae']) - ref) < .003, (p, B, np.mean(RES[p][B]['mae']))
     print('anchors OK')
 

@@ -17,7 +17,7 @@ consumed by `run_adaptive.py --merge` (matched-cost table, appendix).
 
 The same LOO tracks also fix the risk scale of the stopping rule: per
 (draw, K_cal, order), c = 90th percentile of |Shat_t - SR| / R1_t over the
-left-out planners and t in [10, 110] (results/risk_cal.json), so that
+left-out planners and t in [10, bank size] (results/risk_cal.json), so that
 `run_adaptive.py --merge` can stop at c * R1_t <= epsilon — an error target
 rather than a cost target. The merge also prints a reliability diagnostic of
 raw vs scaled R1 against the realised error, by deciles of raw R1.
@@ -44,9 +44,9 @@ from scirt.acquisition import r1_traj
 from scirt.baselines import fluid_order, metabench_order, stratified_order
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random', 'Random-strat')
-TMAX = 110
+TMAX = 220        # >= any bank size: LOO trajectories run through the whole bank (was 110)
 TARGETS = (30, 55)
 NO_TESTLET = os.environ.get('SCIRT_NO_TESTLET', '0') == '1'   # ablation: sigma_g = 0 (independent items)
 TAUS = np.round(np.arange(0.010, 0.0801, 0.001), 3)
@@ -168,10 +168,10 @@ def main():
     C = risk_scale(recs)
     json.dump(C, open(OUT / 'risk_cal.json', 'w'))
     print('risk_cal.json written')
-    for J, v in ((7, 1.89), (10, 1.88), (16, 2.04)):
+    for J, v in ((4, 2.09), (8, 2.12), (12, 1.94)):
         cm = float(np.median([C[f'{s}|{J}|SC-IRT'] for s in sorted(set(r['seed'] for r in recs))]))
         assert abs(cm - v) < .03, (J, cm)
-    assert abs(float(np.median(summary[(16, 'SC-IRT', 55)])) - 0.029) < .0015
+    assert abs(float(np.median(summary[(12, 'SC-IRT', 55)])) - 0.029) < .0015
     print('anchors OK')
 
 

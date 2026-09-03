@@ -6,10 +6,16 @@ registry: [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 ## 1. Data
 
-22 open-source end-to-end planners x 220 Bench2Drive closed-loop routes;
-y_sk = 1 iff planner k completes scene (route) s (`data/matrices/`,
-4,796 of 4,840 cells observed; the build report records derived vs published
-success rates). Each route carries one of 44 scenario types (5 routes per
+16 open-source end-to-end planners x 220 Bench2Drive closed-loop routes;
+y_sk = 1 iff planner k completes scene (route) s (`data/matrices/`, 3,482
+of 3,520 cells observed). The 16 are chosen from the 22 planners with a
+complete closed-loop record (`b2d_e2e22_response_matrix.csv`, kept for
+provenance and for the live tool) so that the panel covers the ability
+range evenly with one planner per model family: of the six dropped, four
+are the second member of a family within .04 SR of the kept one
+(SimLingo-IVL35-1B, MindDrive, Orion-Lite, UniAD-Base), one a same-SR
+duplicate (DriveMoE-Base, .486 = PGS) and one a crowded-band newcomer
+(R2SE). Success rates of the kept 16 run from .135 to .777. Each route carries one of 44 scenario types (5 routes per
 type). Scene descriptors (`data/features/`) serve only as US baselines;
 the scene encoder consumes the raw scene graph (Section 3.1). Route order
 is the response-matrix CSV column order — part of the reproduction contract.
@@ -29,31 +35,33 @@ not used anywhere.
 
 ## 2. The split
 
-16 calibration : 6 evaluation planners and 36 calibration : 8 evaluation
+12 calibration : 4 evaluation planners and 36 calibration : 8 evaluation
 scenario types, drawn per Monte-Carlo draw (R = 16 draws,
 RandomState(1000 + draw); `scirt/splits.py`). One draw partitions both axes
 at once, so the three regimes share it:
 
-|                          | calibration planners (16) | evaluation planners (6) |
+|                          | calibration planners (12) | evaluation planners (4) |
 |--------------------------|---------------------------|-------------------------|
 | calibration types (36)   | A: calibration block      | **UP** evaluation       |
 | evaluation types (8)     | **US** evaluation         | **UPS** target          |
 
-Sample sizes: UP and UPS 16 x 6 = 96 planner evaluations per condition;
+Sample sizes: UP and UPS 16 x 4 = 64 planner evaluations per condition;
 US pooled 16 x ~40 = 640 route evaluations. Types are held out as whole
 types.
 
-**Calibration scarcity.** K_cal in {7, 10, 16}: at K_cal < 16 the
+**Calibration scarcity.** K_cal in {4, 8, 12}: at K_cal < 12 the
 calibration planners are subsampled once per draw
 (RandomState(9000 + 100 draw + 10 K_cal)) and *every* model — ours and each
 baseline's own — is re-fitted from those planners only; the evaluation
-planners are unchanged.
+planners are unchanged. K_cal = 12 is the full calibration pool.
 
 **Budgets.** B = number of routes rolled out (the acquisition of Section 4
 selects one route at a time); B = 5 x {6, 11, 22} = {30, 55, 110}, i.e.
 14% / 25% / 50% of the benchmark; 110 executes 61% of the per-draw bank,
 the reference budget at which representative samplers have largely
-converged. (The grid was chosen as multiples of the 5 routes per scenario
+converged. The stopping experiments (Section 4) let every order run
+through the whole bank (~180 routes), so a reported stop is the rule's own
+stop; the fraction of evaluations that exhaust the bank is reported. (The grid was chosen as multiples of the 5 routes per scenario
 type; the stratified baseline visits types round-robin, so no budget
 corresponds to whole types for any method.)
 
@@ -72,8 +80,8 @@ own risk.
 **Calibration** on the block A (`scirt/calibration.py`) is a MAP fit with
 explicit priors — the same prior forms the evaluation posterior uses. After
 the theta-mean centring the MAP's b prior sits c = mean theta_hat away from
-the centred frame (|c| up to .65 at K_cal = 7, median .2; .05 at K_cal =
-16); the difficulty posterior below is taken in the centred frame, i.e. the
+the centred frame (|c| up to .96 at K_cal = 4, median .19; up to .45,
+median .13 at K_cal = 12); the difficulty posterior below is taken in the centred frame, i.e. the
 frame of the evaluation prior, and only the MAP point b_hat (baselines,
 point-curve ablation, sigma_g estimate) carries the offset:
 
@@ -84,11 +92,12 @@ theta_k ~ N(0, 1)          b_s ~ N(0, sigma_b^2)          (2PL/3PL baselines: lo
 Adam lr .05, 800 iterations, zero init, theta-mean centring. sigma_b is
 chosen by empirical Bayes on the grid {.5, .75, 1, 1.5, 2, 3} — the exact
 marginal likelihood sum_s log int prod_k Bern(y_sk | theta_hat_k, b) N(b; 0, sigma_b^2) db
-on the difficulty grid below (1.5 in 45 of the 48 (draw, K_cal) fits on
-this panel, 1.0 or 2.0 in the rest). The testlet SD sigma_g is the profile
+on the difficulty grid below (1.5 in 37 of the 48 (draw, K_cal) fits on
+this panel and in all 16 at K_cal = 12; 1.0 in 9, .75 or 2.0 in one each,
+all at K_cal = 4 or 8). The testlet SD sigma_g is the profile
 marginal likelihood at (theta_hat, b_hat) over {0, .25, .5, .75, 1, 1.25,
-1.5, 2} with u integrated on the u grid (.5-1.25 at K_cal = 7, 1.0-1.25 at
-K_cal = 16; u itself is not a MAP parameter — the calibration block has one
+1.5, 2} with u integrated on the u grid (0-1.5 at K_cal = 4, .75-1.25 at
+K_cal = 12; u itself is not a MAP parameter — the calibration block has one
 u_kg per cell block and only its variance is identified).
 
 **Difficulty posterior — exact, conditional on the fitted abilities.**
@@ -99,8 +108,9 @@ difficulty keeps its full posterior on an 801-point grid over [-10, 10]:
 p(b_s | A) ∝ N(b_s; 0, sigma_b^2) prod_{k:(s,k) in A} Bern(y_sk | sigmoid(theta_hat_k - b_s))
 ```
 
-No Gaussian approximation: the all-pass / all-fail routes of a K_cal = 7
-panel (19-28 of 180 in the first four draws) get their one-sided posterior. Every downstream probability
+No Gaussian approximation: the all-pass / all-fail routes of a K_cal = 4
+panel (26-59 of 180 in the first four draws; 8-13 at K_cal = 12) get their
+one-sided posterior. Every downstream probability
 marginalises it:
 
 ```
@@ -186,7 +196,8 @@ published baselines.
 planners** (`run_tau_calibration.py`, results/risk_cal.json):
 leave-one-planner-out Delta-R1 trajectories on the calibration panel give
 realised errors |SR_hat_t - SR| and predicted risks R1(D_t); c is the 90th
-percentile of their ratio over the left-out planners and t in [10, 110].
+percentile of their ratio over the left-out planners and t in [10, n], n the
+bank size (the LOO trajectories run through the whole bank).
 The stopping rule c * R1 <= eps is therefore an *error* target: eps in
 {.03, .05}, and Table 2 reports the mean rollouts it spends, the SR-MAE at
 the stop, the coverage P(|SR_hat - SR| <= eps) and the calibration gap
@@ -279,7 +290,7 @@ SR-error rule — the Table 2 "Fluid" row is Fluid's item order only.
 ## 7. Metrics
 
 - **UP (primary)**: SR-MAE at the fixed budgets; the primary protocol is
-  K_cal in {7, 10, 16} x B in {30, 55, 110} with the macro average. Ties
+  K_cal in {4, 8, 12} x B in {30, 55, 110} with the macro average. Ties
   are reported when the paired 95% interval (cluster bootstrap over
   planners — the unique planner ids resampled with replacement, since the
   same planners recur across draws) includes zero.
@@ -294,4 +305,4 @@ SR-error rule — the Table 2 "Fluid" row is Fluid's item order only.
   rate (primary); pooled cell AUROC and Scene-MAE vs the planner-only null.
 - **UPS**: D-SR MAE at zero rollouts on the evaluation-type routes
   (primary), at probe budgets {30, 55, 110}; D-cell NLL.
-- Resampling: paired cluster bootstrap — (planner) the unique evaluation-planner ids (22 on Bench2Drive) resampled with replacement for planner-side deltas, every evaluation of a resampled planner weighted equally (the same planners recur across the 16 draws, so draws are not independent clusters); US encoder-vs-baseline deltas are reported as mean +- SD across the three encoder runs.
+- Resampling: paired cluster bootstrap — (planner) the unique evaluation-planner ids (16 on Bench2Drive) resampled with replacement for planner-side deltas, every evaluation of a resampled planner weighted equally (the same planners recur across the 16 draws, so draws are not independent clusters); US encoder-vs-baseline deltas are reported as mean +- SD across the three encoder runs.

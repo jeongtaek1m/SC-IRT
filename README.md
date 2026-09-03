@@ -55,15 +55,16 @@ point ends by asserting the published numbers (`anchors OK`).
 
 ## The primary protocol
 
-22-planner x 220-route Bench2Drive panel; per draw (R = 16), 16 calibration
-: 6 evaluation planners and 36 : 8 scenario types. B = number of routes
+16-planner x 220-route Bench2Drive panel (one planner per model family,
+chosen from 22 with complete records to cover the ability range evenly);
+per draw (R = 16), 12 calibration : 4 evaluation planners and 36 : 8 scenario types. B = number of routes
 rolled out (30/55/110 = 5 x {6, 11, 22}, so the type-stratified baseline
 are multiples of the 5 routes per scenario type); calibration-panel sizes
-K_cal in {7, 10, 16}. 96 evaluations per cell. A second, two-stage panel
+K_cal in {4, 8, 12}. 64 evaluations per cell. A second, two-stage panel
 (NAVSIM navhard leaderboard, 87 unique submissions x 225 units) reproduces
 the UP comparison off Bench2Drive.
 
-|                          | calibration planners (16) | evaluation planners (6) |
+|                          | calibration planners (12) | evaluation planners (4) |
 |--------------------------|---------------------------|-------------------------|
 | calibration types (36)   | A: calibration            | **UP** evaluation       |
 | evaluation types (8)     | **US** evaluation         | **UPS** target          |
@@ -99,7 +100,7 @@ scirt/          the library (PROTOCOL.md has the maths)
 experiments/    one entry point per paper table + build_data.py (provenance)
 tools/          b2d_adaptive_eval.py — SC-IRT inside a real Bench2Drive evaluation (scirt/live.py)
 data/
-  matrices/     22 x 220 pass/fail response panel (+ the 16-planner panel it extends)
+  matrices/     16 x 220 pass/fail panel of record (+ the 22-planner matrix it was drawn from and the older 16-planner panel)
   features/     scene-descriptor sets used as US baselines (cmdkin, gtrisk, ...)
   b2d/          traffic-feature table and kin/density baselines
   encoder/      RelGraph R2 per-run out-of-fold difficulty predictions + the
@@ -113,28 +114,33 @@ tests/          fast invariants
 ## Honest caveats
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
-  at 96 evaluations per cell; the tables mark which cells are.
-- SC-IRT's advantage is at the medium budget (B = 55: .0296 / .0307 /
-  .0317 vs .0333-.0340 for type-stratified Random, the best baseline) and
-  at B = 110 for K_cal >= 10; at B = 30 and at K7 B110 the stratified
-  random order (which uses the same scenario grouping) is within the
+  at 64 evaluations per cell; the tables mark which cells are.
+- SC-IRT has the lowest error in 7 of 9 cells of Table 1 (macro .0296 vs
+  .0327 for Fluid and .0358 for type-stratified Random); at B = 30 for
+  K_cal = 4 and 12 the Fluid order is lower by .001-.002, inside the
   intervals. Random-policy rows are expected errors over five orders.
-  On the navhard panel with an 81-planner calibration set the 2PL Fisher
-  orderings win the low budgets outright. Those cells are part of the
-  result.
+  On the navhard panel SC-IRT wins only the B = 110 column for
+  K_cal <= 12 (the other cells are ties or ns losses to Random + IRT,
+  metabench and Fluid), and with an 81-planner calibration set the 2PL
+  Fisher orderings win the low budgets outright. Those cells are part of
+  the result.
 - The stopping rule is conservative in the mean (the calibration gap is
-  negative in every cell) but not at the nominal level: the 90th-percentile
-  risk scale fixed on the calibration panel yields 82-85% realised coverage
-  on evaluation planners.
+  negative in every cell) but not always at the nominal level: the
+  90th-percentile risk scale fixed on the calibration panel yields 84-94%
+  realised coverage on evaluation planners.
 - Exact ties in the acquisition score (routes of one type with identical
   posteriors) are broken by bank order; this arbitrary but documented
   choice moves individual cells by up to .004 SR-MAE, inside the intervals.
+- UPS (Table 3B) is a per-cell result: the transport lowers the predictive
+  NLL of the unseen cells at every budget, but its block-SR error sits on
+  the scene-prior floor (.095) and does not beat the planner's own probed
+  success rate at B >= 55 (.090 / .087) on this panel.
 - The RelGraph encoder is tied with the hand-crafted descriptor stack on
-  AUROC / scene-MAE and behind it on rank correlation (-.05 +- .02); its
+  AUROC and behind it on scene-MAE and rank correlation (-.04 +- .02); its
   contribution is the input (raw tracks), not extra accuracy. Structural
   controls show the lane-graph relations are inert on this bank (removing
-  the ego-route relation improves rho by +.04; shuffling correspondences
-  changes nothing).
+  the ego-route relation improves rho by +.03; shuffling correspondences
+  changes nothing beyond seed noise).
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,

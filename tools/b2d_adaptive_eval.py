@@ -108,7 +108,7 @@ def main():
     ap.add_argument('--timeout', type=float, default=600.0)
     ap.add_argument('--env', action='append', default=[], help='extra KEY=VAL for the evaluator process')
     ap.add_argument('--eps', type=float, default=0.03, help='stop when c * R1 <= eps')
-    ap.add_argument('--max-routes', type=int, default=110)
+    ap.add_argument('--max-routes', type=int, default=220, help='route cap (default: the whole bank)')
     ap.add_argument('--batch', type=int, default=1, help='routes per evaluator invocation (no re-planning inside a batch)')
     ap.add_argument('--max-tries', type=int, default=5, help='evaluator relaunches per batch on crash')
     ap.add_argument('--risk-cache', default=None)
@@ -126,8 +126,8 @@ def main():
     (out / 'checkpoints').mkdir(exist_ok=True)
     truth = None
     if a.dry_run:
-        from scirt.b2d import Panel
-        pn = Panel()
+        from scirt.b2d import Panel, FULL_CSV
+        pn = Panel(csv_path=FULL_CSV)
         k = pn.names.index(a.dry_run)
         truth = {r: pn.Y[(r, k)] for r in pn.allr if (r, k) in pn.Y}
     ev = LiveEvaluator(exclude=(name,), routes=list(truth) if truth is not None else None)

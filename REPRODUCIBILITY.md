@@ -19,7 +19,7 @@ past a failed anchor.
 
 | script | asserts |
 |---|---|
-| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid / Random-strat / Random cells, SC-IRT macro .0307 |
+| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid / Random-strat / Random cells, SC-IRT macro .0296 |
 | `run_tau_calibration.py --merge` | risk-scale medians c per K_cal (SC-IRT) + one matched-cost tau_hat median |
 | `run_adaptive.py --merge` | fixed-t track errors of SC-IRT / Random / Fluid at representative (K_cal, t) |
 | `run_ablation.py --merge` | full and each off-arm at representative cells |
@@ -40,7 +40,7 @@ past a failed anchor.
 | calibration priors | theta ~ N(0, 1); b ~ N(0, sigma_b^2), sigma_b by empirical Bayes on {.5, .75, 1, 1.5, 2, 3}; log a ~ N(0, .5^2); logit c ~ N(-2.2, 1) |
 | testlet SD grid | sigma_g on {0, .25, .5, .75, 1, 1.25, 1.5, 2} by profile marginal likelihood |
 | optimiser | Adam lr .05, 800 iterations, zero init, theta-mean centring |
-| risk scale | c = 90th percentile of realised / predicted error over LOO trajectories, t in [10, 110] |
+| risk scale | c = 90th percentile of realised / predicted error over LOO trajectories, t in [10, bank size] (the LOO trajectories run through the whole bank) |
 | acquisition ties | score rounded to 1e-10, lowest bank index (`TIE_DECIMALS`) |
 | random-policy rows (Tables 1, 4) | expected error over `NREP = 5` orders, seeds `100 + K*draw + planner_id + 100000*rep` |
 | stopping targets | eps in {.03, .05}; matched-cost appendix targets 30 / 55 rollouts |
@@ -53,13 +53,13 @@ top-of-script `np.random.seed(0); torch.manual_seed(0)` is belt-and-braces.
 
 | purpose | seed formula |
 |---|---|
-| planner/type split (draw = 0..15) | `RandomState(1000 + draw)`: first 6 of 22 planners, then 8 of 44 types, from the same stream |
-| K_cal subsample from the 16 calibration planners | `RandomState(9000 + 100*draw + 10*K_cal)` |
-| Random / Random-strat rollout order (per evaluation) | `RandomState(100 + K*draw + planner_id)`, K = number of planners in the panel (22; 87 on navhard) — injective |
+| planner/type split (draw = 0..15) | `RandomState(1000 + draw)`: first 4 of 16 planners, then 8 of 44 types, from the same stream |
+| K_cal subsample from the 12 calibration planners | `RandomState(9000 + 100*draw + 10*K_cal)` |
+| Random / Random-strat rollout order (per evaluation) | `RandomState(100 + K*draw + planner_id)`, K = number of planners in the panel (16; 87 on navhard) — injective |
 | leave-one-planner-out Random order (tau calibration) | `RandomState(700 + K*draw + j)` |
 | navhard panel (Table 4) | same formulas on the 87 submissions: 6 evaluation planners `RandomState(1000 + draw)`, K_cal subsample `RandomState(9000 + 100*draw + 10*K_cal)`, Random order `RandomState(100 + 87*draw + planner_id)`; no scenario types |
 | model-adequacy simulation | `RandomState(2000 + draw)` |
-| paired bootstrap | `RandomState(0)`; 4,000 resamples of the unique planner ids (planner clusters, 22 on Bench2Drive), every evaluation of a resampled planner weighted equally |
+| paired bootstrap | `RandomState(0)`; 4,000 resamples of the unique planner ids (planner clusters, 16 on Bench2Drive), every evaluation of a resampled planner weighted equally |
 
 Policy: no prediction or run ensembling anywhere — single-run numbers with
 across-draw dispersion only. The RelGraph rows report 3 independent runs as
@@ -67,12 +67,15 @@ mean +- SD, never an averaged prediction.
 
 ## Data provenance
 
+- `data/matrices/b2d_e2e16sel_response_matrix.csv` — the panel of record:
+  16 of the 22 planners below, one per model family, spread over the
+  ability range (selection rule in PROTOCOL section 1).
 - `data/matrices/b2d_e2e22_response_matrix.csv` — 22 planners x 220
   Bench2Drive routes, pass/fail from official closed-loop evaluation; the
   per-planner sources and re-driven cells are recorded in the research-side
   build report; `experiments/build_data.py` md5-checks the 16-planner matrix
-  against the research tree and `tests/` pins the 22-planner panel's shape
-  (22 x 220, 4,796 cells). The 16-planner matrix it extends is kept
+  against the research tree and `tests/` pins the 16-planner panel's shape
+  (16 x 220, 3,482 cells). The 16-planner matrix it extends is kept
   alongside.
   `SCIRT_RESPONSE_CSV` overrides the panel for new matrices.
 - `data/features/` — per-route descriptor sets (cmdkin, gtrisk, routegeom,
@@ -85,7 +88,7 @@ mean +- SD, never an averaged prediction.
   from the RelGraph R2 scene encoder (ego, agent and lane tokens; R-GCN
   lane-lane message passing, agent-lane cross-attention over
   relative-geometry relations and an ego-route relation; d = 64), trained
-  per draw on the 36 calibration types
+  per draw on the 36 calibration types of the 12 calibration planners
   with the shared-sigma epsilon-marginalised objective and predicting the 8
   evaluation types out-of-fold; three seeds, one file per run. Each file
   also carries `draw{r}_sigma`, the shared residual SD the encoder learned

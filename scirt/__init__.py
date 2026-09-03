@@ -8,7 +8,7 @@ uncertainty-aware Rasch posterior does everything:
     stopping           c * R1(D_t) <= eps, c fixed on the calibration panel
     unseen scenes      b_s | scene ~ N(b_tilde_s, sigma^2)  (RelGraph R2, shipped as per-run predictions)
 
-    splits        random 16/6 planners x 36/8 scene types, R = 16 draws
+    splits        random 12/4 planners x 36/8 scene types, R = 16 draws
     b2d           data loading (repo-local, canonical route order)
     calibration   explicit-prior MAP (EB sigma_b), exact difficulty posteriors, testlet SD
     curves        grids + exact difficulty-marginalised item curves
@@ -36,4 +36,4 @@ from . import (  # noqa: F401
     us_eval,
 )
 
-__version__ = "5.3.0"
+__version__ = "6.0.0"

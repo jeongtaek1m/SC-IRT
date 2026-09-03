@@ -6,7 +6,7 @@ Every published selector's subsets are re-scored with SC-IRT's readout
 native estimator; compared with the native numbers of `run_up_frontier.py`
 this isolates what the uncertainty-aware inference layer contributes,
 independently of how scenes were chosen. The gain is largest under
-calibration scarcity (K_cal = 7).
+calibration scarcity (K_cal = 4).
 
     python experiments/run_readout_dropin.py            # ~40 min, GPU
 """
@@ -27,7 +27,7 @@ from scirt.baselines import (fluid_order, total_fisher_order, metabench_order, k
                              anchorpoints_select)
 
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '7,10,16').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
 BG = (30, 55, 110)
 SELS = ('Fluid', 'Total-Fisher', 'metabench', 'tinyBenchmarks', 'AnchorPoints', 'Random')
 
@@ -98,8 +98,8 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({s: {str(J): {str(B): [float(x) for x in ERR[s][J][B]] for B in BG} for J in KCALS} for s in SELS},
               open(OUT / 'readout_dropin.json', 'w'))
-    for sel, J, B, v in (('Fluid', 7, 30, .0493), ('AnchorPoints', 16, 110, .0207), ('Random', 10, 110, .0171),
-                         ('Fluid', 16, 55, .0345)):
+    for sel, J, B, v in (('Fluid', 4, 30, .0453), ('AnchorPoints', 12, 110, .0201), ('Random', 8, 110, .0221),
+                         ('Fluid', 12, 55, .0316)):
         m = float(np.mean(ERR[sel][J][B]))
         assert abs(m - v) < .0003, (sel, J, B, m)
     print('anchors OK')

@@ -26,7 +26,7 @@ from scirt.metrics import paired_cluster_boot
 np.random.seed(0); torch.manual_seed(0)
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', ROOT / 'results')); OUT.mkdir(exist_ok=True)
-KC = (7, 10, 16, 81); BB = (30, 55, 110); T = 110
+KC = (4, 8, 12, 81); BB = (30, 55, 110); T = 110
 NREP = 5          # random-policy rows: expected |error| over NREP independent orders per evaluation
 METHODS = ['Random (IRT-free)', 'Random + IRT', 'DISCO', 'AnchorPoints', 'Total-Fisher',
            'Marginal-Fisher', 'tinyBenchmarks', 'metabench', 'Fluid', 'SC-IRT']
@@ -99,8 +99,8 @@ def merge():
                             for B in BB} for m in METHODS} for K in KC},
               open(OUT / 'navhard.json', 'w'))
     mean = lambda K, m, B: np.mean([r['err'][m][str(B)] for r in recs if r['K'] == K])
-    for K, m, B, v in ((7, 'SC-IRT', 55, .0347), (16, 'SC-IRT', 110, .0191), (81, 'SC-IRT', 110, .0169),
-                       (16, 'SC-IRT', 30, .0488), (81, 'Fluid', 30, .0304), (7, 'Random (IRT-free)', 30, .0599)):
+    for K, m, B, v in ((4, 'SC-IRT', 55, .0386), (12, 'SC-IRT', 110, .0215), (81, 'SC-IRT', 110, .0169),
+                       (12, 'SC-IRT', 30, .0514), (81, 'Fluid', 30, .0304), (4, 'Random (IRT-free)', 30, .0599)):
         assert abs(mean(K, m, B) - v) < .0003, (K, m, B, mean(K, m, B))
     print('anchors OK')
 

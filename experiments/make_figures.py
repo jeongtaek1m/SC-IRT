@@ -23,7 +23,7 @@ from scirt.bayes import stop_at
 
 RES = Path(os.environ.get('SCIRT_RESULTS_DIR', ROOT / 'results'))
 FIGS = Path(os.environ.get('SCIRT_FIGS_DIR', ROOT / 'figs'))
-KCALS = (7, 10, 16)
+KCALS = (4, 8, 12)
 BGRID = (30, 55, 110)
 ORD = ('SC-IRT', 'Fluid', 'metabench', 'Random')
 
@@ -36,7 +36,7 @@ def main():
     F = json.load(open(RES / 'up_frontier.json'))
     FIGS.mkdir(exist_ok=True)
     fig, axes = plt.subplots(1, len(KCALS), figsize=(12, 3.4), sharey=True)
-    ts = np.arange(1, 111)
+    ts = np.arange(1, min(len(r['SC-IRT']['Shat']) for r in A) + 1)   # shortest track: trajectories run through the bank
     for ax, K in zip(axes, KCALS):
         rs = [r for r in A if r['K'] == K]
         for o in ORD:

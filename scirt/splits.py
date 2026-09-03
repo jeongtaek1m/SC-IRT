@@ -1,9 +1,9 @@
 """The unified evaluation split — the single source of truth for every experiment.
 
-16/6 planners x 36/8 scene types (22-planner panel), R = 16 Monte-Carlo cross-validation draws.
+12/4 planners x 36/8 scene types (16-planner panel), R = 16 Monte-Carlo cross-validation draws.
 Within one draw the three regimes (US / UP / UPS) share the same partition:
 
-                     calibration planners (16)  evaluation planners (6)
+                     calibration planners (12)  evaluation planners (4)
   calibration types (36)  A: calibration block    UP evaluation
   evaluation types (8)    C: US evaluation        D: UPS target (0 rollouts)
 
@@ -13,10 +13,10 @@ convention (1000 + draw index) is part of the protocol and must not change.
 import numpy as np
 
 R_DRAWS = 16
-H_P, H_S = 6, 8
+H_P, H_S = 4, 8
 
 
-def unified_split(seed, utypes, n_planners=22):
+def unified_split(seed, utypes, n_planners=16):
     """Return (held_out_planner_ids, held_out_type_set) for one draw.
 
     `utypes` must be the sorted list of unique scenario types (44 for B2D);

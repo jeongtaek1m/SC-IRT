@@ -30,31 +30,38 @@ def load_route_types():
     return dict(csv.reader(open(DATA / 'matrices' / 'b2d_route_types.csv')))
 
 
-def load_response_rows():
+DEFAULT_CSV = DATA / 'matrices' / 'b2d_e2e16sel_response_matrix.csv'   # the 16-planner panel of record
+FULL_CSV = DATA / 'matrices' / 'b2d_e2e22_response_matrix.csv'         # all 22 planners (live tool, provenance)
+
+
+def load_response_rows(csv_path=None):
     """Raw response matrix: (route_ids in CSV order, planner rows)."""
-    rows = list(csv.reader(open(os.environ.get('SCIRT_RESPONSE_CSV', DATA / 'matrices' / 'b2d_e2e22_response_matrix.csv'))))
+    rows = list(csv.reader(open(csv_path or os.environ.get('SCIRT_RESPONSE_CSV', DEFAULT_CSV))))
     rids = rows[0][1:]
     planners = [r for r in rows[1:] if r[0] != EXCLUDED_PLANNER]
     return rids, planners
 
 
 class Panel:
-    """The 22-planner x 220-route response panel (a different panel via SCIRT_RESPONSE_CSV) plus everything the
-    experiments need, in the canonical ordering.
+    """The 16-planner x 220-route response panel of record (one planner per
+    family, spread over the ability range; `csv_path` or SCIRT_RESPONSE_CSV
+    selects another matrix, e.g. FULL_CSV with all 22 planners) plus
+    everything the experiments need, in the canonical ordering.
 
     Attributes
     ----------
     rids      : route ids, CSV column order (the canonical route order)
     names     : planner names, CSV row order
-    J         : number of planners (22)
-    Y         : {(route_id, planner_idx): 0/1} sparse dict (4,796 of 4,840 cells observed)
+    J         : number of planners (16)
+    Y         : {(route_id, planner_idx): 0/1} sparse dict
     sn        : {route_id: scenario_type}
     allr      : routes present in both the matrix and sn, CSV order (220)
     utypes    : sorted unique scenario types (44)
     """
 
-    def __init__(self, extra_feature_dicts=()):
-        rids, planners = load_response_rows()
+    def __init__(self, extra_feature_dicts=(), csv_path=None):
+        self.csv_path = csv_path
+        rids, planners = load_response_rows(csv_path)
         self.rids = rids
         self.names = [r[0] for r in planners]
         self.J = len(planners)
@@ -77,7 +84,7 @@ class Panel:
         idx = {r: i for i, r in enumerate(self.rids)}
         n = len(self.allr)
         Y = np.full((n, self.J), np.nan)
-        rows = load_response_rows()[1]
+        rows = load_response_rows(self.csv_path)[1]
         for a, r in enumerate(self.allr):
             for pi, row in enumerate(rows):
                 v = row[1 + idx[r]]

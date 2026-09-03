@@ -30,32 +30,29 @@ def panel():
 def test_panel_invariants(panel):
     assert len(panel.allr) == 220
     assert len(panel.utypes) == 44
-    assert panel.J == 22
-    assert len(panel.Y) == 4796              # 4840 cells - 44 missing
+    assert panel.J == 16
+    assert len(panel.Y) == 3482              # 3520 cells minus the missing ones
     assert 'PDM-Lite' not in panel.names
     assert panel.sn['11755'] == 'EnterActorFlow'
 
 
 def test_split_protocol_constants():
-    assert (R_DRAWS, H_P, H_S) == (16, 6, 8)
+    assert (R_DRAWS, H_P, H_S) == (16, 4, 8)
 
 
 def test_split_draw0_pinned(panel):
     hp, ht = unified_split(0, panel.utypes, panel.J)
-    assert hp == [3, 5, 6, 17, 18, 20]
-    assert sorted(ht) == ['BlockedIntersection', 'ConstructionObstacle',
-                          'EnterActorFlow', 'HardBreakRoute',
-                          'NonSignalizedJunctionLeftTurn',
-                          'ParkedObstacleTwoWays',
-                          'SignalizedJunctionRightTurn',
-                          'VanillaNonSignalizedTurnEncounterStopsign']
+    assert hp == [2, 5, 9, 13]
+    assert sorted(ht) == ['ConstructionObstacle', 'CrossingBicycleFlow', 'EnterActorFlow',
+                          'HardBreakRoute', 'NonSignalizedJunctionLeftTurn',
+                          'ParkingCrossingPedestrian', 'ParkingCutIn', 'StaticCutIn']
 
 
 def test_splits_are_paired_across_regimes(panel):
     """Every draw partitions both axes at once, so US/UP/UPS share it."""
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
-        assert len(hp) == 6 and len(ht) == 8
+        assert len(hp) == 4 and len(ht) == 8
         cal, new = panel.split_routes(ht)
         assert len(cal) + len(new) == 220
         assert all(panel.sn[r] in ht for r in new)
