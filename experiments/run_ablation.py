@@ -4,7 +4,7 @@
 Same readout and the same bank for every row; only the marked component
 changes. Primary protocol, B in {30, 55}.
 
-  SC-IRT (full)            exact difficulty posteriors + testlet + Delta-R1 acquisition
+  DriveAT (full)            exact difficulty posteriors + testlet + Delta-R1 acquisition
   w/o b-uncertainty        point curves sigmoid(theta - b_hat + u) (difficulty posterior collapsed)
   w/o testlet              sigma_g = 0 (independent items), posteriors and acquisition unchanged
   w/o risk acquisition     random scene order, inference unchanged
@@ -23,19 +23,19 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel
-from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate
-from scirt.curves import marginal_curves
-from scirt.bayes import Bank, bank_from_fit, readout
-from scirt.acquisition import r1_traj
-from scirt.metrics import paired_cluster_boot
+from driveat.b2d import Panel
+from driveat.splits import up_split, R_DRAWS
+from driveat.calibration import calibrate
+from driveat.curves import marginal_curves
+from driveat.bayes import Bank, bank_from_fit, readout
+from driveat.acquisition import r1_traj
+from driveat.metrics import paired_cluster_boot
 
-OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
-BGRID = [30, 55, 110]
+OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
+BGRID = [30, 55, 110, 165]
 T = max(BGRID)
-ARMS = ['SC-IRT (full)', 'w/o b-uncertainty', 'w/o testlet', 'w/o risk acquisition']
+ARMS = ['DriveAT (full)', 'w/o b-uncertainty', 'w/o testlet', 'w/o risk acquisition']
 
 
 def subsample(cols, seed, Kc):
@@ -51,7 +51,7 @@ def run(seeds):
     panel = Panel()
     recs = []
     for seed in seeds:
-        hp, ht = unified_split(seed, panel.utypes, panel.J)
+        hp, ht = up_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
         typ = np.array([panel.sn[r] for r in calR])
@@ -66,7 +66,7 @@ def run(seeds):
                 bank_p = Bank(marginal_curves(f1['b'][bi], np.full(n, 1e-9)), typ[bi], f1['sigma_g'])
                 bank_t = bank_from_fit(f1, bi, typ, sigma_g=0.0)
                 perm = [int(i) for i in np.random.RandomState(100 + seed * panel.J + js).permutation(n)[:T]]
-                sets = {'SC-IRT (full)': (bank, r1_traj(bank, yy, T)),
+                sets = {'DriveAT (full)': (bank, r1_traj(bank, yy, T)),
                         'w/o b-uncertainty': (bank_p, r1_traj(bank_p, yy, T)),
                         'w/o testlet': (bank_t, r1_traj(bank_t, yy, T)),
                         'w/o risk acquisition': (bank, perm)}
@@ -103,19 +103,19 @@ def main():
             row = []
             for a in ARMS:
                 v = np.mean([r['err'][a][str(B)] for r in rs])
-                if a == 'SC-IRT (full)':
+                if a == 'DriveAT (full)':
                     row.append(f'{a}: {v:.4f}')
                 else:
                     d, lo, hi = paired_cluster_boot([r['err'][a][str(B)] for r in rs],
-                                                    [r['err']['SC-IRT (full)'][str(B)] for r in rs],
+                                                    [r['err']['DriveAT (full)'][str(B)] for r in rs],
                                                     [r['js'] for r in rs])
                     row.append(f'{a}: {v:.4f} ({d:+.4f} [{lo:+.4f},{hi:+.4f}])')
             print(f'  K_cal={K:2d} B={B:>3d}  ' + '  '.join(row))
     assert len(recs) == len(KCALS) * 64
     m = lambda a, K, B: np.mean([r['err'][a][str(B)] for r in recs if r['K'] == K])
-    for a, K, B, v in (('SC-IRT (full)', 4, 30, .0484), ('SC-IRT (full)', 8, 55, .0312), ('SC-IRT (full)', 4, 110, .0161),
-                       ('w/o risk acquisition', 8, 30, .0589), ('w/o testlet', 8, 55, .0383),
-                       ('w/o b-uncertainty', 12, 55, .0249)):
+    for a, K, B, v in (('DriveAT (full)', 4, 30, .0450), ('DriveAT (full)', 8, 55, .0337), ('DriveAT (full)', 12, 165, .0081),
+                       ('w/o risk acquisition', 8, 30, .0567), ('w/o testlet', 8, 55, .0383),
+                       ('w/o b-uncertainty', 12, 55, .0270)):
         assert abs(m(a, K, B) - v) < .0003, (a, K, B, m(a, K, B))
     print('anchors OK')
 

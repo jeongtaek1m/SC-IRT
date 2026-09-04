@@ -3,9 +3,9 @@
 
 The evaluation planner runs probes on the calibrated bank (budgets
 B = {30, 55, 110}); its evaluation-scale ability posterior on the theta grid comes from
-those probes (16 calibration planners); its success rate on the evaluation-type routes D
+those probes (12 calibration planners); its success rate on the evaluation-type routes D
 (zero rollouts there) is predicted by transporting the probe posterior as
-is (scirt.bayes.transfer) through the scene-conditioned difficulty prior
+is (driveat.bayes.transfer) through the scene-conditioned difficulty prior
 N(b; b_tilde_s, sigma^2) with the testlet prior on the evaluation types:
 the block-D success rate is its posterior median (MAE) and each D cell its
 posterior predictive (NLL). b_tilde_s is the RelGraph R2 out-of-fold
@@ -28,20 +28,20 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel, DATA
-from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate
-from scirt.curves import marginal_curves
-from scirt.bayes import Bank, State, bank_from_fit, state_from, transfer
-from scirt.acquisition import eig_pick, r1_pick_transfer
-from scirt.baselines import fluid_order
-from scirt.metrics import paired_cluster_boot
+from driveat.b2d import Panel, DATA
+from driveat.splits import unified_split, R_DRAWS
+from driveat.calibration import calibrate
+from driveat.curves import marginal_curves
+from driveat.bayes import Bank, State, bank_from_fit, state_from, transfer
+from driveat.acquisition import eig_pick, r1_pick_transfer
+from driveat.baselines import fluid_order
+from driveat.metrics import paired_cluster_boot
 
-OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 BP = (30, 55, 110)
 T = max(BP)
-POL = ('Random', 'theta-EIG (abl.)', '2PL Fisher (abl.)', 'SC-IRT (Delta-R1 on D)')
-CAN = 'SC-IRT (Delta-R1 on D)'
+POL = ('Random', 'theta-EIG (abl.)', '2PL Fisher (abl.)', 'DriveAT (Delta-R1 on D)')
+CAN = 'DriveAT (Delta-R1 on D)'
 RUNS = (0, 1, 2)
 
 

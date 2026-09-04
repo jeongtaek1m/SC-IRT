@@ -1,7 +1,7 @@
-# SC-IRT — Scene-Conditioned Item Response Theory for Closed-Loop Driving Evaluation
+# DriveAT — IRT-Based Adaptive Testing for Closed-Loop Driving Evaluation
 
 Official code release. Treat a driving scenario as a test item and a planner
-as an examinee. SC-IRT is built around a single probabilistic object — an
+as an examinee. DriveAT is built around a single probabilistic object — an
 uncertainty-aware Rasch posterior over the scene bank and the planner's
 ability — and uses it for everything: reconstructing the benchmark success
 rate, choosing which scene to roll out next, and deciding when to stop.
@@ -31,7 +31,7 @@ point ends by asserting the published numbers (`anchors OK`).
 ## Contributions
 
 - **C1 Uncertain item-bank inference.** A small calibration panel makes
-  every scene difficulty uncertain; SC-IRT keeps the exact conditional
+  every scene difficulty uncertain; DriveAT keeps the exact conditional
   posterior p(b_s | A) and the planner x scenario-type dependence (a
   testlet effect over the benchmark's own route grouping, fitted to zero
   when the grouping is uninformative), and marginalises both into every
@@ -47,7 +47,7 @@ point ends by asserting the published numbers (`anchors OK`).
 - **C3 Risk-based adaptive stopping.** Stop when the calibrated risk
   c * R1 falls below the error target eps; c is fixed on the calibration
   panel (leave-one-planner-out) and never selected on evaluation planners,
-  and the realised coverage P(|SR_hat - SR| <= eps) is reported.
+  and the realised error at the stop is reported.
 - **C4 Scene-conditioned difficulty.** scene -> b via the RelGraph
   relational scene-graph encoder (learned per draw on the calibration
   types, shipped as per-run out-of-fold predictions), enabling unseen-scene
@@ -57,17 +57,22 @@ point ends by asserting the published numbers (`anchors OK`).
 
 16-planner x 220-route Bench2Drive panel (one planner per model family,
 chosen from 22 with complete records to cover the ability range evenly);
-per draw (R = 16), 12 calibration : 4 evaluation planners and 36 : 8 scenario types. B = number of routes
-rolled out (30/55/110 = 5 x {6, 11, 22}, so the type-stratified baseline
-are multiples of the 5 routes per scenario type); calibration-panel sizes
+per draw (R = 16), 12 calibration : 4 evaluation planners. **UP runs on the
+whole benchmark**: the new planner's bank is all 220 routes of 44 scenario
+types, calibrated from the 12 calibration planners on the same routes; the
+36 : 8 scenario-type hold-out is kept for US and UPS only. B = number of
+routes rolled out (30/55/110/165 = 5 x {6, 11, 22, 33} = 14/25/50/75% of
+the benchmark, multiples of the 5 routes per scenario type); calibration-panel sizes
 K_cal in {4, 8, 12}. 64 evaluations per cell. A second, two-stage panel
-(NAVSIM navhard leaderboard, 87 unique submissions x 225 units) reproduces
-the UP comparison off Bench2Drive.
+the UP comparison.
 
 |                          | calibration planners (12) | evaluation planners (4) |
 |--------------------------|---------------------------|-------------------------|
 | calibration types (36)   | A: calibration            | **UP** evaluation       |
 | evaluation types (8)     | **US** evaluation         | **UPS** target          |
+
+UP spans both type rows: its bank is all 220 routes. Only US and UPS read
+the 36 : 8 type split.
 
 ## Getting started
 
@@ -80,9 +85,9 @@ python experiments/run_up_frontier.py       # Table 1 (fixed budgets)
 python experiments/run_tau_calibration.py   # calibration-fixed risk scale (+ matched-cost thresholds)
 python experiments/run_adaptive.py          # Table 2 (risk-target stopping) + cost-error data
 python experiments/run_ablation.py          # component ablation (one component off at a time)
+python experiments/run_system_ablation.py   # full-system ablation: IRT side and CAT side, fixed budget + risk target
 python experiments/run_us.py                # Table 3A
 python experiments/run_ups.py               # Table 3B
-python experiments/run_navhard.py           # Table 4: the two-stage NAVSIM panel
 python experiments/run_readout_dropin.py    # analysis: the readout under every selector
 python experiments/run_model_adequacy.py    # appendix diagnostics
 python experiments/run_calibration_stability.py
@@ -96,16 +101,15 @@ python tools/b2d_adaptive_eval.py --name my_planner --agent ... --agent-config .
 ## What is in the box
 
 ```
-scirt/          the library (PROTOCOL.md has the maths)
+driveat/          the library (PROTOCOL.md has the maths)
 experiments/    one entry point per paper table + build_data.py (provenance)
-tools/          b2d_adaptive_eval.py — SC-IRT inside a real Bench2Drive evaluation (scirt/live.py)
+tools/          b2d_adaptive_eval.py — DriveAT inside a real Bench2Drive evaluation (driveat/live.py)
 data/
   matrices/     16 x 220 pass/fail panel of record (+ the 22-planner matrix it was drawn from and the older 16-planner panel)
   features/     scene-descriptor sets used as US baselines (cmdkin, gtrisk, ...)
   b2d/          traffic-feature table and kin/density baselines
   encoder/      RelGraph R2 per-run out-of-fold difficulty predictions + the
                 learned residual SD per draw (3 independent runs; no ensembling)
-  navhard/      the two-stage NAVSIM leaderboard panel (provenance in REPRODUCIBILITY.md)
   live/         cached leave-one-planner-out risk scales for the live evaluator (keyed by bank)
 results/        written by the scripts (gitignored); numbers of record are RESULTS.md
 tests/          fast invariants
@@ -115,19 +119,18 @@ tests/          fast invariants
 
 - Differences below about .005 SR-MAE are inside the paired 95% intervals
   at 64 evaluations per cell; the tables mark which cells are.
-- SC-IRT has the lowest error in 7 of 9 cells of Table 1 (macro .0296 vs
-  .0327 for Fluid and .0358 for type-stratified Random); at B = 30 for
-  K_cal = 4 and 12 the Fluid order is lower by .001-.002, inside the
+- DriveAT has the lowest error in 8 of 12 cells of Table 1 (macro .0262 vs
+  .0307 for type-stratified Random and .0312 for Fluid); the four it does
+  not win are ties inside the intervals except K12 B30, where Fluid is
+  lower by .007. Random-policy rows are expected errors over five orders.
   intervals. Random-policy rows are expected errors over five orders.
-  On the navhard panel SC-IRT wins only the B = 110 column for
-  K_cal <= 12 (the other cells are ties or ns losses to Random + IRT,
-  metabench and Fluid), and with an 81-planner calibration set the 2PL
-  Fisher orderings win the low budgets outright. Those cells are part of
-  the result.
-- The stopping rule is conservative in the mean (the calibration gap is
-  negative in every cell) but not always at the nominal level: the
-  90th-percentile risk scale fixed on the calibration panel yields 84-94%
-  realised coverage on evaluation planners.
+- At the low budgets the SR number is not yet reportable even when the
+  ranking is: at B = 30 only 36-44% of estimates land within 3 SR points
+  while 90-94% of within-draw planner pairs are already ordered correctly.
+  The stopping rule never selects a budget that small (it spends 70-129).
+- The stopping rule is conservative in the mean: the calibration gap (mean
+  realised error minus mean scaled risk at the stop) is negative in every
+  cell, so the reported risk over-states the error it is bounding.
 - Exact ties in the acquisition score (routes of one type with identical
   posteriors) are broken by bank order; this arbitrary but documented
   choice moves individual cells by up to .004 SR-MAE, inside the intervals.
@@ -145,9 +148,6 @@ tests/          fast invariants
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,
   the UPS prior) is reproducible here.
-- The navhard panel is dominated by a few teams' submission sweeps;
-  near-duplicate submissions can appear on both sides of the planner split
-  (this affects every method identically). See RESULTS.md for the caveats.
 
 ## Citation
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Adaptive Bench2Drive closed-loop evaluation of one planner with SC-IRT (UP).
+"""Adaptive Bench2Drive closed-loop evaluation of one planner with DriveAT (UP).
 
-Instead of rolling out all 220 routes, the driver asks `scirt.live` for the
+Instead of rolling out all 220 routes, the driver asks `driveat.live` for the
 next route, runs it through the Bench2Drive leaderboard evaluator (one
 route per invocation, CARLA spawned by the evaluator itself, crash retries
 as in scripts/sh/run_pdmlite_rollout.sh), reads the outcome from the
@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.live import LiveEvaluator
+from driveat.live import LiveEvaluator
 
 DEFAULTS = dict(
     carla_root='/data1/jeongtae/carla915',
@@ -126,7 +126,7 @@ def main():
     (out / 'checkpoints').mkdir(exist_ok=True)
     truth = None
     if a.dry_run:
-        from scirt.b2d import Panel, FULL_CSV
+        from driveat.b2d import Panel, FULL_CSV
         pn = Panel(csv_path=FULL_CSV)
         k = pn.names.index(a.dry_run)
         truth = {r: pn.Y[(r, k)] for r in pn.allr if (r, k) in pn.Y}

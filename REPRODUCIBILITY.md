@@ -19,17 +19,17 @@ past a failed anchor.
 
 | script | asserts |
 |---|---|
-| `run_up_frontier.py --merge` | Table 1: 4 SC-IRT cells, Fluid / Random-strat / Random cells, SC-IRT macro .0296 |
-| `run_tau_calibration.py --merge` | risk-scale medians c per K_cal (SC-IRT) + one matched-cost tau_hat median |
-| `run_adaptive.py --merge` | fixed-t track errors of SC-IRT / Random / Fluid at representative (K_cal, t) |
+| `run_up_frontier.py --merge` | Table 1: 4 DriveAT cells, Fluid / Random-strat / Random cells, DriveAT macro .0262 |
+| `run_tau_calibration.py --merge` | risk-scale medians c per K_cal (DriveAT) + one matched-cost tau_hat median |
+| `run_adaptive.py --merge` | fixed-t track errors of DriveAT / Random / Fluid at representative (K_cal, t) |
 | `run_ablation.py --merge` | full and each off-arm at representative cells |
+| `run_system_ablation.py` | full-system ablation: fixed-budget and risk-target cells of the five arms |
 | `run_us.py` | Table 3A: null, the two hand-crafted rows, RelGraph 3-run means |
 | `run_ups.py` | Table 3B: representative MAE cells per policy (tol .003) |
-| `run_navhard.py --merge` | Table 4 cells |
 | `run_readout_dropin.py` | the drop-in cells |
 | `tests/` | grids and index identities, exact-posterior and testlet invariants, split pinning (draw 0), panel shape, r1_pick determinism, IES definition |
 
-## Protocol constants (`scirt/curves.py`, `scirt/calibration.py`)
+## Protocol constants (`driveat/curves.py`, `driveat/calibration.py`)
 
 | constant | value |
 |---|---|
@@ -55,9 +55,8 @@ top-of-script `np.random.seed(0); torch.manual_seed(0)` is belt-and-braces.
 |---|---|
 | planner/type split (draw = 0..15) | `RandomState(1000 + draw)`: first 4 of 16 planners, then 8 of 44 types, from the same stream |
 | K_cal subsample from the 12 calibration planners | `RandomState(9000 + 100*draw + 10*K_cal)` |
-| Random / Random-strat rollout order (per evaluation) | `RandomState(100 + K*draw + planner_id)`, K = number of planners in the panel (16; 87 on navhard) — injective |
+| Random / Random-strat rollout order (per evaluation) | `RandomState(100 + K*draw + planner_id)`, K = number of planners in the panel (16) — injective |
 | leave-one-planner-out Random order (tau calibration) | `RandomState(700 + K*draw + j)` |
-| navhard panel (Table 4) | same formulas on the 87 submissions: 6 evaluation planners `RandomState(1000 + draw)`, K_cal subsample `RandomState(9000 + 100*draw + 10*K_cal)`, Random order `RandomState(100 + 87*draw + planner_id)`; no scenario types |
 | model-adequacy simulation | `RandomState(2000 + draw)` |
 | paired bootstrap | `RandomState(0)`; 4,000 resamples of the unique planner ids (planner clusters, 16 on Bench2Drive), every evaluation of a resampled planner weighted equally |
 
@@ -77,7 +76,7 @@ mean +- SD, never an averaged prediction.
   against the research tree and `tests/` pins the 16-planner panel's shape
   (16 x 220, 3,482 cells). The 16-planner matrix it extends is kept
   alongside.
-  `SCIRT_RESPONSE_CSV` overrides the panel for new matrices.
+  `DRIVEAT_RESPONSE_CSV` overrides the panel for new matrices.
 - `data/features/` — per-route descriptor sets (cmdkin, gtrisk, routegeom,
   ...) used as US baselines. They are computed from a fixed probe rollout
   per route, so they are probe-conditioned but contain nothing from the
@@ -98,13 +97,12 @@ mean +- SD, never an averaged prediction.
   ego-route relation removed / the route correspondence shuffled / the
   agent-lane correspondence shuffled (shuffle seed = model seed). Training code
   depends on Bench2Drive raw rollouts and is staged for a separate release.
-- `data/live/risk_scale.json` — cached risk scales c of `scirt.live.LiveEvaluator`,
+- `data/live/risk_scale.json` — cached risk scales c of `driveat.live.LiveEvaluator`,
   keyed by a bank fingerprint (planner set, route list, iterations) and
   validated against a digest of the responses; the shipped entries are the
   22-planner bank (c = 2.36) and the three 21-planner banks of the dry-runs
   in RESULTS.md. `calibrate_risk()` recomputes an entry when the matrix
   changes (~22 GPU calibrations).
-- `data/navhard/navhard_binary_panel.npz` — NAVSIM navhard leaderboard
   (two-stage pseudo-closed-loop EPDMS): 115 submissions scraped from the
   public leaderboard, near-duplicate resubmissions collapsed to 87 unique
   submissions from 25 teams, 225 scored units, pass = EPDMS >= 0.5.
@@ -127,8 +125,6 @@ for lo in 0 4 8 12; do python experiments/run_ablation.py --seeds $lo $((lo+4)) 
 python experiments/run_ablation.py --merge             # component ablation
 python experiments/run_us.py                           # Table 3A
 python experiments/run_ups.py                          # Table 3B
-for lo in 0 4 8 12; do python experiments/run_navhard.py --seeds $lo $((lo+4)) & done; wait
-python experiments/run_navhard.py --merge              # Table 4
 python experiments/run_readout_dropin.py
 python experiments/run_model_adequacy.py
 python experiments/run_calibration_stability.py

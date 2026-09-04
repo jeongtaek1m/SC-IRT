@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analysis — the Rasch readout as a drop-in for any selector (contribution C1).
 
-Every published selector's subsets are re-scored with SC-IRT's readout
+Every published selector's subsets are re-scored with DriveAT's readout
 (exact difficulty posteriors, testlet, posterior median) instead of the selector's
 native estimator; compared with the native numbers of `run_up_frontier.py`
 this isolates what the uncertainty-aware inference layer contributes,
@@ -19,16 +19,16 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel
-from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate
-from scirt.bayes import bank_from_fit, readout
-from scirt.baselines import (fluid_order, total_fisher_order, metabench_order, kmeans_anchors,
+from driveat.b2d import Panel
+from driveat.splits import up_split, R_DRAWS
+from driveat.calibration import calibrate
+from driveat.bayes import bank_from_fit, readout
+from driveat.baselines import (fluid_order, total_fisher_order, metabench_order, kmeans_anchors,
                              anchorpoints_select)
 
-OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('SCIRT_KCALS', '4,8,12').split(','))
-BG = (30, 55, 110)
+OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
+BG = (30, 55, 110, 165)
 SELS = ('Fluid', 'Total-Fisher', 'metabench', 'tinyBenchmarks', 'AnchorPoints', 'Random')
 
 
@@ -47,7 +47,7 @@ def main():
     panel = Panel()
     ERR = {s: {J: {B: [] for B in BG} for J in KCALS} for s in SELS}
     for seed in range(R_DRAWS):
-        hp, ht = unified_split(seed, panel.utypes, panel.J)
+        hp, ht = up_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
         typ = np.array([panel.sn[r] for r in calR])
@@ -86,7 +86,7 @@ def main():
         for s in SELS:
             key = {'Random': 'Random + IRT'}.get(s, s)
             nat[s] = {J: {B: np.mean([r['err'][key][str(B)] for r in recs if r['K'] == J]) for B in BG} for J in KCALS}
-    print('\n===== selector subsets re-scored with the SC-IRT readout (native readout in parentheses) =====')
+    print('\n===== selector subsets re-scored with the DriveAT readout (native readout in parentheses) =====')
     for Jc in KCALS:
         print(f'-- K_cal = {Jc} --      ' + ' '.join(f'{B:>15d}' for B in BG))
         for s in SELS:
@@ -98,8 +98,8 @@ def main():
     OUT.mkdir(exist_ok=True)
     json.dump({s: {str(J): {str(B): [float(x) for x in ERR[s][J][B]] for B in BG} for J in KCALS} for s in SELS},
               open(OUT / 'readout_dropin.json', 'w'))
-    for sel, J, B, v in (('Fluid', 4, 30, .0453), ('AnchorPoints', 12, 110, .0201), ('Random', 8, 110, .0221),
-                         ('Fluid', 12, 55, .0316)):
+    for sel, J, B, v in (('Fluid', 4, 30, .0536), ('AnchorPoints', 12, 110, .0219), ('Random', 8, 110, .0239),
+                         ('Fluid', 12, 55, .0290), ('tinyBenchmarks', 4, 165, .0163)):
         m = float(np.mean(ERR[sel][J][B]))
         assert abs(m - v) < .0003, (sel, J, B, m)
     print('anchors OK')

@@ -11,7 +11,7 @@ chooses the next scene. No auxiliary model, no phase switch.
 
        Each branch is scored at its own posterior median — the same L1
        Bayes action the readout reports — in the closed form of
-       `scirt.bayes.mix_l1`. Candidates of one scenario type share the
+       `driveat.bayes.mix_l1`. Candidates of one scenario type share the
        type's (theta x u) table, so the branch posteriors are vectorised
        per type.
 
@@ -21,7 +21,7 @@ chooses the next scene. No auxiliary model, no phase switch.
 """
 import numpy as np
 
-from .curves import h_
+from .curves import h_, THG
 from .bayes import mix_median, mix_l1, State, EPS
 
 
@@ -145,10 +145,37 @@ def eig_pick(state, rem):
 
 
 def r1_traj(bank, y, T):
-    """Greedy Delta-R1 rollout order of length T on a bank (the SC-IRT order)."""
+    """Greedy Delta-R1 rollout order of length T on a bank (the DriveAT order)."""
     st, S = State(bank, y), []
     for _ in range(min(T, bank.n)):
         s = r1_pick(st, [i for i in range(bank.n) if i not in S])
+        S.append(s)
+        st.add(s)
+    return S
+
+
+def fisher_pick(state, rem):
+    """1PL maximum-information rule: the item whose marginal success
+    probability at the posterior-mean ability is closest to 1/2. This is the
+    classic CAT selection rule, written against the same posterior DriveAT
+    uses, so only the objective differs."""
+    b = state.bank
+    q = state.q
+    i = int(np.argmin(np.abs(THG - float(q @ THG))))
+    ws = {}
+    for s in rem:
+        t = b.types[s]
+        if t not in ws:
+            ws[t] = state.w(t)[i]
+    p = np.array([float(ws[b.types[s]] @ b.M3[i, :, s]) for s in rem])
+    return argmin_stable(-(p * (1 - p)), rem)
+
+
+def traj(bank, y, T, pick):
+    """Greedy rollout order of length T under any of the pick rules above."""
+    st, S = State(bank, y), []
+    for _ in range(min(T, bank.n)):
+        s = pick(st, [i for i in range(bank.n) if i not in S])
         S.append(s)
         st.add(s)
     return S

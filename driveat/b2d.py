@@ -36,7 +36,7 @@ FULL_CSV = DATA / 'matrices' / 'b2d_e2e22_response_matrix.csv'         # all 22 
 
 def load_response_rows(csv_path=None):
     """Raw response matrix: (route_ids in CSV order, planner rows)."""
-    rows = list(csv.reader(open(csv_path or os.environ.get('SCIRT_RESPONSE_CSV', DEFAULT_CSV))))
+    rows = list(csv.reader(open(csv_path or os.environ.get('DRIVEAT_RESPONSE_CSV', DEFAULT_CSV))))
     rids = rows[0][1:]
     planners = [r for r in rows[1:] if r[0] != EXCLUDED_PLANNER]
     return rids, planners
@@ -44,7 +44,7 @@ def load_response_rows(csv_path=None):
 
 class Panel:
     """The 16-planner x 220-route response panel of record (one planner per
-    family, spread over the ability range; `csv_path` or SCIRT_RESPONSE_CSV
+    family, spread over the ability range; `csv_path` or DRIVEAT_RESPONSE_CSV
     selects another matrix, e.g. FULL_CSV with all 22 planners) plus
     everything the experiments need, in the canonical ordering.
 

@@ -22,7 +22,11 @@ SIGMA_G_GRID = (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
 
 def _fit(M, mk, mode, sigma_b, it=800, device='cuda', freeze_b0=False):
     """MAP fit on a (n items x K planners) response matrix with nan mask mk.
-    Returns dict(b, th, a, cc), theta-mean centred (th uncentred if freeze_b0)."""
+    Returns dict(b, th, a, cc). The zero-centred priors already identify the
+    location, so the theta-mean centring applied before returning (skipped when
+    freeze_b0) is a change of origin, not identification: the returned pair is a
+    translation of the MAP by c = mean(theta_hat), and every quantity downstream
+    is read in that frame with its prior left at zero. PROTOCOL.md section 3."""
     import torch
     Mt = torch.tensor(np.nan_to_num(M), dtype=torch.float32).to(device)
     Wt = torch.tensor(mk, dtype=torch.float32).to(device)

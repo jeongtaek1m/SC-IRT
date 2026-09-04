@@ -12,14 +12,14 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel
-from scirt.splits import unified_split, R_DRAWS, H_P, H_S
-from scirt.curves import (THG, XG, I0, PRIOR, BG, UG, USHIFT, GX, GW, marginal_curves, sig,
+from driveat.b2d import Panel
+from driveat.splits import unified_split, up_split, R_DRAWS, H_P, H_S
+from driveat.curves import (THG, XG, I0, PRIOR, BG, UG, USHIFT, GX, GW, marginal_curves, sig,
                           item_loglik, item_posteriors, curves_from_posterior, posterior_sd)
-from scirt.bayes import Bank, State, state_from, readout, track, transfer, stop_at
-from scirt.acquisition import r1_pick, r1_scores, eig_pick, r1_traj
-from scirt.metrics import ies, paired_cluster_boot
-from scirt.baselines import kmeans_anchors, anchorpoints_select, phi_distance, pam_medoids
+from driveat.bayes import Bank, State, state_from, readout, track, transfer, stop_at
+from driveat.acquisition import r1_pick, r1_scores, eig_pick, r1_traj
+from driveat.metrics import ies, paired_cluster_boot
+from driveat.baselines import kmeans_anchors, anchorpoints_select, phi_distance, pam_medoids
 
 
 @pytest.fixture(scope='module')
@@ -49,13 +49,27 @@ def test_split_draw0_pinned(panel):
 
 
 def test_splits_are_paired_across_regimes(panel):
-    """Every draw partitions both axes at once, so US/UP/UPS share it."""
+    """Every draw partitions both axes at once, so US/UPS share it with UP's planners."""
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         assert len(hp) == 4 and len(ht) == 8
         cal, new = panel.split_routes(ht)
         assert len(cal) + len(new) == 220
+        assert len(new) == 40                       # the US / UPS target block: 8 types x 5 routes
         assert all(panel.sn[r] in ht for r in new)
+
+
+def test_up_split_is_the_whole_benchmark(panel):
+    """UP holds out planners only: its bank is all 220 routes and 44 types,
+    while the US / UPS target block keeps the 36:8 type hold-out."""
+    for seed in range(R_DRAWS):
+        hp_up, ht_up = up_split(seed, panel.utypes, panel.J)
+        assert hp_up == unified_split(seed, panel.utypes, panel.J)[0]
+        assert ht_up == set()
+        cal, new = panel.split_routes(ht_up)
+        assert len(cal) == 220 and new == []
+        assert len(set(panel.sn[r] for r in cal)) == 44
+        assert min(len(panel.bank_rows(cal, j)[0]) for j in hp_up) >= 165   # every fixed budget is reachable
 
 
 def test_grid_constants():
@@ -152,7 +166,7 @@ def test_slow_anchor_entry_points_exist():
     exp = Path(__file__).resolve().parents[1] / 'experiments'
     for name in ('run_up_frontier', 'run_adaptive', 'run_tau_calibration',
                  'run_readout_dropin', 'run_us', 'run_ups', 'run_model_adequacy',
-                 'run_ablation', 'run_navhard',
+                 'run_ablation', 'run_system_ablation',
                  'run_calibration_stability', 'eval_us_predictions', 'build_data', 'make_figures'):
         assert (exp / f'{name}.py').exists(), name
 
@@ -173,7 +187,7 @@ def test_acquisition_and_readout_never_peek():
 
 
 def test_mixture_median_and_l1_against_brute_force():
-    from scirt.bayes import mix_median, mix_l1
+    from driveat.bayes import mix_median, mix_l1
     from scipy.stats import norm
     q = np.array([[0.3], [0.7]]); mu = np.array([[10.0], [20.0]]); sd = np.array([[2.0], [3.0]])
     c = mix_median(q, mu, sd, 40.0)[0]

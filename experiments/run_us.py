@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Table 3A — US: unseen-scene difficulty prediction.
 
-Pooled cell-level evaluation on C = (evaluation-type routes) x (16 calibration
+Pooled cell-level evaluation on C = (evaluation-type routes) x (12 calibration
 planners), 16 draws x ~40 routes = 640 route evaluations.
 
 Rows
@@ -12,8 +12,8 @@ Rows
   (three independent runs summarised as metric mean +- SD; prediction
   ensembling is banned).
 
-Anchors: null .694/.199; kinematics rho +.526; hand-crafted risk rho +.558;
-RelGraph mean AUROC .747 / rho +.506.
+Anchors: null .699/.214; kinematics rho +.497; hand-crafted risk rho +.533;
+RelGraph mean AUROC .751 / rho +.490.
 """
 import json
 import os
@@ -27,14 +27,14 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel, load_features, DATA
-from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate_dense, frozen_b_dense
-from scirt.curves import sig
+from driveat.b2d import Panel, load_features, DATA
+from driveat.splits import unified_split, R_DRAWS
+from driveat.calibration import calibrate_dense, frozen_b_dense
+from driveat.curves import sig
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 RUNS = (0, 1, 2)
 CONTROLS = {'noroute': 'R2 w/o route relation', 'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled'}
 

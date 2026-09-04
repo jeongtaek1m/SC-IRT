@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Diagnostic: how much do theta-hat and b-hat move between the full
-22 x 220 panel fit and the per-draw calibration block (16 planners x ~180
-routes)? Compared on the shared routes / planners. Both fits are
-theta-mean-centred on *different* planner sets, so a constant offset is an
-identification convention, not estimation change: raw and mean-aligned
+16 x 220 panel fit and the per-draw calibration block of the US / UPS split
+(12 planners x 180 calibration-type routes; `unified_split`, not the UP bank)? Compared on the shared routes / planners. Both fits are
+theta-mean-centred on *different* planner sets, so a constant offset between
+them is a difference of origin, not of fit: raw and mean-aligned
 differences are both reported, and b shifts are scaled by each route's own
 posterior SD s_i.
 """
@@ -17,14 +17,14 @@ import torch
 from scipy.stats import spearmanr
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel
-from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate
-from scirt.curves import posterior_sd
+from driveat.b2d import Panel
+from driveat.splits import unified_split, R_DRAWS
+from driveat.calibration import calibrate
+from driveat.curves import posterior_sd
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 
 
 def main():
@@ -66,7 +66,7 @@ def main():
         v = np.array([x[k] for x in L])
         return f'{v.mean():+.3f} (min {v.min():+.3f}, max {v.max():+.3f})'
 
-    print('\n===== b-hat: full 22x220 vs A-block 16x~180, shared routes (16 draws) =====')
+    print('\n===== b-hat: full 16x220 vs A-block 12x180, shared routes (16 draws) =====')
     for k in ('pearson', 'spearman', 'offset', 'rmse_raw', 'rmse_aligned', 'max_aligned', 'frac_gt_s'):
         print(f'  {k:13s} {summ(B, k)}')
     print(f'  scale: sd(b-hat) {summ(B, "sd_b")}; mean s_i  A-block {summ(B, "mean_s_A")}  full {summ(B, "mean_s_F")}')

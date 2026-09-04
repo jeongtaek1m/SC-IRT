@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 REPO = Path(__file__).resolve().parents[1]
 FEAT_SRC = Path('/data1/jeongtae/b2d_jepa/features')
 IRT = Path('/home/jeongtae/SCIRT/b2d_irt')
-RELG_RAW = Path('/data2/jeongtae/relgraph_e22')   # r2_b2d_s{0,1,2}.npz: pred (R_DRAWS, 220), routes, sigma (R_DRAWS,)
+RELG_RAW = Path('/data2/jeongtae/relgraph_e16sel')   # r2_b2d_s{0,1,2}.npz: pred (R_DRAWS, 220), routes, sigma (R_DRAWS,); the 16-planner harness the shipped npz come from
 CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
 
 FEATURES = ['eval_cmdkin_stats', 'eval_gtrisk',
@@ -55,8 +55,8 @@ def export_relgraph(src, dst):
     shared residual SD learned on that draw's calibration block). Verifies
     against the shipped file when it exists."""
     import numpy as np
-    from scirt.b2d import Panel
-    from scirt.splits import unified_split, R_DRAWS
+    from driveat.b2d import Panel
+    from driveat.splits import unified_split, R_DRAWS
     d = np.load(src, allow_pickle=True)
     routes = [str(r) for r in d['routes']]
     panel = Panel()
@@ -91,12 +91,9 @@ def main():
             src = RELG_RAW / (tag.format(s=s) + f'_b2d_s{s}.npz')
             if src.exists():
                 export_relgraph(src, REPO / 'data/encoder' / f'relgraph_r2_{name}_s{s}.npz')
-    print('navhard panel:')
-    copy_checked(IRT / 'navhard/navhard_binary_panel.npz',
-                 REPO / 'data/navhard/navhard_binary_panel.npz')
     print('checks:')
     verify_route_types()
-    src = Path('/home/jeongtae/SCIRT/SC-IRT/result/b2d/b2d_e2e16_response_matrix.csv')
+    src = Path('/home/jeongtae/SCIRT/DriveAT/result/b2d/b2d_e2e16_response_matrix.csv')
     assert md5(src) == md5(REPO / 'data/matrices/b2d_e2e16_response_matrix.csv')
     print('  response matrix identical to research copy')
     print('done')

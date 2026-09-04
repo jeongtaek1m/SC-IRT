@@ -50,7 +50,9 @@ def item_loglik(R, th, a=None):
 
 def item_posteriors(ll, sigma_b):
     """Exact conditional posterior of every difficulty given the calibration
-    abilities, prior b ~ N(0, sigma_b^2): W (n, 801) on BG."""
+    abilities, prior b ~ N(0, sigma_b^2): W (n, 801) on BG. `ll` is built from
+    the centred theta_hat, so this prior is anchored at zero in the centred
+    frame — the frame the evaluation posterior also uses (PROTOCOL section 3)."""
     lw = ll - 0.5 * (BG[None, :] / sigma_b) ** 2
     W = np.exp(lw - lw.max(1, keepdims=True))
     return W / W.sum(1, keepdims=True)

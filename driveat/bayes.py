@@ -170,13 +170,23 @@ def track(bank, y, order):
     """Readout and risk along a bank order: (S_hat[t], R1[t]) for
     t = 1..len(order). Fixed budgets read S_hat[B-1]; the stopping rule
     reads the first t with the (calibrated) risk below its target."""
+    return track3(bank, y, order)[:2]
+
+
+def track3(bank, y, order):
+    """As `track`, plus the ability posterior SD: (S_hat[t], R1[t], SD(theta)[t]).
+    SD(theta) is what an ability-precision CAT rule stops on; R1 is the
+    posterior L1 risk of the reported SR, which is what DriveAT stops on."""
     st = State(bank, y)
-    Sh, R1 = [], []
+    Sh, R1, SE = [], [], []
     for s in order:
         sh, r = st.add(s).readout()
+        q = st.q
+        m = float(q @ THG)
         Sh.append(sh)
         R1.append(r)
-    return Sh, R1
+        SE.append(float(np.sqrt(max(q @ (THG ** 2) - m * m, 0.0))))
+    return Sh, R1, SE
 
 
 def transfer(q, bank_d):

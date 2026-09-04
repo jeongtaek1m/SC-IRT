@@ -8,7 +8,7 @@ experiments/run_us.py does for every row of Table 3A.
 
     preds[draw] = (route_ids, b_tilde)      # draw in 0..15, routes of block C
 
-Ability theta_j for the 16 calibration planners comes from the canonical
+Ability theta_j for the 12 calibration planners comes from the canonical
 1PL calibration of block A (`calibration.calibrate_dense`, it = 800), so
 descriptor rows and encoder predictions are all scored on one
 theta. Predictions may be a subset of the C routes of a draw; missing

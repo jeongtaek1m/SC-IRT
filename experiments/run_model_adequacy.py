@@ -16,15 +16,15 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.b2d import Panel
-from scirt.splits import unified_split, R_DRAWS
-from scirt.calibration import calibrate
-from scirt.curves import sig
-from scirt.metrics import mean_se
+from driveat.b2d import Panel
+from driveat.splits import unified_split, R_DRAWS
+from driveat.calibration import calibrate
+from driveat.curves import sig
+from driveat.metrics import mean_se
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(os.environ.get('SCIRT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 
 
 def cell_nll(f, mode, i, k, y):

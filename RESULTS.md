@@ -4,194 +4,246 @@ Every number here is printed (and asserted, `anchors OK`) by the script named
 in each section. Conventions: K = planners, S = scenes, K_cal = calibration
 panel size, B = number of routes rolled out, SR-MAE = |SR_hat - SR| averaged
 over 64 planner evaluations per cell (16 draws x 4 evaluation planners).
-`*` marks a paired-bootstrap 95% CI vs SC-IRT that excludes zero; the
+`*` marks a paired-bootstrap 95% CI vs DriveAT that excludes zero; the
 bootstrap resamples the 16 unique planners (the same planners recur across
 draws), so differences below about .005 are read as ties. Acquisition ties
 (routes of one type with identical posteriors are exchangeable) are broken
 by bank order — a documented, deterministic choice that moves individual
 cells by up to .004 (PROTOCOL section 4).
 
+**The UP bank is the whole benchmark.** A new planner is placed on all 220
+Bench2Drive routes of all 44 scenario types, and the item bank is calibrated
+from the 12 calibration planners on those same routes; B is how many of the
+220 are actually executed. Only US and UPS hold scenario types out (36 : 8),
+because only they need routes with no calibrated difficulty.
+
 ## Table 1 — UP at fixed budgets (`run_up_frontier.py`)
 
 Unseen-planner SR reconstruction on the 16 x 220 Bench2Drive panel (one
 planner per model family, PROTOCOL section 1), random 12:4 planner split,
-B routes rolled out (30/55/110 = 5 x {6, 11, 22}).
+B routes rolled out (30/55/110/165 = 5 x {6, 11, 22, 33} = 14/25/50/75% of
+the benchmark). Each method uses its native readout.
 
-| method | K4 B30 | K4 B55 | K4 B110 | K8 B30 | K8 B55 | K8 B110 | K12 B30 | K12 B55 | K12 B110 | macro |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Random (IRT-free) | .0650* | .0420* | .0213* | .0650* | .0420* | .0213* | .0650* | .0420* | .0213* | .0428 |
-| Random + IRT | .0572 | .0384 | .0202* | .0569* | .0383* | .0208* | .0572* | .0377* | .0205* | .0386 |
-| Random-strat + IRT | .0545 | .0360 | .0168 | .0548 | .0364 | .0170 | .0537* | .0359* | .0171* | .0358 |
-| DISCO-sel + IRT | .0666* | .0408 | .0210 | .0553* | .0396 | .0237* | .0557* | .0400* | .0212* | .0404 |
-| AnchorPoints | .1447* | .1447* | .1447* | .0694* | .0523* | .0422* | .0602* | .0466* | .0245* | .0810 |
-| Total-Fisher | .0576 | .0422 | .0258* | .0606 | .0409 | .0183 | .0559 | .0399* | .0214* | .0403 |
-| Marginal-Fisher | .0556 | .0479* | .0249* | .0609 | .0440* | .0207* | .0578* | .0378* | .0217* | .0413 |
-| tinyBenchmarks-lite | .0748* | .0465* | .0281* | .0513 | .0400 | .0172 | .0493 | .0374* | .0189* | .0404 |
-| metabench-lite | .0555 | .0335 | .0202 | .0533 | .0416 | .0204* | .0554 | .0381* | .0205* | .0376 |
-| Fluid-style | .0460 | .0380 | .0220* | .0500 | .0334 | .0200* | .0398 | .0282 | .0174* | .0327 |
-| **SC-IRT** | .0484 | **.0344** | **.0161** | **.0450** | **.0312** | **.0147** | .0410 | **.0232** | **.0125** | **.0296** |
+| method | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Random (IRT-free) | .0623* | .0397 | .0245 | .0144* | .0623* | .0397 | .0245* | .0144* | .0623* | .0397* | .0245* | .0144* | .0352 |
+| Random + IRT | .0536 | .0368 | .0232 | .0138 | .0536 | .0362 | .0232 | .0133* | .0534 | .0362* | .0227* | .0132* | .0316 |
+| Random-strat + IRT | .0594* | .0353 | .0210 | .0122 | .0568 | .0331 | .0194 | .0113* | .0565 | .0332* | .0195 | .0112 | .0307 |
+| DISCO-sel + IRT | .0614* | .0374 | .0299 | .0140 | .0538 | .0423 | .0264* | .0134* | .0594 | .0417* | .0263* | .0110* | .0348 |
+| AnchorPoints | .1290* | .1290* | .1290* | .1290* | .0552 | .0485* | .0397* | .0397* | .0583 | .0445* | .0286* | .0167* | .0706 |
+| Total-Fisher | .0604* | .0450* | .0306* | .0209* | .0620* | .0401 | .0215 | .0117 | .0585 | .0431* | .0225* | .0136* | .0358 |
+| Marginal-Fisher | .0560 | .0473* | .0328* | .0207* | .0625 | .0407 | .0240 | .0108 | .0583 | .0390* | .0237* | .0133* | .0358 |
+| tinyBenchmarks-lite | .0755* | .0621* | .0334* | .0184* | .0472 | .0378 | .0168 | .0139* | .0508 | .0334* | .0235* | .0112 | .0353 |
+| metabench-lite | .0615 | .0430* | .0250 | .0157* | .0497 | .0433 | .0266 | .0142* | .0643 | .0427* | .0221 | .0130* | .0351 |
+| Fluid-style | .0653* | .0385 | .0312* | .0166* | .0499 | .0364 | .0210 | .0105 | .0404 | .0281 | .0243* | .0119* | .0312 |
+| **DriveAT** | **.0450** | **.0332** | .0223 | **.0116** | **.0448** | .0337 | .0202 | **.0082** | .0477 | **.0231** | **.0160** | **.0081** | **.0262** |
 
 The three random-policy rows are the expected error over five independent
-orders per evaluation (the single-order value moves by up to .004 per cell
-between seeds); every other row is deterministic. AnchorPoints is
+orders per evaluation; every other row is deterministic. AnchorPoints is
 degenerate at K_cal = 4: four binary responses admit at most 16 distinct
 route patterns, the correlation distance collapses and the same anchor
 estimate comes out at every budget.
 
-Reading. SC-IRT has the lowest error in 7 of 9 cells; at B = 30 for
-K_cal = 4 and 12 the Fluid order is lower by .001-.002 (inside the
-intervals). The macro average is .0296 against .0327 for Fluid-style, the
-best baseline, .0358 for type-stratified Random (which uses the same
-scenario grouping) and .0376 for metabench-lite. The gap opens with the
-calibration panel: at K_cal = 12 SC-IRT is .0232 / .0125 at B = 55 / 110
-against .0282 / .0174 for Fluid and .0359* / .0171* for the stratified
-order, and at B = 110 every baseline is significantly worse for every
-K_cal except the stratified order and tinyBenchmarks / Total-Fisher at
-K_cal = 4 / 8. At B = 30 no method separates from SC-IRT except the
-IRT-free / uniform Random rows and the degenerate ones.
+Reading. DriveAT has the lowest error in 8 of 12 cells and the lowest macro
+average by a clear margin (.0262 against .0307 for type-stratified Random,
+.0312 for Fluid-style and .0316 for Random + IRT). The four cells it does
+not win are ties inside the intervals: K4 B110 and K8 B55/B110, where the
+type-stratified order or tinyBenchmarks is lower by .001-.003, and K12 B30,
+where Fluid is lower by .007. The margin grows with the budget and with the
+calibration panel — at K_cal = 12 DriveAT is .0231 / .0160 / .0081 at
+B = 55 / 110 / 165 while every baseline sits at .0195-.0427 — because a
+better-calibrated bank makes the Delta-R1 score sharper.
+
+**What each budget buys.** SR-MAE is an average; the decision a user makes
+needs the distribution. Over the same 64 evaluations, DriveAT's estimate and
+the pairwise ranking of the four evaluation planners within a draw:
+
+| K_cal | B | SR-MAE | within 1 pt | within 2 pt | within 3 pt | pairwise rank correct |
+|---|---|---|---|---|---|---|
+| 4 | 30 | .0450 | 20% | 27% | 38% | 91.7% |
+| 4 | 55 | .0332 | 17% | 33% | 55% | 92.7% |
+| 4 | 110 | .0223 | 25% | 50% | 70% | 93.8% |
+| 4 | 165 | .0116 | 52% | 84% | 98% | 99.0% |
+| 8 | 30 | .0448 | 11% | 31% | 44% | 93.8% |
+| 8 | 55 | .0337 | 19% | 36% | 56% | 90.6% |
+| 8 | 110 | .0202 | 20% | 55% | 80% | 95.8% |
+| 8 | 165 | .0082 | 70% | 94% | 97% | 100.0% |
+| 12 | 30 | .0477 | 11% | 22% | 36% | 89.6% |
+| 12 | 55 | .0231 | 31% | 48% | 70% | 95.8% |
+| 12 | 110 | .0160 | 36% | 70% | 84% | 97.9% |
+| 12 | 165 | .0081 | 72% | 94% | 98% | 100.0% |
+
+Reading. The two questions separate. Ordering planners is nearly settled at
+14% of the cost: 90-94% of the within-draw pairs are already in the right
+order at B = 30. Reporting an SR number is not: at B = 30 only 36-44% of
+estimates land within 3 SR points, which is the resolution a leaderboard
+entry needs, and that only reaches 70-84% at B = 110 and 97-98% at B = 165.
+The low budgets are therefore a ranking regime, not a reporting regime, and
+the stopping rule below never selects one — it spends 70-129 routes.
 
 ## Table 2 — risk-target stopping (`run_tau_calibration.py`, `run_adaptive.py`)
 
-Each order stops at the first t with c * R1_t <= eps, where R1 is the
-posterior L1 risk of the reported SR under the common readout and c is
-that order's calibration-fixed risk scale (leave-one-planner-out on the
-calibration panel, 90th percentile of realised / predicted error over the
-whole bank; never selected on evaluation planners; SC-IRT: c = 2.09 /
-2.12 / 1.94 at K_cal = 4 / 8 / 12). eps is an *error* target. Every
-trajectory runs through the whole per-draw bank (180 routes), so no stop
-is censored by a cap. Columns: mean rollouts spent, SR-MAE at the stop,
-coverage P(|SR_hat - SR| <= eps), and the calibration gap (mean realised
-error minus mean c * R1 at the stop; negative = conservative). d = paired
-delta of the SR-MAE vs SC-IRT.
+The configuration a user of the tool is actually in: 12 calibration
+planners, a new planner, the whole 220-route benchmark, and no budget
+chosen in advance. Each order stops at the first t with c * R1_t <= eps,
+where R1 is the posterior L1 risk of the reported SR under the common
+readout and c is that order's calibration-fixed risk scale
+(leave-one-planner-out on the calibration panel, 90th percentile of
+realised / predicted error over t in [10, 220]; never selected on
+evaluation planners; DriveAT: c = 1.97 / 2.12 / 1.95 at K_cal = 4 / 8 / 12).
+eps is an *error* target. No trajectory is censored: every order may run to
+route 220, and none did (cap 0% everywhere). Columns: mean rollouts spent
+and the same as a fraction of the benchmark, SR-MAE at the stop, the
+calibration gap (mean realised error minus mean c * R1 at the stop; negative =
+conservative), and the paired delta of the SR-MAE vs DriveAT.
 
-| K_cal | eps | method | rollouts | SR-MAE | coverage | gap | d vs SC-IRT |
+| K_cal | eps | method | rollouts | of 220 | SR-MAE | gap | d vs DriveAT |
 |---|---|---|---|---|---|---|---|
-| 4 | .05 | **SC-IRT** | **75.7** | .0245 | .86 | -.025 | — |
-| | | Fluid | 86.3 | .0268 | .88 | -.023 | +.0023 |
-| | | metabench | 97.1 | .0236 | .91 | -.026 | -.0009 |
-| | | Random | 83.3 | .0248 | .86 | -.025 | +.0003 |
-| | | Random-strat | 89.2 | .0222 | .94 | -.028 | -.0023 |
-| 4 | .03 | **SC-IRT** | **113.5** | .0148 | .84 | -.015 | — |
-| | | Fluid | 121.5 | .0186 | .84 | -.011 | +.0038 |
-| | | metabench | 137.0 | .0135 | .91 | -.016 | -.0013 |
-| | | Random | 124.9 | .0156 | .91 | -.014 | +.0008 |
-| | | Random-strat | 130.1 | .0128 | .94 | -.017 | -.0020 |
-| 8 | .05 | **SC-IRT** | **74.2** | .0236 | .94 | -.026 | — |
-| | | Fluid | 89.9 | .0239 | .95 | -.026 | +.0003 |
-| | | metabench | 103.7 | .0218 | .98 | -.028 | -.0018 |
-| | | Random | 89.0 | .0263 | .88 | -.023 | +.0026 |
-| | | Random-strat | 89.4 | .0204 | .95 | -.029 | -.0033 |
-| 8 | .03 | **SC-IRT** | **111.3** | .0141 | .94 | -.016 | — |
-| | | Fluid | 123.2 | .0152 | .91 | -.015 | +.0011 |
-| | | metabench | 141.5 | .0131 | .97 | -.017 | -.0010 |
-| | | Random | 130.1 | .0150 | .84 | -.015 | +.0009 |
-| | | Random-strat | 130.5 | .0130 | .94 | -.017 | -.0011 |
-| 12 | .05 | **SC-IRT** | **65.3** | .0219 | .94 | -.028 | — |
-| | | Fluid | 77.6 | .0269 | .91 | -.023 | +.0050 |
-| | | metabench | 94.1 | .0244 | .94 | -.025 | +.0026 |
-| | | Random | 89.1 | .0254 | .88 | -.024 | +.0035 |
-| | | Random-strat | 84.9 | .0209 | .94 | -.029 | -.0010 |
-| 12 | .03 | **SC-IRT** | **102.1** | .0146 | .91 | -.015 | — |
-| | | Fluid | 113.9 | .0171 | .78 | -.013 | +.0025 |
-| | | metabench | 135.5 | .0129 | .91 | -.017 | -.0017 |
-| | | Random | 130.5 | .0153 | .88 | -.014 | +.0007 |
-| | | Random-strat | 127.4 | .0137 | .95 | -.016 | -.0009 |
+| 4 | .05 | **DriveAT** | **83.5** | **38%** | .0272 | -.023 | — |
+| | | Fluid | 99.1 | 45% | .0282 | -.021 | +.0011 |
+| | | metabench | 108.8 | 49% | .0265 | -.023 | -.0007 |
+| | | Random | 98.7 | 45% | .0267 | -.023 | -.0005 |
+| | | Random-strat | 87.9 | 40% | .0219 | -.028 | -.0053 |
+| 4 | .03 | **DriveAT** | **128.9** | **59%** | .0164 | -.013 | — |
+| | | Fluid | 142.3 | 65% | .0194 | -.010 | +.0031 |
+| | | metabench | 160.1 | 73% | .0138 | -.016 | -.0026 |
+| | | Random | 150.5 | 68% | .0154 | -.014 | -.0009 |
+| | | Random-strat | 139.9 | 64% | .0130 | -.017 | -.0033 |
+| 8 | .05 | **DriveAT** | **79.0** | **36%** | .0281 | -.022 | — |
+| | | Fluid | 98.8 | 45% | .0216 | -.028 | -.0065 |
+| | | metabench | 118.5 | 54% | .0212 | -.029 | -.0069 |
+| | | Random | 93.3 | 42% | .0260 | -.024 | -.0021 |
+| | | Random-strat | 87.7 | 40% | .0208 | -.029 | -.0073 |
+| 8 | .03 | **DriveAT** | **124.9** | **57%** | .0174 | -.013 | — |
+| | | Fluid | 142.0 | 65% | .0172 | -.013 | -.0002 |
+| | | metabench | 167.4 | 76% | .0141 | -.016 | -.0033 |
+| | | Random | 146.2 | 66% | .0165 | -.013 | -.0008 |
+| | | Random-strat | 140.3 | 64% | .0122 | -.018 | -.0051* |
+| 12 | .05 | **DriveAT** | **70.3** | **32%** | **.0207** | -.029 | — |
+| | | Fluid | 88.4 | 40% | .0283 | -.021 | +.0076* |
+| | | metabench | 107.6 | 49% | .0229 | -.027 | +.0022 |
+| | | Random | 91.2 | 41% | .0294 | -.020 | +.0087* |
+| | | Random-strat | 87.4 | 40% | .0221 | -.028 | +.0015 |
+| 12 | .03 | **DriveAT** | **114.8** | **52%** | .0138 | -.016 | — |
+| | | Fluid | 132.0 | 60% | .0190 | -.011 | +.0052* |
+| | | metabench | 159.7 | 73% | .0136 | -.016 | -.0002 |
+| | | Random | 144.1 | 65% | .0177 | -.012 | +.0039 |
+| | | Random-strat | 140.8 | 64% | .0112 | -.019 | -.0026 |
 
-Reading. For an error target of .05, SC-IRT stops after 65-76 rollouts
-(36-42% of the per-draw bank, 30-34% of the 220-route benchmark) with
-86-94% coverage; the same target costs Fluid 78-90, Random 83-89, the
-type-stratified order 85-89 and metabench 94-104 rollouts. For .03 every
-order needs more than half the bank; SC-IRT reaches it earliest (102-114
-rollouts) with 84-94% coverage, the others 114-142. No paired difference
-in the error at the stop is significant: the orders that spend 12-40 more
-rollouts arrive at a similar or slightly lower error (Random-strat -.001
-to -.003), i.e. the rule trades rollouts against error through the
-acquisition, which makes R1 fall faster, not through the scale. The
-negative gaps say the scaled risk is conservative in the mean; the
-90th-percentile scale fixed on the calibration panel transfers to the
-evaluation planners at the nominal 90% or above for K_cal = 8 / 12 and at
-84-86% for K_cal = 4, where the four-planner calibration gives the
-error / risk ratio a heavier tail. The raw R1 itself tracks the realised
-error: pooled over the LOO tracks, the decile means of raw R1 and of
-|SR_hat - SR| agree within .011 at every K_cal (e.g. K_cal = 8: .0028 /
-.0025 in the lowest decile, .0162 / .0176 in the middle, .0622 / .0704 in
-the highest).
+Reading. For an error target of .05, DriveAT stops after 70-84 of the 220
+routes (32-38% of the benchmark); the same target costs
+Fluid 88-99, Random 91-99, the type-stratified order 87-88 and metabench
+108-119 routes. For .03 it needs 115-129 routes (52-59%) against 132-167 for
+the others. The saving is the acquisition, not the scale: every order
+carries its own leave-one-planner-out c, and the orders that keep going
+arrive at a similar error. Only at K_cal = 12 does the error difference
+reach significance, and there DriveAT is the *better* one (-.008 vs Random,
+-.008 vs Fluid at eps = .05); at K_cal = 8 the type-stratified order reaches
+eps = .03 with a lower error (-.005*) for 15 more routes. The negative gaps
+say the scaled risk is conservative in the mean. The raw R1 tracks the
+realised error: pooled over the LOO tracks, the decile means of raw R1 and
+of |SR_hat - SR| agree within .012 at every K_cal (K_cal = 8: .0025 / .0021
+in the lowest decile, .0147 / .0159 in the middle, .0601 / .0652 in the
+highest).
 
 **Matched cost (appendix).** The earlier rule — tau_hat chosen so that the
-LOO mean rollouts hit 30 / 55 — is kept as the cost-matched comparison;
-IES = (SR-MAE / Random-at-fixed-55) x (rollouts / 55):
+LOO mean rollouts hit a target — is kept as the cost-matched comparison. At
+its own calibration-fixed tau, DriveAT's adaptive stop matches its own
+fixed-budget curve at the same mean cost within .005 in every cell
+(K_cal = 12, tau = .040: 37.5 rollouts, .0344 adaptive vs .0391 fixed), so
+the stopping rule spends the budget as well as an oracle that had been told
+the budget in advance.
 
-| cell | SC-IRT | Fluid | metabench | Random | Random-strat |
-|---|---|---|---|---|---|
-| K4 target 30 | .0449 (29.8, IES .65) | .0483 (+.0034) | .0558 (+.0109) | .0626 (+.0177*) | .0527 (+.0078) |
-| K4 target 55 | .0341 (54.3, .91) | .0362 (+.0021) | .0354 (+.0013) | .0373 (+.0032) | .0358 (+.0018) |
-| K8 target 30 | .0456 (29.5, .62) | .0442 (-.0014) | .0532 (+.0076) | .0677 (+.0221*) | .0534 (+.0078) |
-| K8 target 55 | .0347 (53.6, .85) | .0283 (-.0064) | .0423 (+.0075) | .0415 (+.0068) | .0321 (-.0027) |
-| K12 target 30 | .0428 (30.0, .61) | .0379 (-.0049) | .0498 (+.0070) | .0659 (+.0231*) | .0496 (+.0068) |
-| K12 target 55 | .0262 (55.4, .69) | .0284 (+.0022) | .0335 (+.0073) | .0392 (+.0130*) | .0331 (+.0069) |
+## Full-system ablation (`run_system_ablation.py`)
 
-Realised budgets land on target without post-hoc adjustment (29.5-30.0,
-53.6-55.4). SC-IRT is best or tied-best in four cells; Fluid is lower at
-K8 / K12 target 30 and at K8 target 55 (-.0014 to -.0064, all ns) and the
-type-stratified order at K8 target 55 (-.0027, ns).
+DriveAT is two IRT pieces (the exact difficulty posterior, the planner x type
+testlet) and two CAT pieces (the Delta-R1 acquisition, the LOO-calibrated
+risk scale c). Each is switched off alone and scored twice: at the fixed
+budget B = 55, and under the risk-target rule. Removing c means stopping on
+the raw R1 (c = 1), which changes nothing at a fixed budget.
 
-## Component ablation (`run_ablation.py`)
+| K_cal | arm | B55 SR-MAE | eps=.05 roll / MAE | eps=.03 roll / MAE |
+|---|---|---|---|---|
+| 4 | **DriveAT (full)** | .0332 | **83.5** / .0272 | **128.9** / .0164 |
+| | w/o b posterior | .0333 (+.0001) | 87.7 / .0266 | 131.2 / .0183 |
+| | w/o testlet | .0477 (+.0145*) | 96.3 / .0283 | 139.2 / .0174 |
+| | w/o Delta-R1 acquisition | .0405 (+.0074) | 98.7 / .0267 | 150.5 / .0154 |
+| | w/o LOO calibration of c | .0332 (=) | 29.0 / .0423 | 63.7 / .0299 |
+| 8 | **DriveAT (full)** | .0337 | **79.0** / .0281 | **124.9** / .0174 |
+| | w/o b posterior | .0344 (+.0007) | 78.4 / .0263 | 123.3 / .0162 |
+| | w/o testlet | .0383 (+.0046) | 102.3 / .0273 | 144.7 / .0147 |
+| | w/o Delta-R1 acquisition | .0385 (+.0048) | 93.3 / .0260 | 146.2 / .0165 |
+| | w/o LOO calibration of c | .0337 (=) | 26.8 / .0501 | 58.7 / .0365 |
+| 12 | **DriveAT (full)** | .0231 | **70.3** / .0207 | **114.8** / .0138 |
+| | w/o b posterior | .0270 (+.0039) | 72.1 / .0254 | 116.4 / .0136 |
+| | w/o testlet | .0414 (+.0184*) | 94.4 / .0255 | 136.9 / .0169 |
+| | w/o Delta-R1 acquisition | .0393 (+.0162*) | 91.2 / .0294 | 144.1 / .0177 |
+| | w/o LOO calibration of c | .0231 (=) | 25.9 / .0535 | 57.4 / .0251 |
 
-Three components sit on top of a plug-in Rasch: the exact difficulty
-posterior (off = point curves at b_hat), the planner x type testlet (off =
-sigma_g = 0) and the risk acquisition (off = a random order under the same
-posterior). Each is switched off alone; paired deltas vs full:
+Reading. The four pieces fail in different ways, which is why all four are
+in the method. Dropping the LOO calibration is the one that breaks the
+guarantee: the raw risk stops after 26-29 routes, less than half the cost,
+but the realised error at that stop is .042-.054 against the .05 target it
+claims to have met, so the saving is not real. Dropping the testlet or the
+acquisition keeps the error at the target but pays for it in routes, 16-24
+more at eps = .05 and 10-30 more at eps = .03, and costs .005-.018 SR-MAE at
+a fixed budget. The difficulty posterior is the smallest piece: it is
+neutral at K_cal = 4 / 8 and worth .004 SR-MAE at K_cal = 12, where the bank
+is sharp enough for the shape of the posterior to matter.
+
+## Component ablation at fixed budgets (`run_ablation.py`)
+
+The same three switchable components across the whole budget grid; paired
+deltas vs full:
 
 | cell | full | w/o b-uncertainty | w/o testlet | w/o risk acquisition |
 |---|---|---|---|---|
-| K4 B30 | .0484 | .0551 (+.0067) | .0612 (+.0128*) | .0566 (+.0082) |
-| K4 B55 | .0344 | .0327 (-.0017) | .0407 (+.0062) | .0371 (+.0027) |
-| K4 B110 | .0161 | .0174 (+.0013) | .0175 (+.0014) | .0208 (+.0047) |
-| K8 B30 | .0450 | .0462 (+.0012) | .0519 (+.0069) | .0589 (+.0139) |
-| K8 B55 | .0312 | .0300 (-.0013) | .0383 (+.0071*) | .0398 (+.0086*) |
-| K8 B110 | .0147 | .0136 (-.0011) | .0198 (+.0050*) | .0221 (+.0074*) |
-| K12 B30 | .0410 | .0370 (-.0040) | .0547 (+.0137*) | .0591 (+.0180*) |
-| K12 B55 | .0232 | .0249 (+.0017) | .0325 (+.0092*) | .0382 (+.0150*) |
-| K12 B110 | .0125 | .0119 (-.0006) | .0176 (+.0051*) | .0219 (+.0094*) |
+| K4 B30 | .0450 | .0454 (+.0004) | .0595 (+.0145) | .0551 (+.0101) |
+| K4 B55 | .0332 | .0333 (+.0001) | .0477 (+.0145*) | .0405 (+.0074) |
+| K4 B110 | .0223 | .0238 (+.0014) | .0241 (+.0017) | .0243 (+.0020) |
+| K4 B165 | .0116 | .0107 (-.0009) | .0126 (+.0010) | .0134 (+.0017) |
+| K8 B30 | .0448 | .0398 (-.0050) | .0585 (+.0137) | .0567 (+.0119) |
+| K8 B55 | .0337 | .0344 (+.0007) | .0383 (+.0046) | .0385 (+.0048) |
+| K8 B110 | .0202 | .0193 (-.0009) | .0252 (+.0050) | .0239 (+.0036) |
+| K8 B165 | .0082 | .0074 (-.0008*) | .0101 (+.0019) | .0133 (+.0051*) |
+| K12 B30 | .0477 | .0467 (-.0010) | .0595 (+.0118) | .0577 (+.0100) |
+| K12 B55 | .0231 | .0270 (+.0039) | .0414 (+.0184*) | .0393 (+.0162*) |
+| K12 B110 | .0160 | .0161 (+.0000) | .0238 (+.0078*) | .0244 (+.0084*) |
+| K12 B165 | .0081 | .0076 (-.0006*) | .0110 (+.0029*) | .0134 (+.0052*) |
 
-Reading. The risk acquisition carries the fixed-budget error (+.003 to
-+.018 when removed, significant at K8 B >= 55 and in every K12 cell). The
-testlet is the second load-bearing piece: removing it costs +.001 to +.014,
-significantly at K4 B30, K8 B >= 55 and every K12 cell — the
-independent-item model re-samples scenario types it has already seen and
-mis-prices the remaining ones. The difficulty posterior is neutral for the
-point estimate at fixed budgets (all cells inside +-.007, none significant):
-its role is the risk — it is what makes R1 track the realised error
-(Table 2) and what gives all-pass / all-fail routes a one-sided difficulty
-instead of a symmetric one.
+Reading. The testlet and the acquisition carry the fixed-budget error, most
+clearly at K_cal = 12 where both are significant at every budget from 55 up
+(+.003 to +.018). The difficulty posterior is neutral for the point
+estimate — every cell is inside +-.005 and the two significant ones favour
+the point curves by .0006-.0008 at B = 165 — because its job is the risk,
+not the estimate.
 
-## What the testlet does (`run_ablation.py`, `run_tau_calibration.py` / `run_adaptive.py` with `SCIRT_NO_TESTLET=1`)
+## What the testlet does (`run_ablation.py`, `run_tau_calibration.py` / `run_adaptive.py` with `DRIVEAT_NO_TESTLET=1`)
 
-The same SC-IRT with sigma_g fixed to 0 (routes of one type conditionally
+The same DriveAT with sigma_g fixed to 0 (routes of one type conditionally
 independent), everything else unchanged:
 
 | | with testlet | without (sigma_g = 0) |
 |---|---|---|
-| Table 1, SC-IRT B30 / B55 / B110 at K4 | .0484 / .0344 / .0161 | .0612* / .0407 / .0175 |
-| at K8 | .0450 / .0312 / .0147 | .0519 / .0383* / .0198* |
-| at K12 | .0410 / .0232 / .0125 | .0547* / .0325* / .0176* |
-| raw R1 vs realised error, LOO deciles 1 / 5 / 10 at K4 | .0034/.0032, .0177/.0193, .0657/.0761 | .0037/.0035, .0181/.0211, .0664/.0795 |
-| at K8 | .0028/.0025, .0162/.0176, .0622/.0704 | .0028/.0027, .0159/.0224, .0618/.0734 |
-| at K12 | .0024/.0021, .0153/.0162, .0603/.0606 | .0024/.0023, .0147/.0196, .0590/.0624 |
-| risk scale c (SC-IRT) at K4 / 8 / 12 | 2.09 / 2.12 / 1.94 | 2.27 / 2.78 / 2.55 |
-| eps = .05: rollouts, SR-MAE, coverage at K4 | 75.7, .0245, .86 | 85.8, .0302, .78 |
-| at K8 | 74.2, .0236, .94 | 90.3, .0254, .88 |
-| at K12 | 65.3, .0219, .94 | 80.1, .0249, .86 |
-| eps = .03: coverage at K4 / 8 / 12 | .84 / .94 / .91 | .84 / .89 / .83 |
+| DriveAT B30 / B55 / B110 / B165 at K4 | .0450 / .0332 / .0223 / .0116 | .0595 / .0477* / .0241 / .0126 |
+| at K8 | .0448 / .0337 / .0202 / .0082 | .0585 / .0383 / .0252 / .0101 |
+| at K12 | .0477 / .0231 / .0160 / .0081 | .0595 / .0414* / .0238* / .0110* |
+| raw R1 vs realised error, LOO deciles 1 / 5 / 10 at K4 | .0030/.0029, .0157/.0174, .0627/.0749 | .0032/.0032, .0159/.0197, .0631/.0749 |
+| at K8 | .0025/.0021, .0147/.0159, .0601/.0652 | .0025/.0024, .0145/.0216, .0594/.0762 |
+| at K12 | .0022/.0019, .0140/.0144, .0585/.0579 | .0022/.0021, .0134/.0190, .0568/.0640 |
+| risk scale c (DriveAT) at K4 / 8 / 12 | 1.97 / 2.12 / 1.95 | 2.30 / 2.88 / 2.77 |
+| eps = .05: rollouts, SR-MAE at K4 | 83.5, .0272 | 96.3, .0283 |
+| at K8 | 79.0, .0281 | 102.3, .0273 |
+| at K12 | 70.3, .0207 | 94.4, .0255 |
+| eps = .03: rollouts at K4 / 8 / 12 | 128.9 / 124.9 / 114.8 | 139.2 / 144.7 / 136.9 |
 
-Reading. Without the dependence structure the posterior L1 risk
-under-states the realised error in the middle deciles by 17-41% (K8 middle
-decile .0159 vs .0224) and in the top decile by 6-19%, so the calibration
-has to inflate it (c 2.3-2.8 instead of 1.9-2.1), the error target of .05
-costs 80-90 rollouts instead of 65-76 with lower coverage (.78-.88 instead
-of .86-.94), and the fixed-budget error rises in every cell. The testlet is
-not a patch for one K_cal: it is what makes R1 a risk. The grouping it
-uses is the benchmark's own scenario-type annotation, entered only as
+Reading. Without the dependence structure the posterior L1 risk under-states
+the realised error in the middle deciles by 26-47% (K8 middle decile .0145
+vs .0216) and in the top decile by 12-19%, so the calibration has to inflate
+it (c 2.3-2.9 instead of 1.9-2.1), the error target of .05 costs 94-102
+routes instead of 70-84, and the fixed-budget error rises in every cell. The
+testlet is not a small-panel patch: it is what makes R1 a risk. The grouping
+it uses is the benchmark's own scenario-type annotation, entered only as
 "these routes share an offset"; no difficulty or feature is read from it
 (PROTOCOL section 1).
 
@@ -215,7 +267,7 @@ the 12 calibration planners). Planner-only null: AUROC .699 / scene-MAE
 | Agent-JEPA | .696 | .217 (-1.5%) | +.001 |
 | Kinematics (cmdkin, 25d) | .752 | .180 (+15.6%) | +.497 |
 | Hand-crafted risk (cmdkin+gtrisk, 73d) | .758 | .175 (+18.0%) | +.533 |
-| **SC-IRT: RelGraph R2 scene encoder (3 runs)** | **.751 +- .003** | **.192 +- .003** | **+.490 +- .016** |
+| **DriveAT: RelGraph R2 scene encoder (3 runs)** | **.751 +- .003** | **.192 +- .003** | **+.490 +- .016** |
 | Oracle (response-calibrated) | .870 | .037 | +.995 |
 
 Reading. The learned relational encoder and the two hand-crafted stacks
@@ -274,7 +326,7 @@ success rate on the probed routes, used as-is for block D.
 | Random | .1129 | .6021 | .1057 | .5932 | .0985 | .5872 |
 | theta-EIG (abl.) | .0966 | .5868 | .0949 | .5852 | .0953 | .5865 |
 | 2PL Fisher (abl.) | .0997 | .5889 | .0986 | .5876 | .0953 | .5873 |
-| **SC-IRT (Delta-R1 on D)** | **.0950** | **.5857** | .0936 | **.5848** | .0950 | **.5863** |
+| **DriveAT (Delta-R1 on D)** | **.0950** | **.5857** | .0936 | **.5848** | .0950 | **.5863** |
 
 Reading. The transport is a per-cell result, not a block-SR result: it
 lowers the predictive NLL of the unseen cells from .62-.64 to .585-.587
@@ -292,67 +344,28 @@ target-aligned Delta-R1 is ahead of Random by .018* / .012* / .004 and of
 the ablations by .000-.005 (ns); the probe placement matters at low
 budgets, and only through the prior.
 
-## Table 4 — the two-stage panel (`run_navhard.py`)
-
-The same UP protocol on a panel with a different simulator, metric and
-evaluation stage: the NAVSIM navhard leaderboard (two-stage
-pseudo-closed-loop EPDMS), 87 unique submissions x 225 scored units,
-pass = EPDMS >= 0.5. Per draw, 6 evaluation planners (96 evaluations per
-cell); K_cal subsampled from the remaining 81 ({4, 8, 12} as on
-Bench2Drive, plus the full 81); budgets are unit counts and there is no
-scenario-type structure (sigma_g = 0, i.e. the independent-item special
-case). SR-MAE; the strongest competitor per cell in parentheses:
-
-| K_cal | B=30 | B=55 | B=110 |
-|---|---|---|---|
-| 4 | .0584 (Random+IRT .0523) | .0386 (Random+IRT .0385) | **.0231** (Random+IRT .0245) |
-| 8 | .0515 (metabench .0453) | .0373 (Random+IRT .0369) | **.0216** (Random+IRT .0236) |
-| 12 | .0514 (Fluid .0408) | .0367 (Fluid .0315) | **.0215** (Random+IRT .0233) |
-| 81 | .0464 (Fluid .0304*) | .0360 (DISCO-sel .0293*) | .0169 (Fluid .0150) |
-
-Reading. On a panel SC-IRT was never tuned on and where it has no
-grouping to exploit, it is best at B = 110 for every Bench2Drive-sized
-calibration panel, tied at B = 55 for K_cal = 4 / 8 (within .0004 of
-Random + IRT) and behind at B = 30 and at K12 B55 — by .006 to Random +
-IRT / metabench at K_cal = 4 / 8 and by .011 / .005 to Fluid at K_cal = 12,
-none significant. Random + IRT (expected error over five orders) is the
-strongest competitor: a plug-in IRT readout on a random subset is hard to
-beat when the units are exchangeable and the calibration panel is a
-handful of submissions drawn from a heterogeneous leaderboard. Several
-published orderings are significantly worse (K_cal = 4: both Fisher
-orders, tinyBenchmarks and Fluid at B >= 55; AnchorPoints everywhere).
-The picture inverts with the full 81-planner calibration panel at the
-low budgets, where 2PL discrimination is precisely estimated and Fluid /
-Fisher orderings win by a margin (.0304* vs .0464 at B30) — a regime that
-does not exist on Bench2Drive (16 planners in total) and that the 1PL
-evaluation model does not try to exploit. Caveats (REPRODUCIBILITY.md):
-the leaderboard is dominated by a few teams' submission sweeps and
-near-duplicates can straddle the planner split; this affects all methods
-identically but limits reading the panel as 87 independent planners.
-
 ## Readout drop-in (`run_readout_dropin.py`)
 
 Analysis, not a headline: every baseline's selected subset re-scored with
-the SC-IRT readout (exact posteriors, testlet, posterior median). SR-MAE:
+the DriveAT readout (exact posteriors, testlet, posterior median). SR-MAE:
 
-| selector (subset) | K4 B30 | K4 B55 | K4 B110 | K12 B30 | K12 B55 | K12 B110 |
-|---|---|---|---|---|---|---|
-| Fluid | .0453 | .0360 | .0177 | .0398 | .0316 | .0158 |
-| Total-Fisher | .0563 | .0411 | .0223 | .0487 | .0336 | .0188 |
-| metabench | .0544 | .0346 | .0192 | .0520 | .0362 | .0201 |
-| tinyBenchmarks | .0684 | .0455 | .0245 | .0497 | .0373 | .0187 |
-| AnchorPoints | .0675 | .0499 | .0238 | .0563 | .0396 | .0201 |
-| Random | .0566 | .0371 | .0208 | .0591 | .0382 | .0219 |
-| SC-IRT (own order, Table 1) | .0484 | .0344 | .0161 | .0410 | .0232 | .0125 |
+| selector (subset) | K4 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 |
+|---|---|---|---|---|---|---|---|---|
+| Fluid | .0536 | .0359 | .0247 | .0135 | .0410 | .0290 | .0225 | .0113 |
+| Total-Fisher | .0570 | .0419 | .0254 | .0170 | .0496 | .0367 | .0209 | .0147 |
+| metabench | .0613 | .0420 | .0242 | .0136 | .0617 | .0372 | .0220 | .0119 |
+| tinyBenchmarks | .0754 | .0608 | .0275 | .0163 | .0498 | .0359 | .0222 | .0104 |
+| AnchorPoints | .0687 | .0493 | .0313 | .0166 | .0524 | .0369 | .0219 | .0101 |
+| Random | .0551 | .0405 | .0243 | .0134 | .0577 | .0393 | .0244 | .0134 |
+| DriveAT (own order, Table 1) | .0450 | .0332 | .0223 | .0116 | .0477 | .0231 | .0160 | .0081 |
 
-Reading. Under one readout the remaining differences are selection: the
-SC-IRT order beats every re-scored subset at K12 B55 / B110 by .008-.016
-and at K4 B110 by .002-.008, and ties the Fluid subset at B = 30 (.0453 /
-.0398 vs .0484 / .0410) and the Fluid / metabench subsets at K4 B55. The
-readout itself is a drop-in improvement for selectors whose native readout
-is a plug-in on a scarce panel (compare the native Table 1 rows:
-AnchorPoints .1447 -> .0675 at K4 B30, Total-Fisher .0409 -> .0341 at K8
-B55, Fluid .0220 -> .0177 at K4 B110).
+Reading. Under one readout the remaining differences are selection. At
+K_cal = 12 the DriveAT order beats every re-scored subset at B = 55 / 110 by
+.005-.014 and at B = 165 by .002-.007; at K_cal = 4 it leads at every budget
+by .009-.030 except against the Fluid subset, which is within .002-.009. The
+readout itself is a drop-in improvement for selectors whose native readout is
+a plug-in on a scarce panel (compare the native Table 1 rows: AnchorPoints
+.1290 -> .0687 at K4 B30, tinyBenchmarks .0621 -> .0608 at K4 B55).
 
 ## Inside a real evaluation (`tools/b2d_adaptive_eval.py`)
 
@@ -376,8 +389,7 @@ bank, eps = .03; the bank is the planner's recorded routes, 211-220 of
 Every run stopped on its own: half the bank for VAD and LEAD-tfv6, 61% for
 HiP-AD, with errors of .015 and .007 for VAD and HiP-AD. The LEAD-tfv6
 stop (99 routes) missed its .03 target with a realised error of .036 —
-the kind of miss the 84-94% coverage of Table 2 predicts for roughly one
-run in ten. The weakest planner remains the hardest case: an all-fail
+the kind of miss the risk target admits for roughly one run in ten. The weakest planner remains the hardest case: an all-fail
 record only bounds theta from above, so its estimate leans on the prior
 early (SR_hat .22 after 40 routes) and settles as the acquisition finds
 the routes it can pass.

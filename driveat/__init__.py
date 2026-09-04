@@ -1,4 +1,4 @@
-"""SC-IRT: scene-conditioned item response theory for driving-policy evaluation.
+"""DriveAT: IRT-based adaptive testing for closed-loop driving evaluation.
 
 Treat a driving scenario as a test item and a planner as an examinee. One
 uncertainty-aware Rasch posterior does everything:
@@ -36,4 +36,4 @@ from . import (  # noqa: F401
     us_eval,
 )
 
-__version__ = "6.0.0"
+__version__ = "7.0.0"

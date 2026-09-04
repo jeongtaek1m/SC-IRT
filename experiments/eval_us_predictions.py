@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scirt.us_eval import USEvaluator, load_pred_npz
+from driveat.us_eval import USEvaluator, load_pred_npz
 
 
 def main(paths):

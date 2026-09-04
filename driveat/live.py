@@ -1,4 +1,4 @@
-"""SC-IRT inside a real closed-loop evaluation (UP setting).
+"""DriveAT inside a real closed-loop evaluation (UP setting).
 
 A new planner is evaluated on a calibrated bank: every route of the panel
 is an item whose difficulty posterior comes from the panel's planners.
@@ -51,7 +51,7 @@ class LiveEvaluator:
         self.obs = {}
         self.c = None
         if verbose:
-            print(f'[scirt-live] bank {len(self.routes)} routes x {len(self.cols)} planners; '
+            print(f'[driveat-live] bank {len(self.routes)} routes x {len(self.cols)} planners; '
                   f'sigma_b {self.fit["sigma_b"]}, sigma_g {self.fit["sigma_g"]}', flush=True)
 
     # --- fingerprint of the bank, used to key the cached risk scale ---------
@@ -119,7 +119,7 @@ class LiveEvaluator:
             if e and e.get('y_md5') == ymd5 and e.get('quantile') == quantile and e.get('T') == T:
                 self.c = float(e['c'])
                 if self.verbose:
-                    print(f'[scirt-live] risk scale c = {self.c:.3f} (cached, {e["n_planners"]} LOO planners)')
+                    print(f'[driveat-live] risk scale c = {self.c:.3f} (cached, {e["n_planners"]} LOO planners)')
                 return self.c
         ratios, per = [], {}
         for j in self.cols:
@@ -137,7 +137,7 @@ class LiveEvaluator:
             per[self.panel.names[j]] = {'sr': float(yy.mean()), 'mae@30': float(abs(Sh[29] - yy.mean())),
                                         'mae@55': float(abs(Sh[54] - yy.mean())) if len(Sh) > 54 else None}
             if self.verbose:
-                print(f'[scirt-live] LOO {self.panel.names[j]}: SR {yy.mean():.3f}  S_hat@30 {Sh[29]:.3f}  R1@30 {R1[29]:.4f}', flush=True)
+                print(f'[driveat-live] LOO {self.panel.names[j]}: SR {yy.mean():.3f}  S_hat@30 {Sh[29]:.3f}  R1@30 {R1[29]:.4f}', flush=True)
         self.c = float(np.percentile(ratios, 100 * quantile))
         d = json.load(open(cache)) if cache.exists() else {}
         d[key] = {'c': self.c, 'quantile': quantile, 'T': T, 'n_planners': len(self.cols), 'y_md5': ymd5,
@@ -145,7 +145,7 @@ class LiveEvaluator:
         cache.parent.mkdir(parents=True, exist_ok=True)
         json.dump(d, open(cache, 'w'), indent=1)
         if self.verbose:
-            print(f'[scirt-live] risk scale c = {self.c:.3f} saved to {cache}')
+            print(f'[driveat-live] risk scale c = {self.c:.3f} saved to {cache}')
         return self.c
 
     def load_risk_scale(self, cache=None):
