@@ -20,12 +20,18 @@ RELG_RAW = Path('/data2/jeongtae/relgraph_e16sel')   # the 16-planner RelGraph h
 #   r2noroute_b2d_s{k}, sroute{k}_b2d_s{k}, sa2l{k}_b2d_s{k}, nospeed/r2nospeed_r2_b2d_s{k}
 CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
 # nuPlan val14 zero-shot inputs (run_nuplan_zeroshot.py): the r0 target npz (tokens, logs, Y,
-# fail, b_ref), the stage-2 prediction npz of the encoder arms and the label-shuffle nulls,
-# and the 11 x 584 closed-loop score matrix
+# fail, b_ref), the stage-2 prediction npz of the encoder arms and the label-shuffle nulls
+# (all trained on the panel of record, b2d_e2e16sel, with the repo calibration, by the
+# chdrop_sel.py wrapper around the frozen stage-2 driver, kept with the run logs under
+# NUPLAN_S2/provenance), and the 11 x 584 closed-loop
+# score matrix
 NUPLAN_TGT = Path('/data2/jeongtae/relgraph/transfer/nuplan/r0_nuplan_oof_s0.npz')
 NUPLAN_S2 = Path('/data2/jeongtae/relgraph_e16sel/nuplan_stage2')
 NUPLAN_CLS = Path('/home/jeongtae/SCIRT/SC-IRT/result/nuplan_val14_k11_response_matrix.csv')
-NUPLAN_ARMS = {'C0e': 3, 'A2e': 3, 'C4r2e': 10, 'C4r2n': 10}   # arm -> number of seeds
+NUPLAN_ARMS = ('C0e', 'A2e')            # <arm>_b2d2nuplan_s<k>.npz, k < NUPLAN_SEEDS
+NUPLAN_NULLS = ('C4r2n', 'C4r2e')       # <fam>_p<p>_b2d2nuplan_s<k>.npz: permutation p fixed, training seed k
+NUPLAN_SEEDS, NUPLAN_PERMS = 3, 20
+NUPLAN_PERM_SEED0 = 90000               # zs21_common.shuffle_route_labels: default_rng(90000 + p).permutation(220)
 
 FEATURES = ['eval_cmdkin_stats', 'eval_gtrisk',
             'eval_routegeom', 'eval_smart_ent', 'eval_agentjepa']
@@ -90,8 +96,9 @@ def export_nuplan(dst):
     tok / logs (scene order = the logged-ego readout order, widx == 0), Y (11 x 584
     binary failures, NaN = no record), fail (per-scene failure rate), b_ref (the
     response-calibrated difficulty), cls (11 x 584 closed-loop scores) with the
-    planner names, and pred_<arm>_s<k> = the stage-2 `pred_logged` of every encoder
-    arm and label-shuffle null at widx == 0. Verifies against the shipped file."""
+    planner names, pred_<arm>_s<k> = the stage-2 `pred_logged` of every encoder arm
+    at widx == 0, and pred_<fam>_p<p>_s<k> the same for the label-shuffle nulls
+    (permutation p, training seed k). Verifies against the shipped file."""
     import csv
     import numpy as np
     z = np.load(NUPLAN_TGT, allow_pickle=True)
@@ -110,13 +117,22 @@ def export_nuplan(dst):
     out['planners'] = np.array([r[0] for r in body])
     out['cls'] = np.array([[float(r[1 + col[t]]) if r[1 + col[t]] != '' else np.nan for t in tok]
                            for r in body], np.float64)
-    for arm, n in NUPLAN_ARMS.items():
-        for k in range(n):
-            a = np.load(NUPLAN_S2 / f'{arm}_b2d2nuplan_s{k}.npz', allow_pickle=True)
-            wi = np.asarray(a['widx']) == 0
-            v = np.full(len(tok), np.nan, np.float32)
-            v[[pos[str(t)] for t in a['tgt_groups'][wi]]] = np.asarray(a['pred_logged'], np.float32)[wi]
-            out[f'pred_{arm}_s{k}'] = v
+    def readout(path):
+        a = np.load(path, allow_pickle=True)
+        wi = np.asarray(a['widx']) == 0
+        v = np.full(len(tok), np.nan, np.float32)
+        v[[pos[str(t)] for t in a['tgt_groups'][wi]]] = np.asarray(a['pred_logged'], np.float32)[wi]
+        return a, v
+    for arm in NUPLAN_ARMS:
+        for k in range(NUPLAN_SEEDS):
+            a, out[f'pred_{arm}_s{k}'] = readout(NUPLAN_S2 / f'{arm}_b2d2nuplan_s{k}.npz')
+            assert int(a['seed']) == k and not bool(a['stage2_label_shuffle']), (arm, k)
+    for fam in NUPLAN_NULLS:                       # permutation-fixed null: perm p x training seed k
+        for p in range(NUPLAN_PERMS):
+            perm = np.random.default_rng(NUPLAN_PERM_SEED0 + p).permutation(220)
+            for k in range(NUPLAN_SEEDS):
+                a, out[f'pred_{fam}_p{p}_s{k}'] = readout(NUPLAN_S2 / f'{fam}_p{p}_b2d2nuplan_s{k}.npz')
+                assert int(a['seed']) == k and bool(a['label_shuffle']) and np.array_equal(a['label_perm'], perm), (fam, p, k)
     if dst.exists():
         old = np.load(dst, allow_pickle=True)
         assert set(old.files) == set(out) and all(np.array_equal(old[k], out[k], equal_nan=True)

@@ -180,12 +180,14 @@ tests/          fast invariants
   the ego-route relation improves rho by +.03; shuffling correspondences
   changes nothing beyond seed noise), and so is the ego-speed channel
   (+.01).
-- Zero-shot on nuPlan val14, the canonical encoder does not clear its
-  label-shuffle null on the top-5% / top-10% performance drop (p .06 / .31
-  against the matched three-seed null); the speed-ablated encoder clears it
-  at q = 5% (p .02-.04 by three tests) and is marginal at q = 10%. Both
-  arms clear on the whole-panel rank correlation, the statistic with the
-  power (RESULTS.md, nuPlan val14 zero-shot retrieval).
+- Zero-shot on nuPlan val14, against a label-shuffle null that carries the
+  arm's own variance structure (20 fixed permutations x 3 training seeds),
+  the speed-ablated encoder clears on the top-5% performance drop (no
+  shuffled labeling reaches it, p .048; all three seeds above the
+  single-run 95th percentile) and is marginal at top-10% (p .095); the
+  canonical encoder does not clear (p .14 / .19), and the whole-panel rank
+  correlation is marginal for both arms (p .095) (RESULTS.md, nuPlan val14
+  zero-shot retrieval).
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,

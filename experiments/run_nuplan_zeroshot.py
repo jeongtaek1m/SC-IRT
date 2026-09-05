@@ -25,25 +25,33 @@ M is reported in two forms, both computed from the SAME 11-planner response matr
 
 Every Delta M is computed identically for (i) the two encoder arms — C0e, the
 canonical encoder, and A2e, the ego speed removed from both ego paths — three
-seeds each; (ii) their label-shuffle nulls, TEN encoders per arm trained on
-permuted Bench2Drive labels under the same ablation (C4r2n for C0e, C4r2e for
-A2e); (iii) random q% subsets; (iv) an oracle that ranks by the response-
-calibrated difficulty b_ref (in sample).
+training seeds each, trained on the 16-planner panel of record
+(`b2d_e2e16sel_response_matrix.csv`) with the repo calibration; (ii) their
+label-shuffle nulls, 20 permutations x 3 training seeds per arm, trained under the
+same ablation on permuted Bench2Drive route labels (C4r2n for C0e, C4r2e for A2e);
+(iii) random q% subsets; (iv) an oracle that ranks by the response-calibrated
+difficulty b_ref (in sample).
 
-THE NULL IS MATCHED TO THE ARM STATISTIC. An arm is a mean over three seeds, so
-its threshold is the 95th percentile of the C(10, 3) = 120 three-seed means of
-its shuffle family (T_null), with p = (#{three-seed means >= arm} + 1) / 121.
-Comparing the three-seed mean against the 95th percentile of the ten single
-seeds — the single-seed threshold, still printed — inflates the threshold by
-about sqrt(3) (null per-seed SD .088 against .051 for a mean of three) and was
-the source of the withdrawn "neither arm clears" reading. Two threshold-free
-tests are given beside it: the exact two-sample permutation over the 13 seeds
-(3 arm + 10 null; 286 relabelings; p = fraction with mean difference >= the
-observed, observed included), and a paired cluster bootstrap over the 218
-nuPlan logs of the arm-mean-minus-null-mean contrast, the top-q% re-selected
-inside every resample. The same three tests are run on the whole-panel
-Spearman correlation of predicted difficulty with the observed failure rate,
-the statistic with the power on this panel.
+THE NULL IS MATCHED TO THE ARM STATISTIC AND TO ITS VARIANCE STRUCTURE. An arm is a
+mean over three training seeds that all see the SAME labels, so the exchangeable
+unit under the null is one labeling with three training seeds. The null family is
+therefore 20 fixed permutations x 3 training seeds, the arm is compared with the
+20 per-permutation three-seed means (T_null = their 95th percentile; the verdict
+is the exact count, p = (#{means >= arm} + 1) / 21, floor .048, clears = p <= .05),
+and a one-way variance decomposition of the 60 null runs gives the two components,
+SD_perm (between labelings) and
+SD_train (between training seeds under one labeling), whose combination
+SD_perm^2 + SD_train^2 / 3 is the null SD of a three-seed mean; z = (arm - null
+mean) / that SD and its Gaussian tail p are reported for resolution below the
+1/21 floor. Averaging three single-seed shuffles that each carry a DIFFERENT
+permutation (the earlier C(10, 3) construction) divides the permutation variance
+by three as well and understates the threshold; that construction is withdrawn.
+Also printed: the single-run 95th percentile of the 60 null runs and how many of
+the arm's three seeds exceed it on their own, and a paired cluster bootstrap over
+the 218 nuPlan logs of the arm-mean-minus-null-mean contrast (top-q% re-selected
+inside every resample), which covers scene-sampling uncertainty only. The same
+tests are run on the whole-panel Spearman correlation of predicted difficulty
+with the observed failure rate.
 
 Readout: `pred_logged` at widx == 0 — the LOGGED ego trajectory, one window per
 scene (the routed ego readout is synthetic and not used).
@@ -55,14 +63,13 @@ scored against the same 11 planners.
 
     python experiments/run_nuplan_zeroshot.py        # CPU, about a minute; table + json + anchors
 """
-import itertools
 import json
 import os
 import sys
 from pathlib import Path
 
 import numpy as np
-from scipy.stats import rankdata
+from scipy.stats import norm, rankdata
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import DATA
@@ -71,22 +78,25 @@ OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parent
 SRC = DATA / 'nuplan' / 'val14_zeroshot.npz'
 
 QS = (0.05, 0.10)
-NBOOT = 1000          # per-arm log bootstrap (per-seed intervals in the json)
+NBOOT = 1000          # per-run log bootstrap (per-seed intervals in the json)
 NBOOT_PAIR = 2000     # paired arm-minus-null log bootstrap
 NRAND = 3000
 FAIL_THR = 0.5        # CLS < 0.5 counts as a failure (reproduces the stored binary Y)
+NSEED = 3             # training seeds per labeling (arms and every null permutation)
+NPERM = 20            # fixed label permutations per null family
 
-# arm -> (label, seeds, matched null family)
-ARMS = {'C0e': ('C0e speed kept (canonical)', 3, 'C4r2n'),
-        'A2e': ('A2e -speed both ego paths', 3, 'C4r2e')}
-NULLS = {'C4r2n': ('NULL C4r2n label shuffle (n=10)', 10),
-         'C4r2e': ('NULL C4r2e label shuffle, -speed (n=10)', 10)}
+# arm -> (label, matched null family)
+ARMS = {'C0e': ('C0e speed kept (canonical)', 'C4r2n'),
+        'A2e': ('A2e -speed both ego paths', 'C4r2e')}
+NULLS = {'C4r2n': f'NULL C4r2n label shuffle ({NPERM} perms x {NSEED} seeds)',
+         'C4r2e': f'NULL C4r2e label shuffle, -speed ({NPERM} perms x {NSEED} seeds)'}
+PERM = np.repeat(np.arange(NPERM), NSEED)         # labeling index of every null run (perm-major order)
 
 
 def target():
     """The 584-scenario nuPlan val14 panel: logged-ego w0 readout order, the binary
     fail matrix Y, the continuous closed-loop scores, the reference difficulty and
-    every arm's predicted difficulty."""
+    every run's predicted difficulty (arms: 3 runs; nulls: 60 runs, perm-major)."""
     z = np.load(SRC, allow_pickle=True)
     Y = np.asarray(z['Y'], float)                        # 1 = planner failed the scene
     fail = np.asarray(z['fail'], float)                  # per-scene failure rate over planners
@@ -96,8 +106,9 @@ def target():
     B = np.where(np.isfinite(C), (C < FAIL_THR).astype(float), np.nan)
     ok = np.isfinite(Y) & np.isfinite(B)
     assert (Y[ok] == B[ok]).all() and ((~np.isfinite(Y)) == (~np.isfinite(C))).all()
-    preds = {k: [np.asarray(z[f'pred_{k}_s{s}'], float) for s in range(n)]
-             for k, n in [(k, v[1]) for k, v in ARMS.items()] + [(k, v[1]) for k, v in NULLS.items()]}
+    preds = {k: [np.asarray(z[f'pred_{k}_s{s}'], float) for s in range(NSEED)] for k in ARMS}
+    preds.update({k: [np.asarray(z[f'pred_{k}_p{p}_s{s}'], float) for p in range(NPERM) for s in range(NSEED)]
+                  for k in NULLS})
     return dict(tok=np.array([str(t) for t in z['tok']]), logs=np.array([str(l) for l in z['logs']]),
                 Y=Y, fail=fail, bref=np.asarray(z['b_ref'], float), cls=np.nanmean(C, 0),
                 n_cells=int(np.isfinite(C).sum()), planners=[str(p) for p in z['planners']], pred=preds)
@@ -130,7 +141,7 @@ def resample_logs(rng):
 
 
 def boot(s, k, B=NBOOT, seed=1):
-    """Per-arm-seed log bootstrap: 2.5 / 97.5 percentiles of the top-q statistics."""
+    """Per-run log bootstrap: 2.5 / 97.5 percentiles of the top-q statistics."""
     rng = np.random.default_rng(seed)
     out = {'dM_cls': [], 'dM_sr': [], 'enrich': []}
     for _ in range(B):
@@ -142,8 +153,9 @@ def boot(s, k, B=NBOOT, seed=1):
 
 
 def paired_boot(arm, nul, k, key, B=NBOOT_PAIR, seed=1):
-    """Paired log bootstrap of mean_seeds(arm) - mean_seeds(null), top-q re-selected
-    in every resample: (point estimate, [2.5, 97.5] percentiles, P(<= 0))."""
+    """Paired log bootstrap of mean_runs(arm) - mean_runs(null), top-q re-selected in
+    every resample: (point estimate, [2.5, 97.5] percentiles, P(<= 0)). Scene-sampling
+    uncertainty only — the labeling / training-seed variation is the matched null's job."""
     rng = np.random.default_rng(seed)
     out = []
     for _ in range(B):
@@ -160,27 +172,35 @@ def paired_boot(arm, nul, k, key, B=NBOOT_PAIR, seed=1):
                 p_le0=float(np.mean(out <= 0)))
 
 
-def matched_test(av, nv):
-    """The arm statistic (mean of its seeds) against its shuffle family.
-    T_null = 95th percentile of the C(n_null, n_arm) null means; p_trip = fraction of
-    those means >= the arm mean (+1 / (N + 1)); p_perm = the exact two-sample
-    permutation over all seeds; T95_single = the single-seed 95th percentile."""
-    av, nv = np.asarray(av, float), np.asarray(nv, float)
+def matched_test(av, nv, grp=PERM):
+    """The arm statistic (mean of its three training seeds under the true labels) against
+    the permutation-fixed null: nv holds the 60 null runs, grp their labeling index.
+    T_null = 95th percentile of the 20 per-permutation three-seed means; the verdict is
+    the exact count, p = (#{means >= arm} + 1) / 21, clears = p <= .05 (i.e. no null
+    labeling reaches the arm). Variance components from the 60 runs: SD_train = pooled within-
+    permutation SD, SD_perm from the between-permutation variance minus SD_train^2 / 3;
+    the null SD of a three-seed mean is sqrt(SD_perm^2 + SD_train^2 / 3), z and its
+    Gaussian tail p give resolution below the 1/21 floor. T95_single = 95th percentile
+    of the 60 single runs; n_seed_clear = arm seeds above it on their own."""
+    av, nv, grp = np.asarray(av, float), np.asarray(nv, float), np.asarray(grp)
     am = float(av.mean())
-    trip = np.array([nv[list(c)].mean() for c in itertools.combinations(range(len(nv)), len(av))])
-    t95 = float(np.percentile(trip, 95))
-    allv = np.concatenate([av, nv])
-    obs = av.mean() - nv.mean()
-    cnt = tot = 0
-    for c in itertools.combinations(range(len(allv)), len(av)):
-        rest = [i for i in range(len(allv)) if i not in c]
-        tot += 1
-        cnt += (allv[list(c)].mean() - allv[rest].mean()) >= obs - 1e-12
-    return dict(arm=am, arm_sd=float(av.std(ddof=1)), null_mean=float(nv.mean()), null_sd=float(nv.std(ddof=1)),
-                T_null=t95, clears=bool(am > t95), n_trip=int(len(trip)), n_trip_ge=int(np.sum(trip >= am)),
-                p_trip=float((np.sum(trip >= am) + 1) / (len(trip) + 1)),
-                p_perm=float(cnt / tot), n_perm=int(tot), n_perm_ge=int(cnt),
-                T95_single=float(np.percentile(nv, 95)), n_single_ge=int(np.sum(nv >= am)))
+    G = np.unique(grp)
+    pm = np.array([nv[grp == g].mean() for g in G])                      # per-permutation 3-seed means
+    within = float(np.mean([nv[grp == g].var(ddof=1) for g in G]))       # SD_train^2 (pooled)
+    between = float(pm.var(ddof=1))                                       # SD_perm^2 + SD_train^2 / 3
+    var_perm = max(between - within / len(av), 0.0)
+    sd_mean = float(np.sqrt(var_perm + within / len(av)))
+    t95 = float(np.percentile(pm, 95))
+    n_ge = int(np.sum(pm >= am))
+    p_exact = float((n_ge + 1) / (len(pm) + 1))
+    z = (am - pm.mean()) / sd_mean
+    t95_single = float(np.percentile(nv, 95))
+    return dict(arm=am, arm_sd=float(av.std(ddof=1)), null_mean=float(pm.mean()),
+                sd_train=float(np.sqrt(within)), sd_perm=float(np.sqrt(var_perm)), sd_mean=sd_mean,
+                T_null=t95, clears=bool(p_exact <= 0.05), n_perm=int(len(pm)), n_ge=n_ge,
+                p=p_exact, z=float(z), p_gauss=float(norm.sf(z)),
+                T95_single=t95_single, n_seed_clear=int(np.sum(av > t95_single)),
+                perm_means=[float(v) for v in pm])
 
 
 def spearman(a, b):
@@ -194,10 +214,12 @@ def main():
                          n_cells=T['n_cells'], n_logs=len(ULOG), base_fail=BASE,
                          M_cls_full=float(T['cls'].mean()), M_sr_full=float(1 - BASE),
                          planners=T['planners'], fail_threshold=FAIL_THR,
-                         readout='pred_logged @ widx==0 (logged ego)'),
-           'notes': {'null': 'T_null = 95th percentile of the 120 three-seed means of the shuffle family '
-                             '(matched to the three-seed arm mean); T95_single = the single-seed 95th '
-                             'percentile (not the threshold)',
+                         readout='pred_logged @ widx==0 (logged ego)',
+                         source_labels='b2d_e2e16sel_response_matrix.csv (panel of record), atdrive calibration'),
+           'notes': {'null': f'{NPERM} fixed label permutations x {NSEED} training seeds per family; '
+                             'T_null = 95th percentile of the per-permutation three-seed means; verdict = exact count, '
+                             f'p = (#{{means >= arm}} + 1) / {NPERM + 1}, clears = p <= .05; z uses sqrt(SD_perm^2 + SD_train^2 / 3); '
+                             f'T95_single = 95th percentile of the {NPERM * NSEED} single runs (not the threshold)',
                      'enrichment': 'Delta SR = base_fail x (enrichment - 1) by construction; the '
                                    'reconciliation of the two scorings is the cell-for-cell Y == (CLS < .5) '
                                    'check in target()'},
@@ -208,15 +230,20 @@ def main():
     print(f"M_CLS(full) = {T['cls'].mean():.4f} (mean closed-loop score)   "
           f"M_SR(full) = {1 - BASE:.4f} (CLS >= {FAIL_THR})   base failure {BASE:.4f}\n")
 
-    # ---- per-seed sign diagnostics ----------------------------------------------
+    # ---- per-run sign diagnostics ----------------------------------------------
     S = T['pred']
-    LAB = {k: v[0] for k, v in list(ARMS.items()) + list(NULLS.items())}
-    print(f"{'arm':42}{'seed':>5}{'rho(pred,fail)':>16}{'rho(pred,b_ref)':>17}")
-    RHO = {}
-    for k, ss in S.items():
-        RHO[k] = [spearman(s, T['fail']) for s in ss]
-        for sd, s in enumerate(ss):
-            print(f"{LAB[k]:42}{sd:5d}{RHO[k][sd]:+16.4f}{spearman(s, T['bref']):+17.4f}")
+    LAB = {**{k: v[0] for k, v in ARMS.items()}, **NULLS}
+    RHO = {k: [spearman(s, T['fail']) for s in ss] for k, ss in S.items()}
+    RHOB = {k: [spearman(s, T['bref']) for s in ss] for k, ss in S.items()}
+    print(f"{'run':44}{'rho(pred,fail)':>16}{'rho(pred,b_ref)':>17}")
+    for k in ARMS:
+        for sd in range(NSEED):
+            print(f"{LAB[k] + f' seed {sd}':44}{RHO[k][sd]:+16.4f}{RHOB[k][sd]:+17.4f}")
+    for k in NULLS:
+        for p in range(NPERM):
+            ii = np.where(PERM == p)[0]
+            print(f"{LAB[k][:30] + f' perm {p}':44}"
+                  f"{'  '.join(f'{RHO[k][i]:+.3f}' for i in ii):>24}   (three training seeds)")
 
     for q in QS:
         k = int(round(len(T['tok']) * q))
@@ -237,23 +264,23 @@ def main():
                 e[f'{key}_mean'] = float(np.mean([p[key] for p in pts]))
                 e[f'{key}_sd'] = float(np.std([p[key] for p in pts], ddof=1))
             for key in ('dM_cls', 'dM_sr', 'enrich'):
-                e[f'{key}_per_seed'] = sorted(p[key] for p in pts)
+                e[f'{key}_per_run'] = [p[key] for p in pts]                 # run order (nulls: perm-major)
                 e[f'{key}_p95_single'] = float(np.percentile([p[key] for p in pts], 95))
-            e['ci_per_seed'] = [boot(s, k) for s in ss]
+            e['ci_per_run'] = [boot(s, k) for s in ss]
             e['frac_of_oracle'] = float(e['dM_cls_mean'] / orc['dM_cls'])
             blk['arms'][name] = e
-        # verdict vs the matched label-shuffle null, in the arm's own record
-        for name, (_, _, nul) in ARMS.items():
+        # verdict vs the permutation-fixed label-shuffle null, in the arm's own record
+        for name, (_, nul) in ARMS.items():
             v = {}
             for key in ('dM_cls', 'dM_sr', 'enrich'):
-                v[key] = dict(null=nul, **matched_test(blk['arms'][name][f'{key}_per_seed'],
-                                                       blk['arms'][nul][f'{key}_per_seed']))
+                v[key] = dict(null=nul, **matched_test(blk['arms'][name][f'{key}_per_run'],
+                                                       blk['arms'][nul][f'{key}_per_run']))
                 if key != 'dM_sr':
                     v[key]['paired'] = paired_boot(S[name], S[nul], k, key)
             blk['arms'][name]['verdict'] = v
         res['by_q'][f'{q:.2f}'] = blk
 
-    for name, (_, _, nul) in ARMS.items():
+    for name, (_, nul) in ARMS.items():
         res['spearman'][name] = dict(null=nul, **matched_test(RHO[name], RHO[nul]))
 
     # ---------------------------- report -----------------------------------------
@@ -262,38 +289,42 @@ def main():
         k = blk['k']
         print(f"\n=== top {q * 100:.0f}%   k = {k} of {len(T['tok'])} scenes "
               f"| M_CLS(full) {T['cls'].mean():.4f}  M_SR(full) {1 - BASE:.4f} ===")
-        print(f"{'subset':42}{'n':>3}{'M_CLS':>8}{'dM_CLS':>9}{'T_null':>9}{'p_trip':>8}{'p_perm':>8}"
-              f"{'enrich':>8}{'T_null':>8}{'p_trip':>8}   verdict (matched three-seed null)")
+        print(f"{'subset':44}{'n':>3}{'M_CLS':>8}{'dM_CLS':>9}{'T_null':>9}{'p':>7}{'z':>7}"
+              f"{'enrich':>8}{'T_null':>8}{'p':>7}   verdict (perm-fixed null, {NPERM} x {NSEED}, clears = p <= .05)")
         o = blk['oracle_bref']
-        print(f"{'ORACLE b_ref (ceiling, in sample)':42}{1:3d}{o['M_cls']:8.4f}{o['dM_cls']:+9.4f}"
-              f"{'':25}{o['enrich']:8.3f}")
+        print(f"{'ORACLE b_ref (ceiling, in sample)':44}{1:3d}{o['M_cls']:8.4f}{o['dM_cls']:+9.4f}"
+              f"{'':23}{o['enrich']:8.3f}")
         r = blk['random']
-        print(f"{'random q% (3000 draws)':42}{1:3d}{r['M_cls']:8.4f}{r['dM_cls']:+9.4f}{'':25}{r['enrich']:8.3f}")
+        print(f"{'random q% (3000 draws)':44}{1:3d}{r['M_cls']:8.4f}{r['dM_cls']:+9.4f}{'':23}{r['enrich']:8.3f}")
         for name in ARMS:
             a = blk['arms'][name]
             vc, vs = a['verdict']['dM_cls'], a['verdict']['enrich']
-            print(f"{a['label']:42}{a['n']:3d}{a['M_cls_mean']:8.4f}{a['dM_cls_mean']:+9.4f}"
-                  f"{vc['T_null']:+9.4f}{vc['p_trip']:8.4f}{vc['p_perm']:8.4f}"
-                  f"{a['enrich_mean']:8.3f}{vs['T_null']:8.3f}{vs['p_trip']:8.4f}   "
+            print(f"{a['label']:44}{a['n']:3d}{a['M_cls_mean']:8.4f}{a['dM_cls_mean']:+9.4f}"
+                  f"{vc['T_null']:+9.4f}{vc['p']:7.3f}{vc['z']:+7.2f}"
+                  f"{a['enrich_mean']:8.3f}{vs['T_null']:8.3f}{vs['p']:7.3f}   "
                   f"dM_CLS {'CLEARS' if vc['clears'] else 'DOES NOT CLEAR'} | "
                   f"enrich {'CLEARS' if vs['clears'] else 'DOES NOT CLEAR'} | "
                   f"{a['frac_of_oracle']:.1%} of the oracle")
+            print(f"{'':47}dM_CLS: SD_perm {vc['sd_perm']:.4f} SD_train {vc['sd_train']:.4f} "
+                  f"(arm seeds SD {vc['arm_sd']:.4f}); Gaussian p {vc['p_gauss']:.3f}; "
+                  f"single-run T95 {vc['T95_single']:+.4f}, arm seeds above it {vc['n_seed_clear']}/{NSEED}")
         for name in NULLS:
             a = blk['arms'][name]
-            print(f"{a['label']:42}{a['n']:3d}{a['M_cls_mean']:8.4f}{a['dM_cls_mean']:+9.4f}"
-                  f"{'':25}{a['enrich_mean']:8.3f}   per-seed dM_CLS {a['dM_cls_per_seed'][0]:+.3f} .. "
-                  f"{a['dM_cls_per_seed'][-1]:+.3f}; single-seed T95 {a['dM_cls_p95_single']:+.4f}; "
+            pr = a['dM_cls_per_run']
+            print(f"{a['label']:44}{a['n']:3d}{a['M_cls_mean']:8.4f}{a['dM_cls_mean']:+9.4f}"
+                  f"{'':23}{a['enrich_mean']:8.3f}   per-run dM_CLS {min(pr):+.3f} .. {max(pr):+.3f}; "
                   f"{a['frac_of_oracle']:.1%} of the oracle")
-        print('paired log-cluster bootstrap of arm mean - shuffle mean (top-q re-selected per resample):')
+        print('paired log-cluster bootstrap of arm mean - shuffle mean (top-q re-selected per resample; scene sampling only):')
         for name in ARMS:
             for key in ('dM_cls', 'enrich'):
                 pb = blk['arms'][name]['verdict'][key]['paired']
                 print(f"   {name} {key:7}: {pb['d']:+.4f} [{pb['ci'][0]:+.4f},{pb['ci'][1]:+.4f}]  P(<=0) {pb['p_le0']:.3f}")
     print('\n=== whole-panel Spearman(predicted difficulty, observed failure rate) ===')
     for name, v in res['spearman'].items():
-        print(f"   {name}: {v['arm']:+.4f} (seeds SD {v['arm_sd']:.4f}) vs shuffle mean {v['null_mean']:+.4f}; "
-              f"single-seed T95 {v['T95_single']:+.4f}; matched T_null {v['T_null']:+.4f}; "
-              f"p_trip {v['p_trip']:.4f}; exact permutation p {v['p_perm']:.4f} ({v['n_perm_ge']}/{v['n_perm']})")
+        print(f"   {name}: {v['arm']:+.4f} (seeds SD {v['arm_sd']:.4f}) vs null perm-means {v['null_mean']:+.4f} "
+              f"(SD_perm {v['sd_perm']:.4f}, SD_train {v['sd_train']:.4f}); T_null {v['T_null']:+.4f}; "
+              f"p {v['p']:.3f} ({v['n_ge']}/{v['n_perm']} perm means >= arm); z {v['z']:+.2f} (Gaussian p {v['p_gauss']:.4f}); "
+              f"single-run T95 {v['T95_single']:+.4f}, arm seeds above it {v['n_seed_clear']}/{NSEED}")
 
     json.dump(res, open(OUT / 'nuplan_zeroshot.json', 'w'), indent=1, default=float)
     print(f"\nwrote {OUT / 'nuplan_zeroshot.json'}")
@@ -312,40 +343,37 @@ def main():
     assert (q5['k'], q10['k']) == (29, 58)
     for blk, v in ((q5, ANC5_ORC), (q10, ANC10_ORC)):
         assert abs(blk['oracle_bref']['dM_cls'] - v) < 5e-4, (blk['k'], blk['oracle_bref']['dM_cls'])
-    for blk, nm, v in ((q5, 'C0e', ANC5_C0E), (q5, 'A2e', ANC5_A2E), (q10, 'C0e', ANC10_C0E), (q10, 'A2e', ANC10_A2E)):
+    if ANCHORS is None:
+        print('anchors: panel and oracle only (arm / null anchors not yet pinned)')
+        return
+    for blk, nm, v in ((q5, 'C0e', ANCHORS['q5_C0e']), (q5, 'A2e', ANCHORS['q5_A2e']),
+                       (q10, 'C0e', ANCHORS['q10_C0e']), (q10, 'A2e', ANCHORS['q10_A2e'])):
         assert abs(blk['arms'][nm]['dM_cls_mean'] - v) < 5e-4, (blk['k'], nm, blk['arms'][nm]['dM_cls_mean'])
-    for blk, nm, v in ((q5, 'C4r2n', ANC5_TN), (q5, 'C4r2e', ANC5_TE), (q10, 'C4r2n', ANC10_TN), (q10, 'C4r2e', ANC10_TE)):
-        assert abs(blk['arms'][nm]['dM_cls_p95_single'] - v) < 5e-4, (blk['k'], nm)   # single-seed p95, not the threshold
-    assert abs(q5['arms']['C0e']['enrich_mean'] - 1.8696) < 5e-3
-    assert abs(q5['arms']['A2e']['enrich_mean'] - 1.9569) < 5e-3
-    # the finding, against the matched three-seed-mean null (T_null, p_trip), the exact permutation
-    # (p_perm) and the paired log bootstrap: A2e clears at q = 5% and is marginal at q = 10%; C0e is
-    # borderline at q = 5% (arm .1611 vs T_null .1610, p .058, paired CI spans 0) and does not clear at
-    # q = 10%; both arms clear on the whole-panel rank correlation.
     V = lambda blk, nm, key: blk['arms'][nm]['verdict'][key]
-    for blk, nm, key, t, ge, perm, clears in ((q5, 'A2e', 'dM_cls', .1584, 1, 11, True),
-                                             (q5, 'A2e', 'enrich', 1.804, 0, None, True),
-                                             (q10, 'A2e', 'dM_cls', .1394, 6, 32, True),
-                                             (q10, 'A2e', 'enrich', 1.689, 4, None, True),
-                                             (q5, 'C0e', 'dM_cls', .1610, 6, None, True),
-                                             (q10, 'C0e', 'dM_cls', .1508, 37, None, False)):
-        v = V(blk, nm, key)
-        assert abs(v['T_null'] - t) < 5e-4 and v['n_trip_ge'] == ge and v['clears'] == clears, (blk['k'], nm, key, v)
-        assert perm is None or v['n_perm_ge'] == perm, (blk['k'], nm, key, v['n_perm_ge'])
-    for blk, nm, lo_pos in ((q5, 'A2e', True), (q10, 'A2e', True), (q5, 'C0e', False), (q10, 'C0e', False)):
-        ci = V(blk, nm, 'dM_cls')['paired']['ci']
-        assert (ci[0] > 0) == lo_pos and ci[1] > 0, (blk['k'], nm, ci)
-    for nm, rho, perm in (('A2e', .3108, 1), ('C0e', .2875, 3)):
+    for (qk, nm, key), (t, ge, clears) in ANCHORS['verdicts'].items():
+        v = V(q5 if qk == 5 else q10, nm, key)
+        assert abs(v['T_null'] - t) < 5e-4 and v['n_ge'] == ge and v['clears'] == clears, (qk, nm, key, v['T_null'], v['n_ge'])
+    for nm, (rho, ge) in ANCHORS['spearman'].items():
         v = res['spearman'][nm]
-        assert abs(v['arm'] - rho) < 1e-3 and v['n_perm_ge'] == perm and v['arm'] > v['T95_single'], (nm, v)
+        assert abs(v['arm'] - rho) < 1e-3 and v['n_ge'] == ge, (nm, v['arm'], v['n_ge'])
     print('anchors OK')
 
 
-ANC5_ORC, ANC10_ORC = 0.4486, 0.3631               # oracle Delta M_CLS
-ANC5_C0E, ANC5_A2E = 0.1611, 0.1783                # arm means
-ANC10_C0E, ANC10_A2E = 0.1142, 0.1395
-ANC5_TN, ANC5_TE = 0.1839, 0.1977                  # single-seed 95th percentiles of the shuffle families
-ANC10_TN, ANC10_TE = 0.1915, 0.1878
+ANC5_ORC, ANC10_ORC = 0.4486, 0.3631               # oracle Delta M_CLS (labels of the target panel; unchanged)
+ANCHORS = dict(                                    # panel of record, 20 permutations x 3 seeds (RESULTS.md)
+    q5_C0e=0.1914, q5_A2e=0.2275, q10_C0e=0.1376, q10_A2e=0.1590,
+    verdicts={                                     # (q, arm, key): (T_null, #null perm means >= arm, clears)
+        (5, 'A2e', 'dM_cls'): (0.1972, 0, True),
+        (5, 'A2e', 'enrich'): (2.0570, 0, True),
+        (5, 'C0e', 'dM_cls'): (0.2052, 2, False),
+        (5, 'C0e', 'enrich'): (2.1024, 2, False),
+        (10, 'A2e', 'dM_cls'): (0.1598, 1, False),
+        (10, 'A2e', 'enrich'): (1.8357, 1, False),
+        (10, 'C0e', 'dM_cls'): (0.1515, 3, False),
+        (10, 'C0e', 'enrich'): (1.7998, 3, False),
+    },
+    spearman={'A2e': (0.3016, 1), 'C0e': (0.2485, 1)},
+)
 
 if __name__ == '__main__':
     np.random.seed(0)

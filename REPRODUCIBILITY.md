@@ -45,7 +45,7 @@ past a failed anchor.
 | `run_us.py` | Table 3A: null, the two hand-crafted rows, RelGraph 3-run means; Table 3A(b): the rho of the four controls |
 | `run_ups.py` | Table 3B: representative MAE cells per policy (tol .003), incl. the Delta-R1 cells under the speed-ablated prior |
 | `run_ups_full.py --merge` | 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .0025 in the readout and in the acquisition |
-| `run_nuplan_zeroshot.py` | panel constants, oracle / arm / single-seed null point estimates, the matched three-seed-mean T_null and p, the exact permutation counts, the paired-contrast CI signs, the whole-panel Spearman and its permutation p |
+| `run_nuplan_zeroshot.py` | panel constants, oracle point estimates, arm means, the permutation-fixed T_null with the count of null per-permutation means at or above each arm and the verdicts, the whole-panel Spearman of both arms and their null counts |
 | `run_model_adequacy.py` | held-out NLL of 1PL / 2PL / 3PL and the split-half reliability of log a on the UP bank |
 | `run_readout_dropin.py` | the drop-in cells (incl. AnchorPoints K12 B55 / B110) |
 | `tests/` | grids and index identities, exact-posterior and testlet invariants, split pinning (draw 0), panel shape, r1_pick determinism, IES definition, the entry-point registry |
@@ -135,8 +135,10 @@ mean +- SD, never an averaged prediction.
   `run_nuplan_zeroshot.py`: 584 scenarios (tokens, logs), the 11 x 584
   closed-loop score matrix with the planner names, its binarised failures,
   the per-scene failure rate and the response-calibrated difficulty b_ref,
-  and the logged-ego predicted difficulty of every encoder arm and
-  label-shuffle seed (C0e x 3, A2e x 3, C4r2n x 10, C4r2e x 10), exported by
+  and the logged-ego predicted difficulty of every encoder run — the arms
+  C0e x 3 and A2e x 3 training seeds, the label-shuffle nulls C4r2n and
+  C4r2e as 20 fixed permutations x 3 training seeds — all trained on the
+  panel of record (`b2d_e2e16sel`) with the repo calibration, exported by
   `experiments/build_data.py` from the encoder's stage-2 transfer outputs.
 - `data/live/risk_scale.json` — cached risk scales c of `atdrive.live.LiveEvaluator`,
   keyed by a bank fingerprint (planner set, route list, iterations) and

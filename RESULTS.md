@@ -598,8 +598,8 @@ agent-lane correspondence changes nothing beyond seed noise. What the
 encoder learns is carried by the ego and agent tracks, not by the
 lane-graph relations. Removing the ego-speed channel changes nothing on
 this bank either (+.010 rho, within seed noise); that arm matters only on
-nuPlan, where it is the one that clears its label-shuffle null (next
-section). R2 stays the shipped encoder because it was fixed before these
+nuPlan, where it is the one that clears its label-shuffle null at the
+top-5% drop (next section). R2 stays the shipped encoder because it was fixed before these
 controls were scored; the paper's claim for the encoder is the
 learned-from-raw-tracks difficulty prior and its transport to UPS, not the
 graph structure.
@@ -614,55 +614,78 @@ not binary, so M_CLS is the primary metric; M_CLS(full) = .7808, base
 failure rate 17.85% with failure = CLS < .5, which reproduces the stored
 binary matrix cell for cell). Enrichment of the failure rate is reported
 beside it. Two encoder arms (C0e: the canonical encoder; A2e: speed removed
-from both ego paths), three seeds each, are each tested against ten
-label-shuffled encoders trained under the same ablation. The null
-threshold is matched to the arm statistic: T95 is the 95th percentile of
-the 120 three-seed means of the ten shuffles, p is the fraction of those
-means at or above the arm mean (plus one, over 121), and an exact
-two-sample permutation over the 13 seeds (286 relabelings) is given beside
-it. The oracle ranks by the response-calibrated difficulty b_ref (in
-sample) and random q% subsets give the floor.
+from both ego paths), three training seeds each, are trained on the
+16-planner panel of record (`b2d_e2e16sel`, repo calibration) and each
+tested against label-shuffled encoders trained under the same ablation.
 
-| q | arm | Delta M_CLS | matched T95 | p (120 triples) | exact permutation p | enrichment | enrichment T95 | verdict |
-|---|---|---|---|---|---|---|---|---|
-| 5% | oracle b_ref | +.4486 | — | — | — | 3.619 | — | ceiling |
-| 5% | random 5% (3,000 draws) | +.0005 | — | — | — | 1.003 | — | floor |
-| 5% | A2e, -speed | +.1783 | +.1584 | .0165 | .0385 | 1.957 | 1.804 (p .0083) | clears |
-| 5% | C0e, speed kept | +.1611 | +.1610 | .0579 | .1154 | 1.870 | 1.816 (p .0331) | borderline |
-| 5% | shuffle mean, -speed family (10) | +.0897 | — | — | — | 1.455 | — | — |
-| 5% | shuffle mean, speed-kept family (10) | +.1056 | — | — | — | 1.523 | — | — |
-| 10% | oracle b_ref | +.3631 | — | — | — | 3.057 | — | ceiling |
-| 10% | random 10% | -.0001 | — | — | — | 1.000 | — | floor |
-| 10% | A2e, -speed | +.1395 | +.1394 | .0579 | .1119 | 1.750 | 1.689 (p .0413) | marginal |
-| 10% | C0e, speed kept | +.1142 | +.1508 | .3140 | .3531 | 1.617 | 1.769 (p .2397) | does not clear |
-| 10% | shuffle mean, -speed family | +.0764 | — | — | — | 1.381 | — | — |
-| 10% | shuffle mean, speed-kept family | +.0957 | — | — | — | 1.473 | — | — |
+The null is matched to the arm statistic and to its variance structure. An
+arm's three seeds share one labeling, so the exchangeable unit under the
+null is one labeling with three training seeds: the null family is 20
+fixed label permutations x 3 training seeds (60 encoders per arm), the arm
+mean is compared with the 20 per-permutation three-seed means — T95 is
+their 95th percentile, the verdict is the exact count p = (#{means >=
+arm} + 1) / 21 (floor .048, clears = p <= .05) — and a one-way variance
+decomposition of the 60 runs gives SD_perm (between labelings) and
+SD_train (between training seeds under one labeling), with z = (arm - null
+mean) / sqrt(SD_perm^2 + SD_train^2 / 3) and its Gaussian tail p for
+resolution below the floor. The oracle ranks by the response-calibrated
+difficulty b_ref (in sample) and random q% subsets give the floor.
 
-Threshold-free checks. Paired cluster bootstrap over the 218 logs of the
-arm-minus-shuffle contrast (top-q re-selected inside each resample):
-A2e - shuffles +.0886 [+.0160, +.1682] at q = 5% and +.0631 [+.0222, +.1097]
-at q = 10%; C0e - shuffles +.0555 [-.0247, +.1314] and +.0185
-[-.0195, +.0650]. Whole-panel Spearman of predicted difficulty with the
-observed failure rate: A2e +.311 and C0e +.288 against shuffle means of
-+.005 and +.037; both clear even the single-seed 95th-percentile threshold
-(+.2305 and +.2436), exact permutation p = .0035 (the design floor) and
-.0105. The arms recover 39.7% / 38.4% (A2e) and 35.9% / 31.5% (C0e) of the
-oracle ceiling at q = 5% / 10%; the label-shuffled encoders already recover
-20-26%.
+| q | arm | Delta M_CLS | shuffle mean (60) | T95 | p (20 labelings) | z (Gaussian p) | enrichment | T95 | p | verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 5% | oracle b_ref | +.4486 | — | — | — | — | 3.619 | — | — | ceiling |
+| 5% | random 5% (3,000 draws) | +.0005 | — | — | — | — | 1.003 | — | — | floor |
+| 5% | A2e, -speed | +.2275 | +.0885 | +.1972 | .048 (0/20) | +1.73 (.042) | 2.202 | 2.057 | .048 | clears |
+| 5% | C0e, speed kept | +.1914 | +.0791 | +.2052 | .143 (2/20) | +1.40 (.081) | 1.998 | 2.102 | .143 | does not clear |
+| 10% | oracle b_ref | +.3631 | — | — | — | — | 3.057 | — | — | ceiling |
+| 10% | random 10% | -.0001 | — | — | — | — | 1.000 | — | — | floor |
+| 10% | A2e, -speed | +.1590 | +.0680 | +.1598 | .095 (1/20) | +1.28 (.101) | 1.842 | 1.836 | .095 | marginal |
+| 10% | C0e, speed kept | +.1376 | +.0638 | +.1515 | .190 (3/20) | +1.07 (.141) | 1.728 | 1.800 | .190 | does not clear |
 
-Reading. The -speed encoder retrieves genuinely harder scenes at q = 5%
-(p about .02-.04 by three routes), and at q = 10% the drop is marginal
-while the enrichment and the paired contrast still clear. The canonical
-speed-kept encoder does not clear on the top-q drop at either q (at q = 5%
-it sits on its threshold, p .06, with a paired contrast that spans zero).
-Comparing a three-seed arm mean against the 95th percentile of single
-shuffle seeds inflates the threshold by about the square root of three
-(null per-seed SD .088 vs .051 for a mean of three) and produced the earlier
-"neither arm clears" reading, which is withdrawn. Top-q retrieval is a
-low-power statistic here — per-seed shuffle drops span -.056 to +.200, and
-three arm seeds against ten shuffles floor the achievable permutation p at
-.0035 — and the whole-panel rank correlation is the statistic with the
-power, where both arms clear.
+Variance components of the null at q = 5%: SD_perm .067 / .068 and SD_train
+.076 / .073 for the speed-kept / -speed families — under one shuffled
+labeling the three training seeds spread as much as the labelings do. The
+arms' own training-seed SD is .059 (C0e) and .001 (A2e). The single-run
+95th percentile of the 60 shuffles is +.2205 at q = 5% for both families;
+A2e's three seeds all exceed it, C0e's one of three; at q = 10% none of
+either arm's seeds exceeds it (+.1807 / +.1868). The arms recover
+50.7% / 43.8% (A2e) and 42.7% / 37.9% (C0e) of the oracle ceiling at
+q = 5% / 10%; the label-shuffled encoders already recover 18-20%.
+
+Threshold-free description (scene sampling only). Paired cluster bootstrap
+over the 218 logs of the arm-minus-shuffle contrast (top-q re-selected
+inside each resample): A2e - shuffles +.1390 [+.0757, +.2045] at q = 5% and
++.0910 [+.0385, +.1414] at q = 10%; C0e - shuffles +.1123 [+.0434, +.1857]
+and +.0738 [+.0280, +.1154]. This covers the scene-sampling uncertainty
+of a fixed set of encoders, not the labeling / training-seed variation,
+which is the matched null's job.
+
+Whole-panel Spearman of predicted difficulty with the observed failure
+rate: A2e +.302 (seeds SD .036) and C0e +.249 (.043) against per-labeling
+null means of +.007 and +.001 (SD_perm .167 / .126, SD_train .123 / .148);
+one labeling of 20 reaches each arm (p .095; z +1.62 / +1.63, Gaussian
+p .052) — marginal for both.
+
+Reading. On the panel of record, against a null that carries the arm's
+own variance structure, the -speed encoder retrieves genuinely harder
+scenes at q = 5% (no shuffled labeling of 20 reaches its drop, p .048,
+z 1.7; each of its three seeds exceeds the single-run 95th percentile of
+the 60 shuffles) and is marginal at q = 10% (one labeling of 20 reaches
+it, p .095). The canonical speed-kept encoder does not clear at either q
+(p .14 / .19), and the whole-panel rank correlation is marginal for both
+arms (p .095). Two corrections against the previous record: (i) the
+earlier arms and nulls were trained on the pre-selection e2e16 matrix
+(MindDrive, SimLingo-IVL35-1B and UniAD-Base in place of Drive-pi0-Base,
+Hydra-NeXt and PGS), whose calibrated difficulty correlates .943 with the
+panel of record; everything here is retrained on the record. (ii) The
+earlier null averaged three single-seed shuffles that carried three
+different permutations, which divides the permutation variance by three
+as well and understated the threshold (that reading, "A2e clears at both
+q and both arms clear on the rank correlation", is withdrawn); the frozen
+driver ties the permutation seed to the training seed, so the permutation-
+fixed family was run through a wrapper that only swaps the seed handed to
+the shuffle. Top-q retrieval stays a low-power statistic — per-run shuffle
+drops span -.16 to +.24 — and 20 labelings floor the achievable p at .048.
 
 ## Table 3B — UPS: unseen planner x unseen scenes (`run_ups.py`)
 

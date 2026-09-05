@@ -499,15 +499,23 @@ tracks) so that selection and stopping can each be swapped alone.
   posteriors, the 40 held-out-type routes from the scene prior — with
   scene-free readout and scene-free acquisition arms and two oracles.
 - **nuPlan val14 zero-shot retrieval** (`run_nuplan_zeroshot.py`,
-  `data/nuplan/val14_zeroshot.npz`): the Bench2Drive-trained encoder ranks
-  the 584 nuPlan val14 scenarios; the statistic is the drop in the
-  11-planner closed-loop score on the predicted-hard top-q%, q in {5, 10},
-  for the canonical encoder and the speed-ablated one (three seeds each)
-  against ten label-shuffled encoders per arm. The null threshold is matched
-  to the arm statistic — the 95th percentile of the 120 three-seed means of
-  the shuffle family — beside an exact permutation over the 13 seeds and a
-  paired bootstrap over the 218 logs; the same tests on the whole-panel
-  Spearman correlation with the failure rate.
+  `data/nuplan/val14_zeroshot.npz`): the Bench2Drive-trained encoder (panel
+  of record, repo calibration) ranks the 584 nuPlan val14 scenarios; the
+  statistic is the drop in the 11-planner closed-loop score on the
+  predicted-hard top-q%, q in {5, 10}, for the canonical encoder and the
+  speed-ablated one (three training seeds each) against label-shuffled
+  encoders trained under the same ablation. The null is matched to the arm
+  statistic and to its variance structure: an arm's three seeds share one
+  labeling, so the null family is 20 fixed label permutations x 3 training
+  seeds, the threshold is the 95th percentile of the 20 per-permutation
+  three-seed means (verdict = the exact count p = (#{means >= arm} + 1) / 21,
+  clears = p <= .05), and the variance
+  components SD_perm / SD_train with a Gaussian z give resolution below that
+  floor; a paired bootstrap over the 218 logs covers scene sampling. The
+  same tests on the whole-panel Spearman correlation with the failure rate.
+  (Averaging three single-seed shuffles that carry three different
+  permutations divides the permutation variance as well and understates the
+  threshold; that construction is withdrawn.)
 - **Model adequacy** (`run_model_adequacy.py`): held-out cell NLL of 1PL vs
   2PL vs 3PL on the UP calibration block (10% of the cells per draw) and the
   split-half reliability of log a.
