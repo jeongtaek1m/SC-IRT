@@ -1,4 +1,4 @@
-"""DriveAT: IRT-based adaptive testing for closed-loop driving evaluation.
+"""ATDrive: IRT-based adaptive testing for closed-loop driving evaluation.
 
 Treat a driving scenario as a test item and a planner as an examinee. One
 uncertainty-aware Rasch posterior does everything:

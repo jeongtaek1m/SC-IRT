@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Adaptive Bench2Drive closed-loop evaluation of one planner with DriveAT (UP).
+"""Adaptive Bench2Drive closed-loop evaluation of one planner with ATDrive (UP).
 
-Instead of rolling out all 220 routes, the driver asks `driveat.live` for the
+Instead of rolling out all 220 routes, the driver asks `atdrive.live` for the
 next route, runs it through the Bench2Drive leaderboard evaluator (one
-route per invocation, CARLA spawned by the evaluator itself, crash retries
-as in scripts/sh/run_pdmlite_rollout.sh), reads the outcome from the
-checkpoint JSON, updates the posterior and stops when the calibrated risk
-c * R1 <= eps (or the route budget is exhausted). Everything is logged to
-OUT/adaptive_log.json and the run resumes from it.
+route per invocation, CARLA spawned by the evaluator itself, relaunched on a
+crash), reads the outcome from the checkpoint JSON, updates the posterior and
+stops when the calibrated risk c * R1 <= eps or the bank is exhausted (there
+is no route cap; `--max-routes` is an optional safety cap). Everything is
+logged to OUT/adaptive_log.json and the run resumes from it.
 
-    python tools/b2d_adaptive_eval.py --name my_planner --out /data1/jeongtae/b2d_adaptive/my_planner \
+    python tools/b2d_adaptive_eval.py --name my_planner --out /path/to/out \
         --agent $LEADERBOARD_ROOT/team_code/my_agent.py --agent-config /path/to/config \
-        --gpu 2 --gpu-rank 2 --eps 0.03 --max-routes 110
+        --gpu 2 --gpu-rank 2 --eps 0.03 \
+        --carla-root ... --work-dir ... --python ... --xml ...     # or ATDRIVE_CARLA_ROOT etc.
 
     python tools/b2d_adaptive_eval.py --dry-run PLANNER_NAME --eps 0.03   # simulate from the matrix
 
@@ -31,13 +32,15 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.live import LiveEvaluator
+from atdrive.live import LiveEvaluator
 
+# Paths of the Bench2Drive installation; every entry must be set for a real run
+# (flag or environment variable ATDRIVE_<KEY>), none is needed for --dry-run.
 DEFAULTS = dict(
-    carla_root='/data1/jeongtae/carla915',
-    work_dir='/home/jeongtae/IRT/repos/carla_garage_b2d/Bench2Drive',
-    python='/home/jeongtae/miniconda3/envs/b2d_roll/bin/python',
-    xml='/home/jeongtae/IRT/repos/carla_garage_b2d/Bench2Drive/leaderboard/data/bench2drive220.xml',
+    carla_root=os.environ.get('ATDRIVE_CARLA_ROOT', ''),        # CARLA 0.9.15 root
+    work_dir=os.environ.get('ATDRIVE_WORK_DIR', ''),            # the Bench2Drive checkout (leaderboard/, scenario_runner/)
+    python=os.environ.get('ATDRIVE_PYTHON', sys.executable),    # the python of the Bench2Drive environment
+    xml=os.environ.get('ATDRIVE_ROUTES_XML', ''),               # leaderboard/data/bench2drive220.xml
 )
 
 
@@ -102,7 +105,7 @@ def main():
     ap.add_argument('--agent-config', default='')
     ap.add_argument('--track', default='SENSORS')
     ap.add_argument('--gpu', type=int, default=2, help='CUDA index for the agent')
-    ap.add_argument('--gpu-rank', type=int, default=2, help='Vulkan adapter index for CARLA (see run_pdmlite_rollout.sh)')
+    ap.add_argument('--gpu-rank', type=int, default=2, help='Vulkan adapter index for CARLA')
     ap.add_argument('--port', type=int, default=21000)
     ap.add_argument('--tm-port', type=int, default=41000)
     ap.add_argument('--timeout', type=float, default=600.0)
@@ -120,13 +123,16 @@ def main():
 
     name = a.dry_run or a.name
     assert name, '--name or --dry-run required'
+    if not a.dry_run:
+        missing = [k for k in ('carla_root', 'work_dir', 'xml') if not getattr(a, k)]
+        assert not missing, f'set --{missing[0].replace("_", "-")} (or ATDRIVE_{missing[0].upper()}) for a real run'
     out = Path(a.out or Path(__file__).resolve().parents[1] / 'results' / f'live_{name}')
     out.mkdir(parents=True, exist_ok=True)
     (out / 'xml').mkdir(exist_ok=True)
     (out / 'checkpoints').mkdir(exist_ok=True)
     truth = None
     if a.dry_run:
-        from driveat.b2d import Panel, FULL_CSV
+        from atdrive.b2d import Panel, FULL_CSV
         pn = Panel(csv_path=FULL_CSV)
         k = pn.names.index(a.dry_run)
         truth = {r: pn.Y[(r, k)] for r in pn.allr if (r, k) in pn.Y}

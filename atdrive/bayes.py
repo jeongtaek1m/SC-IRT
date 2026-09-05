@@ -176,7 +176,7 @@ def track(bank, y, order):
 def track3(bank, y, order):
     """As `track`, plus the ability posterior SD: (S_hat[t], R1[t], SD(theta)[t]).
     SD(theta) is what an ability-precision CAT rule stops on; R1 is the
-    posterior L1 risk of the reported SR, which is what DriveAT stops on."""
+    posterior L1 risk of the reported SR, which is what ATDrive stops on."""
     st = State(bank, y)
     Sh, R1, SE = [], [], []
     for s in order:
@@ -197,8 +197,11 @@ def transfer(q, bank_d):
     return st.readout()[0], st.predictive_all()
 
 
-def stop_at(R1, tau):
-    """First index (1-based rollout count) with R1 <= tau; the full length
-    if never reached."""
-    hit = np.where(np.asarray(R1) <= tau)[0]
-    return int(hit[0]) + 1 if len(hit) else len(R1)
+def stop_at(R1, tau, tmin=1):
+    """First index (1-based rollout count) t >= tmin with R1[t] <= tau; the full
+    length if never reached. tmin matches the window on which the risk scale c is
+    fitted (t >= 10, PROTOCOL section 4); it never binds on this panel (earliest
+    stop 29)."""
+    v = np.asarray(R1)
+    hit = np.where(v[tmin - 1:] <= tau)[0]
+    return int(hit[0]) + tmin if len(hit) else len(v)

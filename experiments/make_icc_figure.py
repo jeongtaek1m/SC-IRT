@@ -25,11 +25,11 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from driveat.b2d import Panel
-from driveat.calibration import calibrate
-from driveat.curves import XG, BG, curves_from_posterior, sig
+from atdrive.b2d import Panel
+from atdrive.calibration import calibrate
+from atdrive.curves import XG, BG, curves_from_posterior, sig
 
-FIGS = Path(os.environ.get('DRIVEAT_FIGS_DIR', ROOT / 'figs'))
+FIGS = Path(os.environ.get('ATDRIVE_FIGS_DIR', ROOT / 'figs'))
 XLIM = (-4, 4)
 
 

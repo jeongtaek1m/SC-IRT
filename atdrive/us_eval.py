@@ -24,7 +24,7 @@ from sklearn.metrics import roc_auc_score
 
 from .b2d import Panel
 from .splits import unified_split, R_DRAWS
-from .calibration import calibrate_dense
+from .calibration import calibrate_dense, DEVICE
 from .curves import sig
 
 
@@ -37,7 +37,7 @@ def load_pred_npz(path):
 class USEvaluator:
     """Caches the per-draw calibration so many predictors can be scored."""
 
-    def __init__(self, panel=None, device='cuda'):
+    def __init__(self, panel=None, device=DEVICE):
         self.panel = panel or Panel()
         self.Y0, self.MK = self.panel.dense()
         self.N = len(self.panel.allr)

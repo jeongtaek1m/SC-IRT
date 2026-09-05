@@ -7,13 +7,13 @@
         planner passed. b_hat marked.
     (b) the ICCs those posteriors imply. Dashed sigma(theta - b_hat) is the
         plug-in curve every baseline uses; solid m_s(theta) = E_b[sigma(theta - b)]
-        is what DriveAT uses.
+        is what ATDrive uses.
     (c) the consequence for the reported metric: predicted benchmark success rate
         (1/n) sum_s of each curve, as a function of ability, with the calibration
         planners at their fitted ability and observed SR.
     (d) how the gap shrinks as the calibration panel grows, K_cal = 4, 8, 12, 16.
 
-Bank: all 220 routes, calibrated from K_cal planners of draw 0 (DRIVEAT_FIG_KCAL,
+Bank: all 220 routes, calibrated from K_cal planners of draw 0 (ATDRIVE_FIG_KCAL,
 default 4 — the sparsest panel the protocol uses, where the difficulty posterior
 is widest).
 
@@ -27,13 +27,13 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from driveat.b2d import Panel
-from driveat.splits import up_split
-from driveat.calibration import calibrate
-from driveat.curves import XG, BG, curves_from_posterior, sig
+from atdrive.b2d import Panel
+from atdrive.splits import up_split
+from atdrive.calibration import calibrate
+from atdrive.curves import XG, BG, curves_from_posterior, sig
 
-FIGS = Path(os.environ.get('DRIVEAT_FIGS_DIR', ROOT / 'figs'))
-KCAL = int(os.environ.get('DRIVEAT_FIG_KCAL', 4))
+FIGS = Path(os.environ.get('ATDRIVE_FIGS_DIR', ROOT / 'figs'))
+KCAL = int(os.environ.get('ATDRIVE_FIG_KCAL', 4))
 KGRID = (4, 8, 12, 16)
 DRAW = 0
 XLIM = (-4, 4)

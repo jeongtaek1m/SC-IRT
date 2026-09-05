@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.us_eval import USEvaluator, load_pred_npz
+from atdrive.us_eval import USEvaluator, load_pred_npz
 
 
 def main(paths):
@@ -32,4 +32,4 @@ def main(paths):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:] or sorted(str(p) for p in (Path(__file__).resolve().parents[1] / 'data/encoder').glob('relgraph_r2_s*.npz')))
+    main(sys.argv[1:] or sorted(str(p) for p in (Path(__file__).resolve().parents[1] / 'data/encoder').glob('relgraph_r2_s[0-9].npz')))

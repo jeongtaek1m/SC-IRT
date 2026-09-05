@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Psychometric model adequacy on the calibration block (ATLAS reports M2 /
-RMSEA; with 16 raters we use what is identifiable): held-out cell
-negative log-likelihood of 1PL vs 2PL vs 3PL, and the split-half
+"""Model adequacy on the UP calibration block (appendix; ATLAS reports M2 /
+RMSEA; with 12 calibration planners we use what is identifiable): held-out
+cell negative log-likelihood of 1PL vs 2PL vs 3PL, and the split-half
 reliability of log-discrimination across two random halves of the
 calibration planners. If 2PL/3PL do not predict held-out responses better
 than the Rasch model and a-hat is unreliable, the 1PL is the adequate
-model, not a simplification.
+model, not a simplification. Block = the 12 calibration planners of each
+draw x all 220 routes (`splits.up_split`, the UP bank of PROTOCOL section 2);
+10% of the observed cells are held out per draw, RandomState(2000 + draw).
+
+    python experiments/run_model_adequacy.py     # GPU; writes results/model_adequacy.json, anchors OK
 """
 import json
 import os
@@ -16,15 +20,15 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel
-from driveat.splits import unified_split, R_DRAWS
-from driveat.calibration import calibrate
-from driveat.curves import sig
-from driveat.metrics import mean_se
+from atdrive.b2d import Panel
+from atdrive.splits import up_split, R_DRAWS
+from atdrive.calibration import calibrate
+from atdrive.curves import sig
+from atdrive.metrics import mean_se
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 
 
 def cell_nll(f, mode, i, k, y):
@@ -39,7 +43,7 @@ def main():
     NLL = {m: [] for m in ('1pl', '2pl', '3pl')}
     REL = []
     for seed in range(R_DRAWS):
-        hp, ht = unified_split(seed, panel.utypes, panel.J)
+        hp, ht = up_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]
         calR, _ = panel.split_routes(ht)
         cells = [(r, c) for r in calR for c in cols if (r, c) in panel.Y]
@@ -60,7 +64,7 @@ def main():
         g2 = calibrate(panel.Y, calR, h2, mode='2pl')
         REL.append(float(np.corrcoef(np.log(g1['a'] + 1e-9), np.log(g2['a'] + 1e-9))[0, 1]))
         print(f'seed {seed} done', flush=True)
-    print('\n===== held-out cell NLL on the calibration block (10% cells, 16 draws) =====')
+    print('\n===== held-out cell NLL on the UP calibration block (12 planners x 220 routes; 10% cells, 16 draws) =====')
     for m in NLL:
         v, se = mean_se(NLL[m])
         print(f'  {m}: {v:.4f} +- {se:.4f}')
@@ -68,10 +72,20 @@ def main():
     print(f'  2PL - 1PL: {d.mean():+.4f} +- {d.std(ddof=1) / 4:.4f}   '
           f'3PL - 1PL: {(np.array(NLL["3pl"]) - np.array(NLL["1pl"])).mean():+.4f}')
     r, se = mean_se(REL)
-    print(f'\nsplit-half reliability of log a-hat (8/8-planner halves): {r:+.3f} +- {se:.3f}')
+    print(f'\nsplit-half reliability of log a-hat ({len(cols) // 2}/{len(cols) - len(cols) // 2}-planner halves): {r:+.3f} +- {se:.3f}')
     OUT.mkdir(exist_ok=True)
     json.dump({'nll': {m: list(map(float, NLL[m])) for m in NLL}, 'rel_loga': list(map(float, REL))},
-              open(OUT / 'model_adequacy.json', 'w'))
+              open(OUT / 'model_adequacy.json', 'w'), indent=1)
+    # anchors: the 16-draw run of record on the UP bank (RESULTS.md, model adequacy appendix)
+    for m, v in ANCHORS_NLL.items():
+        assert abs(float(np.mean(NLL[m])) - v) < .002, (m, float(np.mean(NLL[m])))
+    assert float(np.mean(NLL['2pl'])) > float(np.mean(NLL['1pl'])) and float(np.mean(NLL['3pl'])) > float(np.mean(NLL['1pl']))
+    assert abs(r - ANCHOR_REL) < .03, r
+    print('anchors OK')
+
+
+ANCHORS_NLL = {'1pl': .5284, '2pl': .5358, '3pl': .5323}      # held-out cell NLL, 16 draws, UP bank
+ANCHOR_REL = .062                                             # split-half reliability of log a-hat
 
 
 if __name__ == '__main__':

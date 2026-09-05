@@ -11,7 +11,7 @@ chooses the next scene. No auxiliary model, no phase switch.
 
        Each branch is scored at its own posterior median — the same L1
        Bayes action the readout reports — in the closed form of
-       `driveat.bayes.mix_l1`. Candidates of one scenario type share the
+       `atdrive.bayes.mix_l1`. Candidates of one scenario type share the
        type's (theta x u) table, so the branch posteriors are vectorised
        per type.
 
@@ -145,7 +145,7 @@ def eig_pick(state, rem):
 
 
 def r1_traj(bank, y, T):
-    """Greedy Delta-R1 rollout order of length T on a bank (the DriveAT order)."""
+    """Greedy Delta-R1 rollout order of length T on a bank (the ATDrive order)."""
     st, S = State(bank, y), []
     for _ in range(min(T, bank.n)):
         s = r1_pick(st, [i for i in range(bank.n) if i not in S])
@@ -157,7 +157,7 @@ def r1_traj(bank, y, T):
 def fisher_pick(state, rem):
     """1PL maximum-information rule: the item whose marginal success
     probability at the posterior-mean ability is closest to 1/2. This is the
-    classic CAT selection rule, written against the same posterior DriveAT
+    classic CAT selection rule, written against the same posterior ATDrive
     uses, so only the objective differs."""
     b = state.bank
     q = state.q

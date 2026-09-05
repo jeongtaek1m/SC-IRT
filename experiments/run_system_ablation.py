@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Full-system ablation — the IRT side and the CAT side, at a fixed budget and at a risk target.
 
-Merge-only: no new trajectories. DriveAT is decomposed into two IRT pieces
+Merge-only: no new trajectories. ATDrive is decomposed into two IRT pieces
 (the exact difficulty posterior, the planner x type testlet) and two CAT
 pieces (the Delta-R1 acquisition, the LOO-calibrated risk scale c), and each
 is switched off alone. Every arm is scored twice — at the fixed budget
@@ -11,14 +11,14 @@ fraction stopped only by the bank running out). Coverage P(|err| <= eps) is
 still written to the json but no longer printed.
 
   arm                     fixed budget                stopping trajectories / c
-  DriveAT (full)           ablation 'DriveAT (full)'    adaptive + risk_cal, DriveAT order
-  w/o b posterior         ablation 'w/o b-uncertainty'  pointcurves/{adaptive,risk_cal}, DriveAT order
-  w/o testlet             ablation 'w/o testlet'      notestlet/{adaptive,risk_cal}, DriveAT order
+  ATDrive (full)           ablation 'ATDrive (full)'    adaptive + risk_cal, ATDrive order
+  w/o b posterior         ablation 'w/o b-uncertainty'  pointcurves/{adaptive,risk_cal}, ATDrive order
+  w/o testlet             ablation 'w/o testlet'      notestlet/{adaptive,risk_cal}, ATDrive order
   w/o Delta-R1 acq        ablation 'w/o risk acq.'    adaptive + risk_cal, Random order
   w/o LOO c               = full (c is a stopping-only knob)   adaptive, c = 1
 
 The two ablation result trees come from the same scripts with
-`DRIVEAT_NO_TESTLET=1` / `DRIVEAT_POINT_CURVES=1` and `DRIVEAT_RESULTS_DIR`.
+`ATDRIVE_NO_TESTLET=1` / `ATDRIVE_POINT_CURVES=1` and `ATDRIVE_RESULTS_DIR`.
 
     python experiments/run_system_ablation.py      # the table, results/system_ablation.json, anchors
 """
@@ -31,20 +31,20 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from driveat.metrics import paired_cluster_boot
+from atdrive.metrics import paired_cluster_boot
 from run_adaptive import risk_stopped
 
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
 BGRID = [30, 55, 110, 165]
 BMAIN = 55
 EPS = (0.05, 0.03)
 # arm -> (ablation.json arm for the fixed budgets, results subdir for the stopping tracks, bank order, c)
-ARMS = {'DriveAT (full)':    ('DriveAT (full)', '', 'DriveAT', None),
-        'w/o b posterior':  ('w/o b-uncertainty', 'pointcurves', 'DriveAT', None),
-        'w/o testlet':      ('w/o testlet', 'notestlet', 'DriveAT', None),
+ARMS = {'ATDrive (full)':    ('ATDrive (full)', '', 'ATDrive', None),
+        'w/o b posterior':  ('w/o b-uncertainty', 'pointcurves', 'ATDrive', None),
+        'w/o testlet':      ('w/o testlet', 'notestlet', 'ATDrive', None),
         'w/o Delta-R1 acq': ('w/o risk acquisition', '', 'Random', None),
-        'w/o LOO c':        ('DriveAT (full)', '', 'DriveAT', 1.0)}
+        'w/o LOO c':        ('ATDrive (full)', '', 'ATDrive', 1.0)}
 
 
 def load(sub):
@@ -69,9 +69,9 @@ def main():
               + '   '.join(f'eps={e:.2f}: roll (cap)  MAE' for e in EPS))
         for arm, (a, sub, o, c0) in ARMS.items():
             fixed = {str(B): float(np.mean([r['err'][a][str(B)] for r in rs])) for B in BGRID}
-            d, lo, hi = ((0.0, 0.0, 0.0) if arm == 'DriveAT (full)' else
+            d, lo, hi = ((0.0, 0.0, 0.0) if arm == 'ATDrive (full)' else
                          paired_cluster_boot([r['err'][a][str(BMAIN)] for r in rs],
-                                             [r['err']['DriveAT (full)'][str(BMAIN)] for r in rs], js))
+                                             [r['err']['ATDrive (full)'][str(BMAIN)] for r in rs], js))
             recs, C = trees[sub]
             st = {}
             for eps in EPS:
@@ -83,13 +83,13 @@ def main():
                            'gap': float(e_.mean() - cr_.mean())}
             res[f'K{K}|{arm}'] = {'fixed': fixed, 'd55': [float(d), float(lo), float(hi)], 'stop':
                                   {f'{e:.2f}': st[e] for e in EPS}}
-            dtxt = '   —                    ' if arm == 'DriveAT (full)' else f'({d:+.4f} [{lo:+.4f},{hi:+.4f}])'
+            dtxt = '   —                    ' if arm == 'ATDrive (full)' else f'({d:+.4f} [{lo:+.4f},{hi:+.4f}])'
             print(f'   {arm:17s} {fixed[str(BMAIN)]:.4f} {dtxt}  '
                   + '  '.join(f'{st[e]["rollouts"]:5.1f} ({st[e]["cap"]:3.0%})  {st[e]["mae"]:.4f}'
                               for e in EPS))
     json.dump(res, open(OUT / 'system_ablation.json', 'w'), indent=1)
     print(f'\nwritten: {OUT / "system_ablation.json"}')
-    for k, f, v, tol in (('K4|DriveAT (full)', lambda x: x['fixed']['55'], .0332, .0003),
+    for k, f, v, tol in (('K4|ATDrive (full)', lambda x: x['fixed']['55'], .0332, .0003),
                          ('K8|w/o b posterior', lambda x: x['fixed']['55'], .0344, .0003),
                          ('K12|w/o testlet', lambda x: x['stop']['0.05']['rollouts'], 94.4, .5),
                          ('K8|w/o Delta-R1 acq', lambda x: x['stop']['0.05']['mae'], .0260, .0005),

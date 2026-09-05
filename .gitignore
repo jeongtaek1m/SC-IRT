@@ -3,12 +3,7 @@
 # --seeds lo hi) and the snapshots of superseded protocol versions.
 results/*_[0-9]*_[0-9]*.json
 results/**/*_[0-9]*_[0-9]*.json
-results/v4*/
-results/v5*/
-results/**/v6_180bank/
-results/**/prerounding/
 results/live_*/
-expected_local/
 
 __pycache__/
 *.py[cod]

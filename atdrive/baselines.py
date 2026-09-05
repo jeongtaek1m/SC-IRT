@@ -2,7 +2,7 @@
 
 "-style / -lite / -adapted" marks re-implementations from the method
 descriptions on this bank; every baseline is calibrated from the same
-planner panel as DriveAT. The static orders have the prefix property
+planner panel as ATDrive. The static orders have the prefix property
 (order[:B] is the budget-B subset), which is what lets one bank order serve
 both the fixed-budget table and the common stopping machine.
 """

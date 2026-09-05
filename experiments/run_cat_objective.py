@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Table 2 — what a CAT should target: metric uncertainty, not ability uncertainty.
+"""Policy-matrix trajectories — the CAT objective with the IRT model held fixed
+(step 1 of `run_policy_matrix.py`; RESULTS.md, "Adaptive policies under one IRT").
 
-The IRT model is held fixed (DriveAT's exact difficulty posterior, the
+The IRT model is held fixed (ATDrive's exact difficulty posterior, the
 planner x type testlet, the posterior-median SR readout). Only the CAT
 around it changes, so every difference below is attributable to the
-objective and nothing else.
+objective and nothing else. Every trajectory (SR estimate, metric risk R1
+and ability SD at every step, for the four selection rules, on the
+evaluation planners and on the leave-one-planner-out calibration tracks) is
+saved; `run_policy_matrix.py` scores complete policies on them.
 
 Selection (which route next), all greedy on the same posterior:
   Delta-R1     ours: the route that most reduces E|SR - SR_hat|   (metric)
@@ -20,10 +24,20 @@ calibration panel and never on evaluation planners:
                            that its mean cost matches ours, so the two are
                            compared at equal budget.
 
-Bank = all 220 routes (PROTOCOL section 2); K_cal in {4, 8, 12}.
+The risk scale c of the table printed here is ONE value per (K_cal, order) pooled over
+the 16 draws' LOO tracks, so its rows are a diagnostic of the objective and not Table 2
+(which fixes c per draw); the table of record for complete policies is
+`run_policy_matrix.py`, which fixes c per draw on the same trajectories.
 
-    python experiments/run_cat_objective.py --seeds 0 2     # shard
-    python experiments/run_cat_objective.py --merge         # tables + anchors
+Bank = all 220 routes (PROTOCOL section 2); K_cal in {4, 8, 12}. The Random
+order is seeded RandomState(100 + 16 draw + slot), slot = the 0-3 index of the
+held-out planner within its draw (evaluation tracks) or RandomState(100 +
+16 (700 + K_cal) + planner id) (LOO tracks): a different permutation from
+Table 2's Random row, which seeds on the planner id.
+
+    python experiments/run_cat_objective.py --seeds 0 2     # shard (GPU)
+    python experiments/run_cat_objective.py --merge         # results/cat_objective.json (trajectories)
+                                                            # + cat_objective_table.json + anchors
 """
 import argparse
 import glob
@@ -36,15 +50,15 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel
-from driveat.splits import up_split, R_DRAWS
-from driveat.calibration import calibrate
-from driveat.bayes import bank_from_fit, track3
-from driveat.acquisition import r1_pick, eig_pick, fisher_pick, traj
-from driveat.metrics import paired_cluster_boot
+from atdrive.b2d import Panel
+from atdrive.splits import up_split, R_DRAWS
+from atdrive.calibration import calibrate
+from atdrive.bayes import bank_from_fit, track3
+from atdrive.acquisition import r1_pick, eig_pick, fisher_pick, traj
+from atdrive.metrics import paired_cluster_boot
 
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
 DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 PJ = 16
 T0 = 10                      # no stop before 10 routes (PROTOCOL section 4)
@@ -117,11 +131,11 @@ def report(recs):
     loo = [r for r in recs if r['loo']]
     ev = [r for r in recs if not r['loo']]
     res = {}
-    print('\n===== Table 2 — the CAT objective, with the IRT model held fixed =====')
+    print('\n===== the CAT objective, with the IRT model held fixed =====')
     for K in KCALS:
         L = [r for r in loo if r['K'] == K]
         E = [r for r in ev if r['K'] == K]
-        js = [r['js'] for r in E]
+        js = [r['j'] for r in E]                    # clusters = the 16 planner ids (PROTOCOL section 7)
         # (a) the risk scale c of each selection rule, from its own LOO trajectories
         C = {}
         for o in ORD:
@@ -177,6 +191,11 @@ def report(recs):
     return res
 
 
+def _round(recs, nd=8):
+    return [{**r, 'tr': {o: {k: [round(x, nd) for x in v] for k, v in t.items()} for o, t in r['tr'].items()}}
+            for r in recs]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--seeds', nargs=2, type=int, default=None)
@@ -187,13 +206,36 @@ def main():
         json.dump(run(range(*a.seeds)), open(OUT / f'cat_objective_{a.seeds[0]}_{a.seeds[1]}.json', 'w'))
         print('shard saved; run with --merge after all shards')
         return
-    recs = ([r for f in sorted(glob.glob(str(OUT / 'cat_objective_*_*.json'))) for r in json.load(open(f))]
-            if a.merge else run(range(R_DRAWS)))
+    if a.merge:
+        recs = [r for f in sorted(glob.glob(str(OUT / 'cat_objective_*_*.json'))) for r in json.load(open(f))]
+        if recs:                                # the trajectories of record, 8 decimals (about half the size)
+            json.dump(_round(recs), open(OUT / 'cat_objective.json', 'w'), separators=(',', ':'))
+        else:                                   # no shards (a clone): score the results of record
+            recs = json.load(open(OUT / 'cat_objective.json'))
+    else:
+        recs = run(range(R_DRAWS))
+        json.dump(_round(recs), open(OUT / 'cat_objective.json', 'w'), separators=(',', ':'))
     assert len(set(r['seed'] for r in recs)) == R_DRAWS, len(set(r['seed'] for r in recs))
     res = report(recs)
-    json.dump(res, open(OUT / 'cat_objective.json', 'w'), indent=1)
-    print(f'\nwritten: {OUT / "cat_objective.json"}')
-
+    json.dump(res, open(OUT / 'cat_objective_table.json', 'w'), indent=1)
+    print(f'\nwritten: {OUT / "cat_objective_table.json"}')
+    # anchors: the 16-draw run of record (c pooled over draws, see the docstring). The trajectories
+    # themselves are pinned by run_policy_matrix.py, whose per-draw-c ATDrive rows reproduce Table 2.
+    for key, field, v, tol in (('K4|sel|Delta-R1 (metric)|0.05', 'routes', 86.9, 0.5),
+                               ('K4|sel|Delta-R1 (metric)|0.05', 'mae', .0263, .002),
+                               ('K8|sel|Delta-R1 (metric)|0.05', 'routes', 78.1, 0.5),
+                               ('K8|sel|Delta-R1 (metric)|0.05', 'mae', .0276, .002),
+                               ('K12|sel|Delta-R1 (metric)|0.05', 'routes', 69.6, 0.5),
+                               ('K12|sel|Delta-R1 (metric)|0.05', 'mae', .0207, .002),
+                               ('K12|sel|Delta-R1 (metric)|0.05', 'c', 1.94, .03),
+                               ('K12|sel|Fisher (ability)|0.05', 'routes', 84.7, 0.5),
+                               ('K12|sel|Fisher (ability)|0.05', 'mae', .0223, .002),
+                               ('K12|sel|Random|0.05', 'routes', 113.1, 0.5),
+                               ('K12|stop|SE|0.05', 'routes', 69.3, 0.5),
+                               ('K12|stop|SE|0.05', 'mae', .0189, .002)):
+        got = res[key][field]
+        assert abs(got - v) < tol, (key, field, got, v)
+    print('anchors OK')
 
 if __name__ == '__main__':
     np.random.seed(0)

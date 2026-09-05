@@ -10,6 +10,7 @@ testlet SD sigma_g of the planner x scenario-type effect (profile
 marginal likelihood on a grid).
 """
 import numpy as np
+import torch
 from scipy.special import logsumexp
 
 from .curves import sig, item_loglik, item_posteriors, item_marginal_loglik, UG
@@ -18,9 +19,10 @@ SIGMA_THETA = 1.0
 SIGMA_LOGA = 0.5
 SIGMA_B_GRID = (0.5, 0.75, 1.0, 1.5, 2.0, 3.0)
 SIGMA_G_GRID = (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'   # the paper's numbers were fitted on a GPU; CPU float32 moves third decimals
 
 
-def _fit(M, mk, mode, sigma_b, it=800, device='cuda', freeze_b0=False):
+def _fit(M, mk, mode, sigma_b, it=800, device=DEVICE, freeze_b0=False):
     """MAP fit on a (n items x K planners) response matrix with nan mask mk.
     Returns dict(b, th, a, cc). The zero-centred priors already identify the
     location, so the theta-mean centring applied before returning (skipped when
@@ -103,7 +105,7 @@ def testlet_sd(M, th, b, types):
     return float(best)
 
 
-def calibrate(Y, routes, cols, it=800, mode='1pl', device='cuda', sigma_b=None, types=None):
+def calibrate(Y, routes, cols, it=800, mode='1pl', device=DEVICE, sigma_b=None, types=None):
     """Fit item parameters from the sparse response dict.
 
     Y      : {(route_id, planner_idx): 0/1}
@@ -126,7 +128,7 @@ def calibrate(Y, routes, cols, it=800, mode='1pl', device='cuda', sigma_b=None, 
     return f
 
 
-def calibrate_dense(Y0, MK, rows, cols, it=800, device='cuda', freeze_b0=False, sigma_b=None):
+def calibrate_dense(Y0, MK, rows, cols, it=800, device=DEVICE, freeze_b0=False, sigma_b=None):
     """1PL calibration on the dense (N x J) panel view (US-side scripts).
 
     freeze_b0=True fits the planner-only null (b == 0, theta free) and

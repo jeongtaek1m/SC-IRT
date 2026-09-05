@@ -4,7 +4,7 @@
 Same readout and the same bank for every row; only the marked component
 changes. Primary protocol, B in {30, 55}.
 
-  DriveAT (full)            exact difficulty posteriors + testlet + Delta-R1 acquisition
+  ATDrive (full)            exact difficulty posteriors + testlet + Delta-R1 acquisition
   w/o b-uncertainty        point curves sigmoid(theta - b_hat + u) (difficulty posterior collapsed)
   w/o testlet              sigma_g = 0 (independent items), posteriors and acquisition unchanged
   w/o risk acquisition     random scene order, inference unchanged
@@ -23,19 +23,19 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel
-from driveat.splits import up_split, R_DRAWS
-from driveat.calibration import calibrate
-from driveat.curves import marginal_curves
-from driveat.bayes import Bank, bank_from_fit, readout
-from driveat.acquisition import r1_traj
-from driveat.metrics import paired_cluster_boot
+from atdrive.b2d import Panel
+from atdrive.splits import up_split, R_DRAWS
+from atdrive.calibration import calibrate
+from atdrive.curves import marginal_curves
+from atdrive.bayes import Bank, bank_from_fit, readout
+from atdrive.acquisition import r1_traj
+from atdrive.metrics import paired_cluster_boot
 
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
 BGRID = [30, 55, 110, 165]
 T = max(BGRID)
-ARMS = ['DriveAT (full)', 'w/o b-uncertainty', 'w/o testlet', 'w/o risk acquisition']
+ARMS = ['ATDrive (full)', 'w/o b-uncertainty', 'w/o testlet', 'w/o risk acquisition']
 
 
 def subsample(cols, seed, Kc):
@@ -66,7 +66,7 @@ def run(seeds):
                 bank_p = Bank(marginal_curves(f1['b'][bi], np.full(n, 1e-9)), typ[bi], f1['sigma_g'])
                 bank_t = bank_from_fit(f1, bi, typ, sigma_g=0.0)
                 perm = [int(i) for i in np.random.RandomState(100 + seed * panel.J + js).permutation(n)[:T]]
-                sets = {'DriveAT (full)': (bank, r1_traj(bank, yy, T)),
+                sets = {'ATDrive (full)': (bank, r1_traj(bank, yy, T)),
                         'w/o b-uncertainty': (bank_p, r1_traj(bank_p, yy, T)),
                         'w/o testlet': (bank_t, r1_traj(bank_t, yy, T)),
                         'w/o risk acquisition': (bank, perm)}
@@ -85,7 +85,10 @@ def main():
     OUT.mkdir(exist_ok=True)
     if args.merge:
         recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'ablation_*_*.json')))], [])
-        json.dump(recs, open(OUT / 'ablation.json', 'w'))
+        if recs:
+            json.dump(recs, open(OUT / 'ablation.json', 'w'))
+        else:                                   # no shards (a clone): score the results of record
+            recs = json.load(open(OUT / 'ablation.json'))
     elif args.seeds:
         lo, hi = args.seeds
         recs = run(range(lo, hi))
@@ -103,17 +106,17 @@ def main():
             row = []
             for a in ARMS:
                 v = np.mean([r['err'][a][str(B)] for r in rs])
-                if a == 'DriveAT (full)':
+                if a == 'ATDrive (full)':
                     row.append(f'{a}: {v:.4f}')
                 else:
                     d, lo, hi = paired_cluster_boot([r['err'][a][str(B)] for r in rs],
-                                                    [r['err']['DriveAT (full)'][str(B)] for r in rs],
+                                                    [r['err']['ATDrive (full)'][str(B)] for r in rs],
                                                     [r['js'] for r in rs])
                     row.append(f'{a}: {v:.4f} ({d:+.4f} [{lo:+.4f},{hi:+.4f}])')
             print(f'  K_cal={K:2d} B={B:>3d}  ' + '  '.join(row))
     assert len(recs) == len(KCALS) * 64
     m = lambda a, K, B: np.mean([r['err'][a][str(B)] for r in recs if r['K'] == K])
-    for a, K, B, v in (('DriveAT (full)', 4, 30, .0450), ('DriveAT (full)', 8, 55, .0337), ('DriveAT (full)', 12, 165, .0081),
+    for a, K, B, v in (('ATDrive (full)', 4, 30, .0450), ('ATDrive (full)', 8, 55, .0337), ('ATDrive (full)', 12, 165, .0081),
                        ('w/o risk acquisition', 8, 30, .0567), ('w/o testlet', 8, 55, .0383),
                        ('w/o b-uncertainty', 12, 55, .0270)):
         assert abs(m(a, K, B) - v) < .0003, (a, K, B, m(a, K, B))

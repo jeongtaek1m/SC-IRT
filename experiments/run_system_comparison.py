@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Table 5 — complete-system comparison: each published method run as its OWN system.
+"""Complete-system comparison (RESULTS.md): each published method run as its OWN system.
 
 Tables 1 and 2 each hold something fixed. Table 1 gives every method the same
 budget B and compares SR-MAE (it isolates selection); Table 2 gives every bank
@@ -24,7 +24,7 @@ its bootstrap (`metrics.paired_cluster_boot` over planner ids).
                                   fixed length (its published design) and an
                                   ability-precision stop built from its own MAP
                                   machinery, p-IRT readout supplied by us.
-    DriveAT  (this repo)         1PL + testlet + exact difficulty posterior,
+    ATDrive  (this repo)         1PL + testlet + exact difficulty posterior,
                                   Delta-R1 acquisition, posterior-median readout,
                                   stop at c * R1 <= eps with c fixed by
                                   leave-one-planner-out on the calibration
@@ -44,14 +44,14 @@ FAIRNESS RULES (each honoured below, and each violation would be printed loudly)
     published constants; ATLAS's guessing constant c and difficulty prior SD are
     profiled on the calibration block; Fluid's delta is the mean rank-adjacent
     gap of the *calibration* planners' abilities; Fluid's fixed lengths are its
-    published default (n_max = 100) and a cost match to DriveAT's
-    leave-one-out mean stop on the *calibration* planners; DriveAT's c is the
+    published default (n_max = 100) and a cost match to ATDrive's
+    leave-one-out mean stop on the *calibration* planners; ATDrive's c is the
     leave-one-planner-out 90th percentile on the calibration planners and its
     eps in {.05, .03} is fixed a priori. No threshold is tuned on an evaluation
     planner. The report prints the provenance of every threshold.
  3. Every system is reported at its own native operating points. ATLAS runs at
     all three published tau; Fluid runs at its published fixed-length design and
-    at the precision stop its own machinery supports; DriveAT runs at its two
+    at the precision stop its own machinery supports; ATDrive runs at its two
     published eps. The cost-matched Fluid row is labelled as a cost match and is
     the only row whose length is set by another system's behaviour.
 
@@ -91,16 +91,16 @@ DECLARED DEVIATIONS (all forced; see the per-system notes in the code)
            220); no system may select a route with no recorded outcome.
 
 IES.  ATLAS's definition, IES = (MAE_method / MAE_ref) x (Items_method /
-Items_ref), with the reference restated for a 220-route bank: uniform Random at
-110 routes (half the bank) is the DECLARED reference, in place of ATLAS's
-Random_100 on a 1000+ item bank. IES against Random at 55 routes is printed
-alongside so the number can be compared with `driveat.metrics.ies`, whose
-reference is the random order at B = 55. Each system's reference is read with
-that system's own readout, so the IES of a row is that system's own efficiency
-score; the reference MAEs are printed so the denominators are visible.
+Items_ref), with the reference of PROTOCOL section 7: the uniform random order
+read at 55 routes (`atdrive.metrics.ies`, the reference Table 2 and the policy
+table use). The reference at 110 routes (half the bank, the analogue of
+ATLAS's Random_100 on a 1000+ item bank) is printed alongside. Each system's
+reference is read with that system's own readout, so the IES of a row is that
+system's own efficiency score; the reference MAEs are printed so the
+denominators are visible.
 
     python experiments/run_system_comparison.py --seeds 0 2    # shard
-    python experiments/run_system_comparison.py --merge        # Table 5 + anchors
+    python experiments/run_system_comparison.py --merge        # table + anchors
 """
 import argparse
 import glob
@@ -114,41 +114,41 @@ import torch
 from scipy.special import logsumexp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel
-from driveat.splits import up_split, R_DRAWS
-from driveat.calibration import calibrate
-from driveat.bayes import bank_from_fit, track, state_from, stop_at
-from driveat.acquisition import r1_traj
-from driveat.metrics import paired_cluster_boot, ies
+from atdrive.b2d import Panel
+from atdrive.splits import up_split, R_DRAWS
+from atdrive.calibration import calibrate
+from atdrive.bayes import bank_from_fit, track, state_from, stop_at
+from atdrive.acquisition import r1_traj
+from atdrive.metrics import paired_cluster_boot, ies
 
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
-DEVICE = os.environ.get('DRIVEAT_DEVICE', 'cuda' if torch.cuda.is_available() else 'cpu')
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+DEVICE = os.environ.get('ATDRIVE_DEVICE', 'cuda' if torch.cuda.is_available() else 'cpu')
 
 NROUTES = 220               # the benchmark; per-planner banks are its recorded subset (210-220)
-IES_REF = 110               # declared IES reference budget: uniform Random at half the bank
-IES_REF2 = 55               # second reference, comparable with driveat.metrics.ies
+IES_REF = 55                # IES reference budget: uniform Random at 55 routes (PROTOCOL section 7, atdrive.metrics.ies)
+IES_REF2 = 110              # second reference: half the bank (the analogue of ATLAS's Random_100)
 ETOL = 0.05                 # error tolerance kept in the json only, not printed
 ATLAS_TAUS = (0.1, 0.2, 0.3)
 ATLAS_MIN = 30              # ATLAS's published minimum item count
 FLUID_NMAX = 100            # Fluid's published default n_max (README)
-EPS = (0.05, 0.03)          # DriveAT's published risk targets
+EPS = (0.05, 0.03)          # ATDrive's published risk targets
 RISK_T0 = 10                # first step of the LOO tracks used for the risk scale (run_tau_calibration)
-MATCH_EPS = 0.05            # the DriveAT operating point the cost-matched Fluid row matches
+MATCH_EPS = 0.05            # the ATDrive operating point the cost-matched Fluid row matches
 
 # Pinned on the 16-draw run of record (results/syscmp.json, 192 planner
 # evaluations). Entries are (K_cal, row label, field, value, tolerance);
-# fields: 'rollouts', 'mae', 'coverage'. The DriveAT rows are also the
+# fields: 'rollouts', 'mae', 'coverage'. The ATDrive rows are also the
 # cross-check against RESULTS.md Table 2 (83.5 / .0272, 79.0 / .0281,
 # 70.3 / .0207 at eps = .05), which this script reproduces from its own
 # leave-one-planner-out risk scale (c = 1.97 / 2.12 / 1.95).
-ANCHORS = ((4, 'DriveAT eps=0.05', 'rollouts', 83.5, 1.0),
-           (4, 'DriveAT eps=0.05', 'mae', .0272, .002),
-           (8, 'DriveAT eps=0.05', 'rollouts', 79.0, 1.0),
-           (12, 'DriveAT eps=0.05', 'rollouts', 70.3, 1.0),
-           (12, 'DriveAT eps=0.05', 'mae', .0207, .002),
-           (12, 'DriveAT eps=0.05', 'rollouts', 70.3, .5),
-           (12, 'DriveAT eps=0.03', 'mae', .0138, .002),
+ANCHORS = ((4, 'ATDrive eps=0.05', 'rollouts', 83.5, 1.0),
+           (4, 'ATDrive eps=0.05', 'mae', .0272, .002),
+           (8, 'ATDrive eps=0.05', 'rollouts', 79.0, 1.0),
+           (12, 'ATDrive eps=0.05', 'rollouts', 70.3, 1.0),
+           (12, 'ATDrive eps=0.05', 'mae', .0207, .002),
+           (12, 'ATDrive eps=0.05', 'rollouts', 70.3, .5),
+           (12, 'ATDrive eps=0.03', 'mae', .0138, .002),
            (4, 'ATLAS  tau=0.1', 'rollouts', 217.4, 1.0),
            (4, 'ATLAS  tau=0.1', 'mae', .0000, .001),
            (8, 'ATLAS  tau=0.2', 'rollouts', 66.4, 1.5),
@@ -446,9 +446,9 @@ def fluid_static_readout(a, b, yy, order, B):
 
 
 # ===========================================================================
-# DriveAT — the repo method, with its risk scale fixed on the calibration panel
+# ATDrive — the repo method, with its risk scale fixed on the calibration panel
 # ===========================================================================
-def drivecat_loo(panel, calR, typ, cs, f0):
+def atdrive_loo(panel, calR, typ, cs, f0):
     """Leave-one-planner-out on the CALIBRATION planners (mirrors
     run_tau_calibration.py): the bank is re-calibrated from the other K_cal - 1
     planners, the Delta-R1 order is run through the whole bank on the left-out
@@ -495,9 +495,9 @@ def run(seeds):
             M = response_matrix(panel.Y, calR, cs)
             fa = atlas_calibrate(M)                                          # ATLAS's own bank
             ff = calibrate(panel.Y, calR, cs, mode='2pl', device=DEVICE)     # Fluid's model form, our MAP fit
-            f0 = calibrate(panel.Y, calR, cs, mode='1pl', device=DEVICE, types=typ)   # DriveAT's bank
+            f0 = calibrate(panel.Y, calR, cs, mode='1pl', device=DEVICE, types=typ)   # ATDrive's bank
             delta = float(np.mean(np.diff(np.sort(ff['th']))))               # Fluid's calibration-side threshold
-            c_risk, Bmatch = drivecat_loo(panel, calR, typ, cs, f0)
+            c_risk, Bmatch = atdrive_loo(panel, calR, typ, cs, f0)
             for js in hp:
                 bi, yy = panel.bank_rows(calR, js)
                 n = len(bi)
@@ -513,15 +513,15 @@ def run(seeds):
                        'delta': delta, 'c_risk': c_risk, 'Bmatch': Bmatch, 'sigma_g': f0['sigma_g'],
                        'ATLAS': {'Shat': [float(x) for x in aSh], 'SE': [float(x) for x in aSE]},
                        'Fluid': {'Shat': [float(x) for x in fSh], 'SE': [float(x) for x in fSE]},
-                       'DriveAT': {'Shat': [float(x) for x in dSh], 'R1': [float(x) for x in dR1]},
-                       'ref': {'ATLAS': [atlas_static_readout(fa_bi, yy, ao, min(B, n)) for B in (IES_REF2, IES_REF)],
+                       'ATDrive': {'Shat': [float(x) for x in dSh], 'R1': [float(x) for x in dR1]},
+                       'ref': {'ATLAS': [atlas_static_readout(fa_bi, yy, ao, min(B, n)) for B in (IES_REF, IES_REF2)],
                                'Fluid': [fluid_static_readout(ff['a'][bi], ff['b'][bi], yy, ao, min(B, n))
-                                         for B in (IES_REF2, IES_REF)],
-                               'DriveAT': [float(state_from(bank, yy, ao[:min(B, n)]).readout()[0])
-                                            for B in (IES_REF2, IES_REF)]}}
+                                         for B in (IES_REF, IES_REF2)],
+                               'ATDrive': [float(state_from(bank, yy, ao[:min(B, n)]).readout()[0])
+                                            for B in (IES_REF, IES_REF2)]}}
                 recs.append(rec)
             print(f'seed {seed} K{Kc} done  (ATLAS c={fa["c"]:.2f} sigma_b={fa["sigma_b"]:.2f}; '
-                  f'Fluid sigma_b={ff["sigma_b"]:.2f} delta={delta:.3f}; DriveAT c={c_risk:.2f} Bmatch={Bmatch})',
+                  f'Fluid sigma_b={ff["sigma_b"]:.2f} delta={delta:.3f}; ATDrive c={c_risk:.2f} Bmatch={Bmatch})',
                   flush=True)
     return recs
 
@@ -544,8 +544,8 @@ def rows_for(rs):
     out['Fluid  fixed B=match'] = _cell(rs, 'Fluid', [min(r['Bmatch'], r['n']) for r in rs])
     out['Fluid  SE<=delta*'] = _cell(rs, 'Fluid', [first_le(r['Fluid']['SE'], r['delta']) for r in rs])
     for eps in EPS:
-        out[f'DriveAT eps={eps:.2f}'] = _cell(
-            rs, 'DriveAT', [first_le(np.array(r['DriveAT']['R1']) * r['c_risk'], eps) for r in rs])
+        out[f'ATDrive eps={eps:.2f}'] = _cell(
+            rs, 'ATDrive', [first_le(np.array(r['ATDrive']['R1']) * r['c_risk'], eps, tmin=10) for r in rs])   # same t >= 10 window as c
     return out
 
 
@@ -558,45 +558,45 @@ def report(recs):
     print(f'  ATLAS  tau in {ATLAS_TAUS}, min {ATLAS_MIN} items, max = bank : published constants, fixed a priori')
     print('  ATLAS  guessing c, difficulty prior SD               : profiled on the calibration block only')
     print('  Fluid  fixed B=100                                   : its published default n_max')
-    print(f'  Fluid  fixed B=match                                 : DriveAT\'s LOO mean stop at eps={MATCH_EPS}'
+    print(f'  Fluid  fixed B=match                                 : ATDrive\'s LOO mean stop at eps={MATCH_EPS}'
           ' on the CALIBRATION planners (a cost match, not an accuracy tuning)')
     print('  Fluid  delta (SE stop)                               : mean rank-adjacent gap of the CALIBRATION '
           'planners\' abilities   [* = our construction: Fluid states no stop]')
-    print(f'  DriveAT c                                           : LOO 90th pct |err|/R1 on the CALIBRATION planners')
-    print(f'  DriveAT eps in {EPS}                          : published, fixed a priori')
+    print(f'  ATDrive c                                           : LOO 90th pct |err|/R1 on the CALIBRATION planners')
+    print(f'  ATDrive eps in {EPS}                          : published, fixed a priori')
     print('  NO threshold on this table was tuned on an evaluation planner.')
-    print(f'\n===== IES references: uniform Random at {IES_REF} routes (declared, half the bank) and at '
-          f'{IES_REF2} routes (comparable with driveat.metrics.ies); each read with the row system\'s own readout =====')
+    print(f'\n===== IES references: uniform Random at {IES_REF} routes (PROTOCOL section 7) and at '
+          f'{IES_REF2} routes (half the bank); each read with the row system\'s own readout =====')
     print('      * = an operating point we constructed, not the method\'s own; readout for both Fluid rows is ours')
     res = {}
     for K in KCALS:
         rs = [r for r in recs if r['K'] == K]
         js = [r['js'] for r in rs]
         ref = {s: [float(np.mean([abs(r['ref'][s][i] - r['SR']) for r in rs])) for i in (0, 1)]
-               for s in ('ATLAS', 'Fluid', 'DriveAT')}
+               for s in ('ATLAS', 'Fluid', 'ATDrive')}          # [at IES_REF = 55, at IES_REF2 = 110]
         R = rows_for(rs)
-        base = R[f'DriveAT eps={EPS[0]:.2f}'][1]
+        base = R[f'ATDrive eps={EPS[0]:.2f}'][1]
         print(f'\n-- K_cal = {K} --  ATLAS c={sorted(set(r["atlas_c"] for r in rs))} '
               f'sigma_b={sorted(set(r["atlas_sigma_b"] for r in rs))}; Fluid delta '
-              f'{np.mean([r["delta"] for r in rs]):.3f}; DriveAT c {np.median([r["c_risk"] for r in rs]):.2f}, '
+              f'{np.mean([r["delta"] for r in rs]):.3f}; ATDrive c {np.median([r["c_risk"] for r in rs]):.2f}, '
               f'B_match {sorted(set(r["Bmatch"] for r in rs))}')
         print(f'   Random reference SR-MAE  ' + '  '.join(
-            f'{s}: {ref[s][1]:.4f} @{IES_REF} / {ref[s][0]:.4f} @{IES_REF2}' for s in ('ATLAS', 'Fluid', 'DriveAT')))
+            f'{s}: {ref[s][0]:.4f} @{IES_REF} / {ref[s][1]:.4f} @{IES_REF2}' for s in ('ATLAS', 'Fluid', 'ATDrive')))
         print(f'   {"row":20s} {"routes":>7s} {"of220":>6s} {"cap":>5s} {"SR-MAE":>8s} '
-              f'{"IES@" + str(IES_REF):>8s} {"IES@" + str(IES_REF2):>8s}   delta vs DriveAT eps={EPS[0]:.2f}')
+              f'{"IES@" + str(IES_REF):>8s} {"IES@" + str(IES_REF2):>8s}   delta vs ATDrive eps={EPS[0]:.2f}')
         for lab, (t, e, cap) in R.items():
             s = lab.split()[0]
-            isbase = lab == f'DriveAT eps={EPS[0]:.2f}'
+            isbase = lab == f'ATDrive eps={EPS[0]:.2f}'
             d, lo, hi = (0.0, 0.0, 0.0) if isbase else paired_cluster_boot(e, base, js)
-            i1 = ies(e.mean(), t.mean(), ref[s][1], IES_REF)
-            i2 = ies(e.mean(), t.mean(), ref[s][0], IES_REF2)
+            i1 = ies(e.mean(), t.mean(), ref[s][0], IES_REF)
+            i2 = ies(e.mean(), t.mean(), ref[s][1], IES_REF2)
             print(f'   {lab:20s} {t.mean():7.1f} {t.mean() / NROUTES:5.0%} {cap.mean():5.0%} {e.mean():8.4f} '
                   f'{i1:8.2f} {i2:8.2f}   '
                   + ('   —' if isbase else f'{d:+.4f} [{lo:+.4f},{hi:+.4f}]'))
             res[f'K{K}|{lab.strip()}'] = {'rollouts': float(t.mean()), 'frac': float(t.mean() / NROUTES),
                                           'cap': float(cap.mean()), 'mae': float(e.mean()),
-                                          'coverage': float(np.mean(e <= ETOL)), 'ies110': float(i1),
-                                          'ies55': float(i2), 'delta_vs_drivecat': [float(d), float(lo), float(hi)],
+                                          'coverage': float(np.mean(e <= ETOL)), 'ies55': float(i1),
+                                          'ies110': float(i2), 'delta_vs_atdrive': [float(d), float(lo), float(hi)],
                                           'ref_mae': ref[s]}
     return res
 
@@ -609,7 +609,10 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     if args.merge:
         recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'syscmp_*_*.json')))], [])
-        json.dump(recs, open(OUT / 'syscmp.json', 'w'))
+        if recs:
+            json.dump(recs, open(OUT / 'syscmp.json', 'w'))
+        else:                                   # no shards (a clone): score the results of record
+            recs = json.load(open(OUT / 'syscmp.json'))
     elif args.seeds:
         lo, hi = args.seeds
         recs = run(range(lo, hi))

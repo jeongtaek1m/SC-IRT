@@ -27,16 +27,17 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel, load_features, DATA
-from driveat.splits import unified_split, R_DRAWS
-from driveat.calibration import calibrate_dense, frozen_b_dense
-from driveat.curves import sig
+from atdrive.b2d import Panel, load_features, DATA
+from atdrive.splits import unified_split, R_DRAWS
+from atdrive.calibration import calibrate_dense, frozen_b_dense
+from atdrive.curves import sig
 
 np.random.seed(0)
 torch.manual_seed(0)
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 RUNS = (0, 1, 2)
-CONTROLS = {'noroute': 'R2 w/o route relation', 'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled'}
+CONTROLS = {'noroute': 'R2 w/o route relation', 'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled',
+            'nospeed': 'R2, speed channel removed'}
 
 
 def load_descriptor_arms():
@@ -154,7 +155,7 @@ def main():
     d1 = [r['rho'] - rho_hc for r in rg]
     print(f'Delta rho (RelGraph - hand-crafted risk), per run: {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
     if CTRL:
-        print('\n===== Table 3A(b) — RelGraph structural controls (same architecture, recipe and seeds; only the graph tensors differ) =====')
+        print('\n===== Table 3A(b) — RelGraph controls (same architecture, recipe and seeds; only the graph tensors or the ego channels differ) =====')
         for c in CTRL:
             rc = [results[f'{CONTROLS[c]} s{s_}'] for s_ in RUNS]
             print('{:44s} AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}   Delta rho vs R2 (paired by seed) {:+.3f}+-{:.3f}'.format(
@@ -171,9 +172,10 @@ def main():
     assert abs(k['auroc'] - 0.752) < 0.002 and abs(k['mae'] - 0.180) < 0.002 and abs(k['rho'] - 0.497) < 0.005
     assert abs(h['auroc'] - 0.758) < 0.002 and abs(h['mae'] - 0.175) < 0.002 and abs(h['rho'] - 0.533) < 0.005
     assert abs(mn('auroc') - 0.751) < 0.003 and abs(mn('mae') - 0.192) < 0.003 and abs(mn('rho') - 0.490) < 0.005
-    if CTRL:
-        for c, v in (('noroute', 0.520), ('sroute', 0.512), ('sa2l', 0.501)):
-            assert abs(np.mean([results[f'{CONTROLS[c]} s{s_}']['rho'] for s_ in RUNS]) - v) < 0.005, c
+    for c, v in (('noroute', 0.520), ('sroute', 0.512), ('sa2l', 0.501), ('nospeed', 0.500)):
+        if c not in CTRL:                              # its npz is not in this checkout
+            continue
+        assert abs(np.mean([results[f'{CONTROLS[c]} s{s_}']['rho'] for s_ in RUNS]) - v) < 0.005, c
     print('anchors OK')
 
 

@@ -36,23 +36,23 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel
-from driveat.splits import up_split, R_DRAWS
-from driveat.calibration import calibrate
-from driveat.curves import marginal_curves
-from driveat.bayes import Bank, bank_from_fit, track, stop_at
-from driveat.acquisition import r1_traj
-from driveat.baselines import fluid_order, metabench_order, stratified_order
+from atdrive.b2d import Panel
+from atdrive.splits import up_split, R_DRAWS
+from atdrive.calibration import calibrate
+from atdrive.curves import marginal_curves
+from atdrive.bayes import Bank, bank_from_fit, track, stop_at
+from atdrive.acquisition import r1_traj
+from atdrive.baselines import fluid_order, metabench_order, stratified_order
 
-OUT = Path(os.environ.get('DRIVEAT_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('DRIVEAT_KCALS', '4,8,12').split(','))
-ORD = ('DriveAT', 'Fluid', 'metabench', 'Random', 'Random-strat')
+OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+ORD = ('ATDrive', 'Fluid', 'metabench', 'Random', 'Random-strat')
 TMAX = 220        # = the whole benchmark: LOO trajectories run through the whole 220-route bank
 TARGETS = (30, 55)
-NO_TESTLET = os.environ.get('DRIVEAT_NO_TESTLET', '0') == '1'   # ablation: sigma_g = 0 (independent items)
-POINT_CURVES = os.environ.get('DRIVEAT_POINT_CURVES', '0') == '1'   # ablation: point curves at b_hat (difficulty posterior collapsed)
+NO_TESTLET = os.environ.get('ATDRIVE_NO_TESTLET', '0') == '1'   # ablation: sigma_g = 0 (independent items)
+POINT_CURVES = os.environ.get('ATDRIVE_POINT_CURVES', '0') == '1'   # ablation: point curves at b_hat (difficulty posterior collapsed)
 if POINT_CURVES:
-    ORD = ('DriveAT',)   # the point-curve arm is only compared against DriveAT, so no baseline order is needed
+    ORD = ('ATDrive',)   # the point-curve arm is only compared against ATDrive, so no baseline order is needed
 TAUS = np.round(np.arange(0.010, 0.0801, 0.001), 3)
 RISK_T0 = 10
 
@@ -85,7 +85,7 @@ def run(seeds):
                 bank = (Bank(marginal_curves(f1['b'][bi], np.full(n, 1e-9)), typ[bi], f0['sigma_g']) if POINT_CURVES
                         else bank_from_fit(f1, bi, typ, sigma_g=0.0 if NO_TESTLET else f0['sigma_g']))
                 a, b = f2['a'][bi], f2['b'][bi]
-                orders = {'DriveAT': r1_traj(bank, yy, T),
+                orders = {'ATDrive': r1_traj(bank, yy, T),
                           'Fluid': fluid_order(a, b, yy, T),
                           'metabench': [int(i) for i in metabench_order(a, b, T, n)],
                           'Random': [int(i) for i in np.random.RandomState(700 + seed * panel.J + j).permutation(n)[:T]],
@@ -157,6 +157,19 @@ def main():
     OUT.mkdir(exist_ok=True)
     if args.merge:
         recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'tau_loo_*_*.json')))], [])
+        if not recs:                              # no shards (a clone): re-assert the anchors from the results of record
+            C, TAU = json.load(open(OUT / 'risk_cal.json')), json.load(open(OUT / 'tau_hat.json'))
+            seeds = sorted(set(int(k.split('|')[0]) for k in C))
+            assert len(seeds) == R_DRAWS
+            print(f'no tau_loo shards in {OUT}: risk_cal.json / tau_hat.json of record read back (run --seeds to recompute)')
+            if NO_TESTLET or POINT_CURVES:
+                return
+            for J, v in ((4, 1.97), (8, 2.12), (12, 1.95)):
+                cm = float(np.median([C[f'{s}|{J}|ATDrive'] for s in seeds]))
+                assert abs(cm - v) < .03, (J, cm)
+            assert abs(float(np.median([TAU[f'{s}|12|ATDrive|55'] for s in seeds])) - 0.031) < .0015
+            print('anchors OK')
+            return
     elif args.seeds:
         lo, hi = args.seeds
         recs = run(range(lo, hi))
@@ -176,9 +189,9 @@ def main():
     if NO_TESTLET or POINT_CURVES:
         return                                    # the anchors pin the paper's panel, not the switched arms
     for J, v in ((4, 1.97), (8, 2.12), (12, 1.95)):
-        cm = float(np.median([C[f'{s}|{J}|DriveAT'] for s in sorted(set(r['seed'] for r in recs))]))
+        cm = float(np.median([C[f'{s}|{J}|ATDrive'] for s in sorted(set(r['seed'] for r in recs))]))
         assert abs(cm - v) < .03, (J, cm)
-    assert abs(float(np.median(summary[(12, 'DriveAT', 55)])) - 0.031) < .0015
+    assert abs(float(np.median(summary[(12, 'ATDrive', 55)])) - 0.031) < .0015
     print('anchors OK')
 
 

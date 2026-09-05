@@ -12,14 +12,14 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from driveat.b2d import Panel
-from driveat.splits import unified_split, up_split, R_DRAWS, H_P, H_S
-from driveat.curves import (THG, XG, I0, PRIOR, BG, UG, USHIFT, GX, GW, marginal_curves, sig,
+from atdrive.b2d import Panel
+from atdrive.splits import unified_split, up_split, R_DRAWS, H_P, H_S
+from atdrive.curves import (THG, XG, I0, PRIOR, BG, UG, USHIFT, GX, GW, marginal_curves, sig,
                           item_loglik, item_posteriors, curves_from_posterior, posterior_sd)
-from driveat.bayes import Bank, State, state_from, readout, track, transfer, stop_at
-from driveat.acquisition import r1_pick, r1_scores, eig_pick, r1_traj
-from driveat.metrics import ies, paired_cluster_boot
-from driveat.baselines import kmeans_anchors, anchorpoints_select, phi_distance, pam_medoids
+from atdrive.bayes import Bank, State, state_from, readout, track, transfer, stop_at
+from atdrive.acquisition import r1_pick, r1_scores, eig_pick, r1_traj
+from atdrive.metrics import ies, paired_cluster_boot
+from atdrive.baselines import kmeans_anchors, anchorpoints_select, phi_distance, pam_medoids
 
 
 @pytest.fixture(scope='module')
@@ -164,10 +164,12 @@ def test_ies_definition():
 
 def test_slow_anchor_entry_points_exist():
     exp = Path(__file__).resolve().parents[1] / 'experiments'
-    for name in ('run_up_frontier', 'run_adaptive', 'run_tau_calibration',
-                 'run_readout_dropin', 'run_us', 'run_ups', 'run_model_adequacy',
-                 'run_ablation', 'run_system_ablation',
-                 'run_calibration_stability', 'eval_us_predictions', 'build_data', 'make_figures'):
+    for name in ('run_up_frontier', 'run_tau_calibration', 'run_adaptive', 'run_ablation',
+                 'run_system_ablation', 'run_system_comparison', 'run_cat_objective',
+                 'run_policy_matrix', 'run_ranking_quality', 'run_route_discrimination',
+                 'run_readout_dropin', 'run_us', 'run_ups', 'run_ups_full', 'run_nuplan_zeroshot',
+                 'run_model_adequacy', 'make_figures', 'make_icc_figure', 'make_uncertainty_figure',
+                 'eval_us_predictions', 'build_data'):
         assert (exp / f'{name}.py').exists(), name
 
 
@@ -187,7 +189,7 @@ def test_acquisition_and_readout_never_peek():
 
 
 def test_mixture_median_and_l1_against_brute_force():
-    from driveat.bayes import mix_median, mix_l1
+    from atdrive.bayes import mix_median, mix_l1
     from scipy.stats import norm
     q = np.array([[0.3], [0.7]]); mu = np.array([[10.0], [20.0]]); sd = np.array([[2.0], [3.0]])
     c = mix_median(q, mu, sd, 40.0)[0]

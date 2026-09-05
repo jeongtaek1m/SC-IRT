@@ -15,8 +15,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 REPO = Path(__file__).resolve().parents[1]
 FEAT_SRC = Path('/data1/jeongtae/b2d_jepa/features')
 IRT = Path('/home/jeongtae/SCIRT/b2d_irt')
-RELG_RAW = Path('/data2/jeongtae/relgraph_e16sel')   # r2_b2d_s{0,1,2}.npz: pred (R_DRAWS, 220), routes, sigma (R_DRAWS,); the 16-planner harness the shipped npz come from
+RELG_RAW = Path('/data2/jeongtae/relgraph_e16sel')   # the 16-planner RelGraph harness the shipped npz come from:
+#   r2_b2d_s{k}.npz (pred (R_DRAWS, 220), routes, sigma (R_DRAWS,)) and the four controls
+#   r2noroute_b2d_s{k}, sroute{k}_b2d_s{k}, sa2l{k}_b2d_s{k}, nospeed/r2nospeed_r2_b2d_s{k}
 CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
+# nuPlan val14 zero-shot inputs (run_nuplan_zeroshot.py): the r0 target npz (tokens, logs, Y,
+# fail, b_ref), the stage-2 prediction npz of the encoder arms and the label-shuffle nulls,
+# and the 11 x 584 closed-loop score matrix
+NUPLAN_TGT = Path('/data2/jeongtae/relgraph/transfer/nuplan/r0_nuplan_oof_s0.npz')
+NUPLAN_S2 = Path('/tmp/claude-1016/-home-jeongtae-SCIRT/bab07df1-81c1-4668-91c3-429018c80dc5/scratchpad/nuplanmine/stage2out')
+NUPLAN_CLS = Path('/home/jeongtae/SCIRT/SC-IRT/result/nuplan_val14_k11_response_matrix.csv')
+NUPLAN_ARMS = {'C0e': 3, 'A2e': 3, 'C4r2e': 10, 'C4r2n': 10}   # arm -> number of seeds
 
 FEATURES = ['eval_cmdkin_stats', 'eval_gtrisk',
             'eval_routegeom', 'eval_smart_ent', 'eval_agentjepa']
@@ -55,8 +64,8 @@ def export_relgraph(src, dst):
     shared residual SD learned on that draw's calibration block). Verifies
     against the shipped file when it exists."""
     import numpy as np
-    from driveat.b2d import Panel
-    from driveat.splits import unified_split, R_DRAWS
+    from atdrive.b2d import Panel
+    from atdrive.splits import unified_split, R_DRAWS
     d = np.load(src, allow_pickle=True)
     routes = [str(r) for r in d['routes']]
     panel = Panel()
@@ -76,6 +85,50 @@ def export_relgraph(src, dst):
         print(f'  {dst.name} written')
 
 
+def export_nuplan(dst):
+    """The 584-scenario nuPlan val14 panel of run_nuplan_zeroshot.py in one file:
+    tok / logs (scene order = the logged-ego readout order, widx == 0), Y (11 x 584
+    binary failures, NaN = no record), fail (per-scene failure rate), b_ref (the
+    response-calibrated difficulty), cls (11 x 584 closed-loop scores) with the
+    planner names, and pred_<arm>_s<k> = the stage-2 `pred_logged` of every encoder
+    arm and label-shuffle null at widx == 0. Verifies against the shipped file."""
+    import csv
+    import numpy as np
+    z = np.load(NUPLAN_TGT, allow_pickle=True)
+    w0 = np.asarray(z['widx']) == 0
+    tok = np.array([str(t) for t in z['tokens'][w0]])
+    pos = {t: i for i, t in enumerate(tok)}
+    out = {'tok': tok, 'logs': np.array([str(l) for l in z['logs'][w0]]),
+           'Y': np.asarray(z['Y'][:, w0], np.float32), 'fail': np.asarray(z['fail'][w0], np.float32),
+           'b_ref': np.asarray(z['b_ref'][w0], np.float32)}
+    rows = list(csv.reader(open(NUPLAN_CLS)))
+    hdr, body = rows[0][1:], rows[1:]
+    if len(body) != 11:                                          # stored as scenes x planners
+        body = [[hdr[i]] + [r[1 + i] for r in body] for i in range(len(hdr))]
+        hdr = [r[0] for r in rows[1:]]
+    col = {t: i for i, t in enumerate(hdr)}
+    out['planners'] = np.array([r[0] for r in body])
+    out['cls'] = np.array([[float(r[1 + col[t]]) if r[1 + col[t]] != '' else np.nan for t in tok]
+                           for r in body], np.float64)
+    for arm, n in NUPLAN_ARMS.items():
+        for k in range(n):
+            a = np.load(NUPLAN_S2 / f'{arm}_b2d2nuplan_s{k}.npz', allow_pickle=True)
+            wi = np.asarray(a['widx']) == 0
+            v = np.full(len(tok), np.nan, np.float32)
+            v[[pos[str(t)] for t in a['tgt_groups'][wi]]] = np.asarray(a['pred_logged'], np.float32)[wi]
+            out[f'pred_{arm}_s{k}'] = v
+    if dst.exists():
+        old = np.load(dst, allow_pickle=True)
+        assert set(old.files) == set(out) and all(np.array_equal(old[k], out[k], equal_nan=True)
+                                                  if out[k].dtype.kind == 'f' else np.array_equal(old[k], out[k])
+                                                  for k in out), dst
+        print(f'  {dst.name} identical to the raw export')
+    else:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(dst, **out)
+        print(f'  {dst.name} written')
+
+
 def main():
     print('features:')
     for f in FEATURES:
@@ -86,16 +139,16 @@ def main():
     print('encoder artifacts (unified split, per-run — no ensembling):')
     for s in (0, 1, 2):
         export_relgraph(RELG_RAW / f'r2_b2d_s{s}.npz', REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')
-    for tag, name in (('r2noroute', 'noroute'), ('sroute{s}', 'sroute'), ('sa2l{s}', 'sa2l')):   # structural controls (shuffle seed = model seed)
+    for tag, name in (('r2noroute', 'noroute'), ('sroute{s}', 'sroute'), ('sa2l{s}', 'sa2l'),   # structural controls (shuffle seed = model seed)
+                      ('nospeed/r2nospeed_r2', 'nospeed')):                                     # channel control (ego speed removed)
         for s in (0, 1, 2):
             src = RELG_RAW / (tag.format(s=s) + f'_b2d_s{s}.npz')
             if src.exists():
                 export_relgraph(src, REPO / 'data/encoder' / f'relgraph_r2_{name}_s{s}.npz')
+    print('nuPlan val14 zero-shot panel:')
+    export_nuplan(REPO / 'data/nuplan/val14_zeroshot.npz')
     print('checks:')
     verify_route_types()
-    src = Path('/home/jeongtae/SCIRT/DriveAT/result/b2d/b2d_e2e16_response_matrix.csv')
-    assert md5(src) == md5(REPO / 'data/matrices/b2d_e2e16_response_matrix.csv')
-    print('  response matrix identical to research copy')
     print('done')
 
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scirt"
-version = "6.0.0"
-description = "Scene-conditioned item response theory for driving-policy evaluation"
+name = "atdrive"
+version = "7.0.0"
+description = "ATDrive: IRT-based adaptive testing for closed-loop driving evaluation"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -26,7 +26,7 @@ test = ["pytest>=8"]
 figs = ["matplotlib"]
 
 [tool.setuptools]
-packages = ["scirt"]
+packages = ["atdrive"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

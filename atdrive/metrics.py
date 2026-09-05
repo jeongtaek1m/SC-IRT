@@ -4,7 +4,8 @@ Bootstrap unit: (planner) the unique planner ids are resampled with
 replacement for planner-side paired deltas — the same planners recur across
 the 16 draws, so draws are not independent clusters; every evaluation of a
 resampled planner enters with equal weight. Differences smaller than
-about .005 SR-MAE are inside the paired 95% intervals at n = 96.
+about .005 SR-MAE are inside the paired 95% intervals at n = 64 evaluations
+per cell (16 draws x 4 evaluation planners).
 """
 import numpy as np
 
