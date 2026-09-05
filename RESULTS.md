@@ -829,7 +829,7 @@ the ATDrive readout (exact posteriors, testlet, posterior median). SR-MAE:
 Reading. Under one readout the remaining differences are selection. At
 K_cal = 12 the ATDrive order beats every re-scored subset at B = 55 / 110 by
 .005-.016 and at B = 165 by .002-.007; at K_cal = 4 it leads the non-Fluid
-subsets by .007-.031 at B = 30 / 55 and by .002-.009 at B = 110 / 165, and
+subsets by .007-.030 at B = 30 / 55 and by .002-.009 at B = 110 / 165, and
 the Fluid subset by .002-.009 at every budget. The
 readout itself is a drop-in improvement for selectors whose native readout is
 a plug-in on a scarce panel (compare the native Table 1 rows: AnchorPoints

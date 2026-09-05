@@ -23,7 +23,7 @@ CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
 # fail, b_ref), the stage-2 prediction npz of the encoder arms and the label-shuffle nulls,
 # and the 11 x 584 closed-loop score matrix
 NUPLAN_TGT = Path('/data2/jeongtae/relgraph/transfer/nuplan/r0_nuplan_oof_s0.npz')
-NUPLAN_S2 = Path('/tmp/claude-1016/-home-jeongtae-SCIRT/bab07df1-81c1-4668-91c3-429018c80dc5/scratchpad/nuplanmine/stage2out')
+NUPLAN_S2 = Path('/data2/jeongtae/relgraph_e16sel/nuplan_stage2')
 NUPLAN_CLS = Path('/home/jeongtae/SCIRT/SC-IRT/result/nuplan_val14_k11_response_matrix.csv')
 NUPLAN_ARMS = {'C0e': 3, 'A2e': 3, 'C4r2e': 10, 'C4r2n': 10}   # arm -> number of seeds
 
