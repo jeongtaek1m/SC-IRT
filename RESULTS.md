@@ -615,8 +615,13 @@ failure rate 17.85% with failure = CLS < .5, which reproduces the stored
 binary matrix cell for cell). Enrichment of the failure rate is reported
 beside it. Two encoder arms (C0e: the canonical encoder; A2e: speed removed
 from both ego paths), three training seeds each, are trained on the
-16-planner panel of record (`b2d_e2e16sel`, repo calibration) and each
-tested against label-shuffled encoders trained under the same ablation.
+16-planner panel of record (`b2d_e2e16sel`) and each tested against
+label-shuffled encoders trained under the same ablation. The difficulty
+target is the repo calibration (`atdrive.calibration.calibrate_dense`, as
+for the shipped in-domain encoders), not the frozen driver's own MAP fit
+(torch, 400 iterations, fixed L2 penalties) — a second difference from the
+driver's native §21 arms, recorded here because they are not directly
+comparable to those.
 
 The null is matched to the arm statistic and to its variance structure. An
 arm's three seeds share one labeling, so the exchangeable unit under the
