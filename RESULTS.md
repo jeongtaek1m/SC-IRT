@@ -101,6 +101,72 @@ entry needs, and that only reaches 70-84% at B = 110 and 97-98% at B = 165.
 The low budgets are therefore a ranking regime, not a reporting regime, and
 the stopping rule below never selects one — it spends 70-129 routes.
 
+## Table 1 through the baselines' OWN code (`run_up_official.py`)
+
+Every published baseline of Table 1 re-run through its official implementation
+(`experiments/official/`, one wrapper per method, repository commit ids in
+`results/up_official.json`), on the same protocol: the same 16 draws, the same
+K_cal subsamples, the same banks and budgets as `run_up_frontier.py`, so each
+cell is paired with the ATDrive cell at the evaluation level. 1,344 cells ran;
+2 failed (ATLAS at K_cal = 4, below). Every wrapper passes a leak test — flipping
+the outcome of every item the method did not select leaves its output bit-identical
+— determinism, and the budget / prefix semantics its own code defines.
+
+SR-MAE, each method's native (published) readout; the last column is the best of
+the readouts its own code offers, macro over the 12 cells:
+
+| method | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro | best own readout |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| tinyBenchmarks | 0.0627 | 0.0396 | 0.0294 | 0.0137 | 0.0594 | 0.0446 | 0.0258 | 0.0171 | 0.0483 | 0.0389 | 0.0282 | 0.0162 | 0.0353 | pirt 0.0349 |
+| metabench | 0.1875 | 0.1532 | 0.2406 | 0.1280 | 0.1479 | 0.1742 | 0.0845 | 0.1105 | 0.0785 | 0.0855 | 0.0860 | 0.0794 | 0.1297 | sample_mean 0.0467 |
+| Fluid | 0.0835 | 0.0622 | 0.0448 | 0.0234 | 0.0580 | 0.0432 | 0.0254 | 0.0148 | 0.0626 | 0.0375 | 0.0261 | 0.0134 | 0.0412 | sample_mean 0.0596 |
+| AnchorPoints | 0.1459 | 0.1116 | 0.1131 | 0.1081 | 0.0841 | 0.0551 | 0.0463 | 0.0300 | 0.0758 | 0.0478 | 0.0321 | 0.0203 | 0.0725 | anchors_unweighted 0.0428 |
+| DISCO | 0.1438 | 0.1469 | 0.1473 | 0.1429 | 0.1381 | 0.1335 | 0.1285 | 0.1061 | 0.1248 | 0.0997 | 0.0899 | 0.0884 | 0.1242 | jsd_gpirt 0.0489 |
+| catR Total-Fisher | 0.0447 | 0.0412 | 0.0267 | 0.0144 | 0.0614 | 0.0420 | 0.0257 | 0.0128 | 0.0611 | 0.0426 | 0.0246 | 0.0127 | 0.0342 | marginal_fisher 0.0351 |
+| ATLAS | 0.1098 | 0.0924 | 0.0550 | 0.0332 | 0.0898 | 0.0677 | 0.0440 | 0.0216 | 0.0782 | 0.0657 | 0.0411 | 0.0168 | 0.0596 | sample_mean 0.0509 |
+| **ATDrive** (`run_up_frontier.py`) | **0.0450** | **0.0332** | **0.0223** | **0.0116** | **0.0448** | **0.0337** | **0.0202** | **0.0082** | **0.0477** | **0.0231** | **0.0160** | **0.0081** | **.0262** | — |
+
+ATDrive is lower in 12 of 12 cells against every method except catR, where it is
+lower in 11 of 12 (K4 B30: .0450 vs .0447, a .0003 loss). Mean paired differences
+against ATDrive: tinyBenchmarks +.0092, catR +.0080, Fluid +.0151, ATLAS +.0334,
+AnchorPoints +.0464, DISCO +.0980, metabench +.1035.
+
+Reading. Two facts matter more than the ordering. First, **our re-implementations
+were not strawmen — they were, if anything, generous**: metabench .0351 -> .1297,
+DISCO .0347 -> .1242, Fluid .0312 -> .0412, AnchorPoints .0706 -> .0725 when the
+methods run their own code; only catR improves (.0358 -> .0342) and tinyBenchmarks
+is unchanged (.0353). Second, the native readouts of metabench and DISCO collapse
+here for a reason that is about our setting, not their code: metabench's readout is
+a GAM fitted on the calibration respondents and DISCO's headline estimator is a
+random forest over model signatures, and neither is estimable from 4-12 respondents
+(DISCO's headline predictor becomes nearly constant: SR .135 with estimates in
+.35-.48). Their best own readouts (metabench sample mean .0467, DISCO jsd + gp-IRT
+.0489) are the fair comparison and are still well above ATDrive's .0262. The
+paper should quote both.
+
+Method-level findings the official code exposes, which our re-implementations hid:
+
+- **ATLAS's 3PL is unidentified at this panel size.** At K_cal = 12 the EM runs to
+  its 100,000-cycle ceiling with discriminations between -74 and +78; at K_cal = 4
+  it "converges" with a1 up to 68 and every EAP ability pinned to one grid point,
+  so all three SE thresholds fire at the 30-item minimum. In 2 of 192 cells the EAP
+  ability comes back NA and the official p-IRT script therefore returns NA — recorded
+  as a method-level failure, not imputed. Its own stopping rule
+  (SE <= tau, minimum 30 items) gives, at K_cal = 12: tau = .1 -> 61.4 routes and
+  SR-MAE .0680, tau = .2 -> 38.7 and .0744, tau = .3 -> 32.2 and .0769. That is a
+  different machine from the "ATLAS-style" row of the complete-system table, which is
+  our re-implementation.
+- **Three of the seven are not reproducible as published.** catR's `nextItem` ends
+  with `set.seed(NULL)`, so the official ATLAS loop is not reproducible under a seed
+  and two budgets share no prefix (our wrapper seeds the stream deterministically and
+  says so). AnchorPoints' `fasterpam` call is unseeded. Fluid's selection and MAP have
+  no randomness at all, so a seed changes nothing and there is no seed-to-seed spread
+  to average.
+- **AnchorPoints at K_cal = 4 is degenerate for a structural reason**: 48.6% of the
+  correlation matrix is NaN (constant rows), and the bank has only 14-23 distinct
+  response patterns, so the medoids cannot separate more than that many routes however
+  large the budget.
+
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 
 Table 1 scores one aggregate per evaluation. This diagnostic asks how well

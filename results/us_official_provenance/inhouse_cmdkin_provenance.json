@@ -1,0 +1,386 @@
+{
+ "npz": "/data2/jeongtae/official_baselines/us_features/inhouse_cmdkin.npz",
+ "full_record": "/data2/jeongtae/official_baselines/us_features/inhouse_provenance.json",
+ "written": "2026-09-06T09:16:17+00:00",
+ "atdrive_commit": "a20a38b71d177c97fba2521210dc916b7420264f",
+ "python": "3.9.23",
+ "numpy": "1.23.4",
+ "how_scored": "experiments/run_us.py:load_descriptor_arms -> two-stage Ridge plug-in: z-score on the calibration-type fold, Ridge(alpha = 100 if d > 10 else 10) fit b_hat ~ x, predict the evaluation types; pooled over 16 draws (640 route evaluations); AUROC / scene-MAE / Spearman rho.",
+ "table_row": "Kinematics (cmdkin, 25d)",
+ "file": "/home/jeongtae/SC-IRT/data/features/eval_cmdkin_stats.npz",
+ "shape": [
+  220,
+  25
+ ],
+ "dtype": "float32",
+ "names_format": "route_<id>",
+ "producer": "ORIGINAL PRODUCER MISSING from every repo; reconstructed at experiments/us_official/cmdkin.py:cmdkin and verified bit-for-bit (all 220 x 25 float32 values equal) against the shipped npz, recomputed from the raw anno",
+ "producer_status": "reconstructed 2026-09; the two surviving slices (eval_cmdkin_kinonly.npz = cols 0:12, eval_cmdkin_cmdonly.npz = cols 12:25) are cut from this file by b2d_irt/scripts/cmdkin_decompose.py",
+ "published_method": null,
+ "shipped_layout_string": "same 25d",
+ "reconstruction": {
+  "script": "/home/jeongtae/SC-IRT/experiments/us_official/cmdkin.py",
+  "output": "/data2/jeongtae/official_baselines/us_features/inhouse_cmdkin.npz",
+  "bit_for_bit": true,
+  "columns_not_reproduced": [],
+  "numeric_detail": "all statistics are evaluated on the float32 ego/cmd arrays produced by the eval_pipeline.load_anno cast; heading differences are wrapped with the float32 modulo form ((dh + pi) %% (2 pi) - pi). Any other wrap (np.angle(exp(i dh)), np.unwrap, arctan2, or the same modulo in float64) reproduces yaw_mean / yaw_max only to about 1.8e-07, i.e. not bit-for-bit; computing the whole block in float64 breaks 9 of the 25 columns at the float32 ULP level.",
+  "scored": "AUROC 0.7519106345648979 / scene-MAE 0.18029126621966515 / rho 0.49723177046454564 -- identical to 16 digits to the shipped \"Kinematics (cmdkin)\" row (experiments/us_official/score_one.py)."
+ },
+ "verified": "all 220 x 25 float32 values regenerated from the raw anno by experiments/us_official/cmdkin.py are bit-for-bit identical to the shipped npz, and the rebuilt file scores identically to 16 digits in Table 3A.",
+ "columns": [
+  {
+   "index": 0,
+   "name": "v_mean",
+   "formula": "mean(v)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 5.713169427825646,
+    "std": 2.9549831461129847,
+    "min": 0.16752810776233673,
+    "max": 14.686806678771973,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 1,
+   "name": "v_std",
+   "formula": "std(v), ddof = 0",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 3.8569280908866364,
+    "std": 1.104564626894201,
+    "min": 0.9776051640510559,
+    "max": 7.225746154785156,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 2,
+   "name": "v_max",
+   "formula": "max(v)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 13.075770937312733,
+    "std": 3.2534303720373394,
+    "min": 8.030017852783203,
+    "max": 20.72315216064453,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 3,
+   "name": "v_p10",
+   "formula": "percentile(v, 10), numpy linear interpolation",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 1.1223305956014828,
+    "std": 1.7466055280549493,
+    "min": -0.0029743758495897055,
+    "max": 6.982653617858887,
+    "n_zero": 2
+   }
+  },
+  {
+   "index": 4,
+   "name": "frac_stop",
+   "formula": "mean(v < 0.5)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 0.3069624843753197,
+    "std": 0.2800115332428379,
+    "min": 0.016129031777381897,
+    "max": 0.9729999899864197,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 5,
+   "name": "a_std",
+   "formula": "std(a), a = diff(v) / 0.1",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 4.474500719525597,
+    "std": 1.7244839082337384,
+    "min": 1.2117347717285156,
+    "max": 16.70027732849121,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 6,
+   "name": "a_min",
+   "formula": "min(a)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": -22.42485214580189,
+    "std": 10.874953968360908,
+    "min": -113.23616027832031,
+    "max": -2.9360389709472656,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 7,
+   "name": "a_max",
+   "formula": "max(a)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 11.89860765283758,
+    "std": 12.826738993047506,
+    "min": 7.864389419555664,
+    "max": 178.78753662109375,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 8,
+   "name": "a_p05",
+   "formula": "percentile(a, 5)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": -5.448621632103459,
+    "std": 2.9089711195009302,
+    "min": -18.57370376586914,
+    "max": -0.00043604831444099545,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 9,
+   "name": "absa_p95",
+   "formula": "percentile(|a|, 95)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 8.125498295101252,
+    "std": 2.2624626299320463,
+    "min": 0.3996393382549286,
+    "max": 20.817106246948242,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 10,
+   "name": "yaw_mean",
+   "formula": "mean(|wrap(diff(theta - pi/2))|), radians PER FRAME (not divided by dt)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 0.008828611061624707,
+    "std": 0.006699004866176046,
+    "min": 1.113602047553286e-05,
+    "max": 0.03087415173649788,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 11,
+   "name": "yaw_max",
+   "formula": "max(|wrap(diff(theta - pi/2))|)",
+   "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+   "source": "probe_ego_motion",
+   "sanity": {
+    "mean": 0.1071598464792425,
+    "std": 0.061941939663473146,
+    "min": 0.0005757808685302734,
+    "max": 0.25095629692077637,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 12,
+   "name": "frac_cmd_near_1",
+   "formula": "fraction of rollout FRAMES with command_near == 1 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.0900389710356566,
+    "std": 0.19584518822809557,
+    "min": 0.0,
+    "max": 0.9804999828338623,
+    "n_zero": 168
+   }
+  },
+  {
+   "index": 13,
+   "name": "frac_cmd_near_2",
+   "formula": "fraction of rollout FRAMES with command_near == 2 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.04696968031877821,
+    "std": 0.13030791616132092,
+    "min": 0.0,
+    "max": 0.6920583248138428,
+    "n_zero": 184
+   }
+  },
+  {
+   "index": 14,
+   "name": "frac_cmd_near_3",
+   "formula": "fraction of rollout FRAMES with command_near == 3 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.07125342063267123,
+    "std": 0.17625618579957966,
+    "min": 0.0,
+    "max": 0.9626942873001099,
+    "n_zero": 183
+   }
+  },
+  {
+   "index": 15,
+   "name": "frac_cmd_near_4",
+   "formula": "fraction of rollout FRAMES with command_near == 4 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.7506743559952487,
+    "std": 0.28057303358625574,
+    "min": 0.019500000402331352,
+    "max": 1.0,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 16,
+   "name": "frac_cmd_near_5",
+   "formula": "fraction of rollout FRAMES with command_near == 5 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.030967342921278694,
+    "std": 0.13006437707431295,
+    "min": 0.0,
+    "max": 0.9606234431266785,
+    "n_zero": 199
+   }
+  },
+  {
+   "index": 17,
+   "name": "frac_cmd_near_6",
+   "formula": "fraction of rollout FRAMES with command_near == 6 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.010096229308030821,
+    "std": 0.07322358933393164,
+    "min": 0.0,
+    "max": 0.9313346147537231,
+    "n_zero": 212
+   }
+  },
+  {
+   "index": 18,
+   "name": "frac_cmd_far_1",
+   "formula": "fraction of rollout FRAMES with command_far == 1 (time-weighted)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.0733898687007075,
+    "std": 0.17206061462449204,
+    "min": 0.0,
+    "max": 0.8511796593666077,
+    "n_zero": 168
+   }
+  },
+  {
+   "index": 19,
+   "name": "frac_cmd_far_2",
+   "formula": "fraction of rollout FRAMES with command_far == 2 (time-weighted)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.0564840007065372,
+    "std": 0.16192601807168433,
+    "min": 0.0,
+    "max": 0.892578125,
+    "n_zero": 184
+   }
+  },
+  {
+   "index": 20,
+   "name": "frac_cmd_far_3",
+   "formula": "fraction of rollout FRAMES with command_far == 3 (time-weighted)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.049304254454645244,
+    "std": 0.13975959044515537,
+    "min": 0.0,
+    "max": 0.6019417643547058,
+    "n_zero": 185
+   }
+  },
+  {
+   "index": 21,
+   "name": "frac_cmd_far_4",
+   "formula": "fraction of rollout FRAMES with command_far == 4 (time-weighted)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.7781430345028639,
+    "std": 0.2648261101895034,
+    "min": 0.107421875,
+    "max": 1.0,
+    "n_zero": 0
+   }
+  },
+  {
+   "index": 22,
+   "name": "frac_cmd_far_5",
+   "formula": "fraction of rollout FRAMES with command_far == 5 (time-weighted)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.03484983125870878,
+    "std": 0.12694100493353744,
+    "min": 0.0,
+    "max": 0.8535031676292419,
+    "n_zero": 199
+   }
+  },
+  {
+   "index": 23,
+   "name": "frac_cmd_far_6",
+   "formula": "fraction of rollout FRAMES with command_far == 6 (time-weighted)",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.007829010689800436,
+    "std": 0.04372437574311448,
+    "min": 0.0,
+    "max": 0.3310810923576355,
+    "n_zero": 212
+   }
+  },
+  {
+   "index": 24,
+   "name": "cmd_switch_rate",
+   "formula": "mean(diff(command_near) != 0), i.e. command changes per frame",
+   "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+   "source": "probe_route_command",
+   "sanity": {
+    "mean": 0.007489869076049548,
+    "std": 0.008199836376199959,
+    "min": 0.0,
+    "max": 0.03076923079788685,
+    "n_zero": 90
+   }
+  }
+ ],
+ "source_tally": {
+  "probe_ego_motion": 12,
+  "probe_route_command": 13
+ }
+}

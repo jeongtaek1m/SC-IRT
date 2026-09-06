@@ -1,0 +1,880 @@
+{
+ "feature_file": "/data2/jeongtae/official_baselines/us_features/agentjepa_official_bestval.npz",
+ "built_utc": "2026-09-06T09:36:49+00:00",
+ "family": "Agent-JEPA",
+ "paper": {
+  "id": "arXiv:2606.28383v1",
+  "author": "Santosh Jaiswal",
+  "title": "Zero-Label Driving Scenario Complexity Detection via Joint Embedding Predictive Architecture",
+  "sections_implemented": {
+   "3.1 Data Representation": "scenario tensor, ego + 20 agents, (x, y, vx, vy, theta, type), /50 m and /10 m/s normalisation",
+   "3.2 Temporal Split": "context = first half, target = second half",
+   "3.3 Architecture": "4-layer d128 4-head ff512 context encoder with sinusoidal PE and time mean-pool; 2-layer transformer predictor with learnable horizon embedding; EMA target encoder; MLP position decoder to 21x2",
+   "3.4 Training Objective": "L = MSE(z_hat, z_tgt) + 0.1 * MSE(p_hat, p_tgt), stop-grad at the target encoder, EMA alpha 0.996",
+   "3.5 Surprise Score": "s = ||z_hat - z_tgt||_2",
+   "3.6 Training Details": "50 epochs, batch 32, lr 3e-4, 5-epoch linear warmup then cosine decay, weight decay 1e-4, dropout 0.2, grad clip 1.0, 80/20 train/val split"
+  }
+ },
+ "official_code": "NONE. The paper releases no code and no data: there is no code or project link in the abstract, the body or the arXiv LaTeX source. Every line of this implementation is written from the text of Sec. 3.",
+ "code_run": {
+  "repo": "/home/jeongtae/SC-IRT (ATDrive)",
+  "git_commit": "a20a38b71d177c97fba2521210dc916b7420264f",
+  "file": "experiments/us_official/agentjepa.py",
+  "entry_points": "cmd_train -> cmd_extract -> cmd_provenance",
+  "python": "/home/jeongtae/miniconda3/envs/smart/bin/python",
+  "torch": "2.0.1+cu117",
+  "device": "GPU 3 (CUDA_VISIBLE_DEVICES=3)"
+ },
+ "inputs": {
+  "train_split": "/data1/jeongtae/b2d_jepa/gtod_train.npz + index.json + ego.npy -- the SAME split the shipped row used (b2d_irt/scripts/agentjepa.py lines 31-39): 1000 Bench2Drive v1 expert clips, no outcome-based selection",
+  "eval_routes": "/data1/jeongtae/b2d_jepa/gtod_eval.npz + eval_feats/*.npz, the 220-route bank, agents parsed from the PDM-Lite reference rollout /data1/jeongtae/b2d_eval_sensors/route_*/anno by b2d_irt/scripts/gtod_pipeline.py:parse_scene",
+  "note": "PDM-Lite is EXCLUDED_PLANNER and is not one of the 16 evaluated planners; the RelGraph encoder reads the same rollout. Nothing in this pipeline reads the response matrix, planner outcomes or scenario types."
+ },
+ "parameters": {
+  "GRID_frames": 5,
+  "grid_step_seconds": 0.5,
+  "T_WIN_steps": 10,
+  "scenario_seconds": 5.0,
+  "CTX_steps": 5,
+  "TGT_steps": 5,
+  "window_stride_steps": 1,
+  "NSLOT": 21,
+  "FDIM": 6,
+  "pos_norm_m": 50.0,
+  "vel_norm_mps": 10.0,
+  "type_codes": {
+   "empty": 0,
+   "vehicle": 1.0,
+   "pedestrian": 2.0,
+   "ego": 3.0
+  },
+  "D": 128,
+  "enc_layers": 4,
+  "pred_layers": 2,
+  "heads": 4,
+  "ff": 512,
+  "dropout": 0.2,
+  "lambda_pos": 0.1,
+  "ema_alpha": 0.996,
+  "epochs": 50,
+  "batch": 32,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "warmup_epochs": 5,
+  "grad_clip": 1.0,
+  "val_frac": 0.2,
+  "seed": 0,
+  "optimizer": "AdamW",
+  "n_trainable_params": 1249834,
+  "paper_n_trainable_params": 1289130,
+  "checkpoint_used": "best"
+ },
+ "deviations_from_source": [
+  {
+   "what": "temporal resolution: 0.5 s grid (10 steps per 5 s scenario, 5 context + 5 target) instead of the paper's 10 Hz / 50 steps",
+   "why": "forced. The paper's own corpus (nuPlan mini) is not the bank under test; the training corpus here is the one the shipped row used -- 1000 Bench2Drive v1 expert clips whose agent tracks survive only as the 0.5 s-grid tensor /data1/jeongtae/b2d_jepa/gtod_train.npz. The raw 10 Hz anno of those clips is gone from this machine (/data1/Bench2Drive no longer exists; /data2/bench2drive holds 253 of the 1000 clips as tar.gz owned by another user). Evaluation routes are read at the same 0.5 s grid so train and test match. Scenario length (5 s), the half/half context-target split and the 2.5 s prediction horizon are the paper's."
+  },
+  {
+   "what": "dataset: Bench2Drive v1 expert clips (CARLA) instead of nuPlan mini",
+   "why": "required by the protocol -- Table 3A scores descriptors of the 220 Bench2Drive routes. Self-supervised, label-free, exactly as the paper prescribes."
+  },
+  {
+   "what": "agent slots are re-sorted by distance to the ego at every grid step, so a slot index is not a persistent track",
+   "why": "property of the stored tensor (built by b2d_irt/scripts/gtod_pipeline.py:parse_scene, which keeps the 24 nearest agents within 60 m per step). The paper's nuPlan tensors are presumably track-consistent. Not fixable without the deleted raw anno."
+  },
+  {
+   "what": "agent type is coded 1=vehicle, 2=pedestrian, 3=ego, 0=empty slot as a single scalar feature",
+   "why": "the paper says 'a categorical agent type' as one of the six features but does not give the coding; Bench2Drive annotations only distinguish vehicle/walker."
+  },
+  {
+   "what": "the 21 slots are expressed in the ego frame of the window's FIRST step (translation and rotation), then normalised by 50 m / 10 m/s",
+   "why": "the paper normalises positions by 50 m and expects values near [-1,1], which is only possible in an ego-relative frame; CARLA world coordinates are O(1e3) m. Rotation as well as translation follows the standard nuPlan agent-feature convention and removes absolute-map memorisation."
+  },
+  {
+   "what": "the auxiliary position loss is masked to occupied slots",
+   "why": "the paper pads to a fixed 21 slots and does not say. Unmasked, the decoder would spend most of its capacity predicting the constant 0 of empty slots."
+  },
+  {
+   "what": "p_tgt is taken at the LAST target step (t = +2.5 s)",
+   "why": "the paper writes p_hat in R^{21x2} -- one position per agent -- without saying which target frame; the end of the target window is the only single frame that makes the term a genuine forecasting signal."
+  },
+  {
+   "what": "both loss terms use mean-reduction MSE",
+   "why": "the paper writes squared L2 norms; mean reduction reproduces its reported loss scale (best val 0.0345) and is scale-free in the latent width."
+  },
+  {
+   "what": "the 80/20 train/validation split is taken over CLIPS, not over windows",
+   "why": "sliding windows from one clip overlap; a window-level split puts near-duplicates on both sides and makes the validation loss uninformative. This is the split the old in-house replication (b2d_irt/scripts/agentjepa.py) got wrong."
+  },
+  {
+   "what": "optimiser AdamW; the target encoder is always in eval mode (no dropout)",
+   "why": "the paper gives weight decay and dropout but not the optimiser; AdamW is the standard pairing. A dropout-perturbed EMA target would inject noise into the regression target."
+  },
+  {
+   "what": "the per-route descriptor is [mean, p90, max] of the per-window surprise score",
+   "why": "the paper scores one 5 s scenario; a Bench2Drive route is a sequence of them. The three aggregates mirror the aggregation the shipped row used, so only the model and the score definition change. Column 0 alone is the paper-literal score averaged over the route and is reported separately."
+  }
+ ],
+ "training": {
+  "n_train_windows": 32872,
+  "n_val_windows": 8062,
+  "best_epoch": 1,
+  "best_val_total": 0.027412239705514846,
+  "curve": [
+   {
+    "epoch": 0,
+    "train_jepa": 0.13211633915946744,
+    "train_pos": 0.23819262832548277,
+    "train_total": 0.15593560199201573,
+    "val_jepa": 0.01193649469613955,
+    "val_pos": 0.21743854341362642,
+    "val_total": 0.033680349037502194,
+    "latent_std": 0.15934622287750244,
+    "val_nmse": 0.4275359511375427,
+    "val_cos": 0.9940451979637146,
+    "lr": 6.005842259006815e-05
+   },
+   {
+    "epoch": 1,
+    "train_jepa": 0.01773386657738581,
+    "train_pos": 0.20970468034472647,
+    "train_total": 0.03870433461185847,
+    "val_jepa": 0.007640456004727644,
+    "val_pos": 0.19771783700787202,
+    "val_total": 0.027412239705514846,
+    "latent_std": 0.1553747057914734,
+    "val_nmse": 0.27430057525634766,
+    "val_cos": 0.99629807472229,
+    "lr": 0.00012005842259006814
+   },
+   {
+    "epoch": 2,
+    "train_jepa": 0.02455720334642992,
+    "train_pos": 0.18664185325556162,
+    "train_total": 0.04322138867198609,
+    "val_jepa": 0.042193855667041806,
+    "val_pos": 0.184923033790741,
+    "val_total": 0.060686159046115906,
+    "latent_std": 0.3759695887565613,
+    "val_nmse": 0.25709769129753113,
+    "val_cos": 0.9798113703727722,
+    "lr": 0.00018005842259006814
+   },
+   {
+    "epoch": 3,
+    "train_jepa": 0.10708360539925191,
+    "train_pos": 0.1817769157938739,
+    "train_total": 0.1252612969786393,
+    "val_jepa": 0.16339796813700697,
+    "val_pos": 0.19066241257497082,
+    "val_total": 0.18246420939450406,
+    "latent_std": 0.7127522230148315,
+    "val_nmse": 0.29208502173423767,
+    "val_cos": 0.918097198009491,
+    "lr": 0.00024005842259006813
+   },
+   {
+    "epoch": 4,
+    "train_jepa": 0.19503793503432568,
+    "train_pos": 0.180619323439352,
+    "train_total": 0.21309986737826087,
+    "val_jepa": 0.198053486698823,
+    "val_pos": 0.18427405418946885,
+    "val_total": 0.21648089211776989,
+    "latent_std": 0.8408830165863037,
+    "val_nmse": 0.25718849897384644,
+    "val_cos": 0.8972976207733154,
+    "lr": 0.0003
+   },
+   {
+    "epoch": 5,
+    "train_jepa": 0.21229464418554955,
+    "train_pos": 0.17920028984894887,
+    "train_total": 0.23021467317044444,
+    "val_jepa": 0.21115596103730316,
+    "val_pos": 0.1828533284563901,
+    "val_total": 0.22944129388294218,
+    "latent_std": 0.8893426656723022,
+    "val_nmse": 0.24615009129047394,
+    "val_cos": 0.8892136216163635,
+    "lr": 0.0002996346075389736
+   },
+   {
+    "epoch": 6,
+    "train_jepa": 0.20162197446202118,
+    "train_pos": 0.17783729492631373,
+    "train_total": 0.21940570395465253,
+    "val_jepa": 0.2387476935520624,
+    "val_pos": 0.185120631076804,
+    "val_total": 0.2572597566597428,
+    "latent_std": 0.9053986072540283,
+    "val_nmse": 0.26902732253074646,
+    "val_cos": 0.8739692568778992,
+    "lr": 0.0002985402103112355
+   },
+   {
+    "epoch": 7,
+    "train_jepa": 0.18397977229247656,
+    "train_pos": 0.17715264830698405,
+    "train_total": 0.20169503712317494,
+    "val_jepa": 0.2038407357424845,
+    "val_pos": 0.18132003403957947,
+    "val_total": 0.22197273914644247,
+    "latent_std": 0.9081545472145081,
+    "val_nmse": 0.2257576882839203,
+    "val_cos": 0.8935086131095886,
+    "lr": 0.0002967221401100708
+   },
+   {
+    "epoch": 8,
+    "train_jepa": 0.1728020661203109,
+    "train_pos": 0.1761919892199896,
+    "train_total": 0.19042126504230988,
+    "val_jepa": 0.2155929654799688,
+    "val_pos": 0.18261977453528724,
+    "val_total": 0.23385494293349754,
+    "latent_std": 0.9095859527587891,
+    "val_nmse": 0.2376718968153,
+    "val_cos": 0.8869420289993286,
+    "lr": 0.0002941892543907478
+   },
+   {
+    "epoch": 9,
+    "train_jepa": 0.16613841456195164,
+    "train_pos": 0.17564596154499426,
+    "train_total": 0.18370301071645107,
+    "val_jepa": 0.21181089241964235,
+    "val_pos": 0.18126401032016876,
+    "val_total": 0.22993729345165922,
+    "latent_std": 0.914960503578186,
+    "val_nmse": 0.23177607357501984,
+    "val_cos": 0.8889508247375488,
+    "lr": 0.0002909538931178862
+   },
+   {
+    "epoch": 10,
+    "train_jepa": 0.16005506192015695,
+    "train_pos": 0.1748476272635706,
+    "train_total": 0.17753982464651402,
+    "val_jepa": 0.22970097395008063,
+    "val_pos": 0.18029720437671612,
+    "val_total": 0.24773069438775225,
+    "latent_std": 0.9190331101417542,
+    "val_nmse": 0.24947410821914673,
+    "val_cos": 0.879150390625,
+    "lr": 0.0002870318186463901
+   },
+   {
+    "epoch": 11,
+    "train_jepa": 0.15282999934173372,
+    "train_pos": 0.1742168163487138,
+    "train_total": 0.17025168097660512,
+    "val_jepa": 0.22573652757408896,
+    "val_pos": 0.18059615268508544,
+    "val_total": 0.2437961428425975,
+    "latent_std": 0.9206130504608154,
+    "val_nmse": 0.246356800198555,
+    "val_cos": 0.8815433382987976,
+    "lr": 0.000282442138928839
+   },
+   {
+    "epoch": 12,
+    "train_jepa": 0.15113519851803894,
+    "train_pos": 0.1735970569301139,
+    "train_total": 0.16849490421105034,
+    "val_jepa": 0.22595184332411805,
+    "val_pos": 0.1774608114721816,
+    "val_total": 0.2436979244713362,
+    "latent_std": 0.922500729560852,
+    "val_nmse": 0.2477443516254425,
+    "val_cos": 0.8812914490699768,
+    "lr": 0.00027720721442346387
+   },
+   {
+    "epoch": 13,
+    "train_jepa": 0.1432382053030907,
+    "train_pos": 0.17307859051250785,
+    "train_total": 0.1605460643543415,
+    "val_jepa": 0.2520642929671864,
+    "val_pos": 0.17945498428061415,
+    "val_total": 0.27000979139524783,
+    "latent_std": 0.9214370250701904,
+    "val_nmse": 0.27966180443763733,
+    "val_cos": 0.8670588135719299,
+    "lr": 0.0002713525491562421
+   },
+   {
+    "epoch": 14,
+    "train_jepa": 0.13734120101520125,
+    "train_pos": 0.17252150571160563,
+    "train_total": 0.1545933515863618,
+    "val_jepa": 0.25136365909503666,
+    "val_pos": 0.17845116466971372,
+    "val_total": 0.26920877556200806,
+    "latent_std": 0.9193286895751953,
+    "val_nmse": 0.2815985679626465,
+    "val_cos": 0.8678019642829895,
+    "lr": 0.00026490666646784665
+   },
+   {
+    "epoch": 15,
+    "train_jepa": 0.13391918033912792,
+    "train_pos": 0.1722592517022613,
+    "train_total": 0.15114510550935403,
+    "val_jepa": 0.24225858250539078,
+    "val_pos": 0.17934715585550698,
+    "val_total": 0.2601932980909415,
+    "latent_std": 0.9175784587860107,
+    "val_nmse": 0.2727760374546051,
+    "val_cos": 0.8729739785194397,
+    "lr": 0.00025790097005079764
+   },
+   {
+    "epoch": 16,
+    "train_jepa": 0.12732245747322812,
+    "train_pos": 0.1720030800799432,
+    "train_total": 0.14452276548122245,
+    "val_jepa": 0.2509997258172145,
+    "val_pos": 0.17809912405632708,
+    "val_total": 0.26880963822284726,
+    "latent_std": 0.916107177734375,
+    "val_nmse": 0.2832736670970917,
+    "val_cos": 0.8679693937301636,
+    "lr": 0.0002503695909538287
+   },
+   {
+    "epoch": 17,
+    "train_jepa": 0.12425571016626326,
+    "train_pos": 0.17172105690172376,
+    "train_total": 0.14142781585643563,
+    "val_jepa": 0.2702125859553333,
+    "val_pos": 0.17999509275255296,
+    "val_total": 0.2882120952305886,
+    "latent_std": 0.9161341786384583,
+    "val_nmse": 0.3040394186973572,
+    "val_cos": 0.8579229116439819,
+    "lr": 0.0002423492212988487
+   },
+   {
+    "epoch": 18,
+    "train_jepa": 0.12144274834068283,
+    "train_pos": 0.1711270125780505,
+    "train_total": 0.13855544959848787,
+    "val_jepa": 0.252176449261005,
+    "val_pos": 0.17871262202248683,
+    "val_total": 0.2700477114632537,
+    "latent_std": 0.9123270511627197,
+    "val_nmse": 0.28448835015296936,
+    "val_cos": 0.8673778772354126,
+    "lr": 0.00023387893552061199
+   },
+   {
+    "epoch": 19,
+    "train_jepa": 0.12127905856081608,
+    "train_pos": 0.17055673071681118,
+    "train_total": 0.1383347316324972,
+    "val_jepa": 0.2616300496088604,
+    "val_pos": 0.17837166962153975,
+    "val_total": 0.27946721657101437,
+    "latent_std": 0.90805584192276,
+    "val_nmse": 0.2964029014110565,
+    "val_cos": 0.8621872663497925,
+    "lr": 0.000225
+   },
+   {
+    "epoch": 20,
+    "train_jepa": 0.1187874958147644,
+    "train_pos": 0.17056687774015147,
+    "train_total": 0.13584418358877953,
+    "val_jepa": 0.2861170237604367,
+    "val_pos": 0.17814145036294957,
+    "val_total": 0.30393116879673165,
+    "latent_std": 0.9086703658103943,
+    "val_nmse": 0.32261887192726135,
+    "val_cos": 0.8491517901420593,
+    "lr": 0.0002157556720183616
+   },
+   {
+    "epoch": 21,
+    "train_jepa": 0.11871365567681968,
+    "train_pos": 0.17046010087968777,
+    "train_total": 0.13575966576478846,
+    "val_jepa": 0.2702834551940926,
+    "val_pos": 0.17858664778319283,
+    "val_total": 0.28814211997241185,
+    "latent_std": 0.9089183807373047,
+    "val_nmse": 0.30500462651252747,
+    "val_cos": 0.8578665852546692,
+    "lr": 0.0002061909890123868
+   },
+   {
+    "epoch": 22,
+    "train_jepa": 0.11556749947971239,
+    "train_pos": 0.17014978595346417,
+    "train_total": 0.1325824780750588,
+    "val_jepa": 0.27860399291447924,
+    "val_pos": 0.1794333805874659,
+    "val_total": 0.29654733097322583,
+    "latent_std": 0.9064171314239502,
+    "val_nmse": 0.31770968437194824,
+    "val_cos": 0.8531844019889832,
+    "lr": 0.0001963525491562421
+   },
+   {
+    "epoch": 23,
+    "train_jepa": 0.11244093641247002,
+    "train_pos": 0.16987847579605042,
+    "train_total": 0.12942878399207505,
+    "val_jepa": 0.2680082017598806,
+    "val_pos": 0.1793924927327036,
+    "val_total": 0.28594745103315095,
+    "latent_std": 0.9041639566421509,
+    "val_nmse": 0.3087020218372345,
+    "val_cos": 0.8589227199554443,
+    "lr": 0.00018628828433995013
+   },
+   {
+    "epoch": 24,
+    "train_jepa": 0.11556413794025241,
+    "train_pos": 0.16948298368505052,
+    "train_total": 0.13251243630875748,
+    "val_jepa": 0.28655771246488143,
+    "val_pos": 0.17692505034286074,
+    "val_total": 0.30425021749916753,
+    "latent_std": 0.8964828252792358,
+    "val_nmse": 0.33763158321380615,
+    "val_cos": 0.8487981557846069,
+    "lr": 0.00017604722665003956
+   },
+   {
+    "epoch": 25,
+    "train_jepa": 0.11254375569065335,
+    "train_pos": 0.16922230832822832,
+    "train_total": 0.12946598652347618,
+    "val_jepa": 0.27637042671153694,
+    "val_pos": 0.17757370950447599,
+    "val_total": 0.29412779766198455,
+    "latent_std": 0.8969320058822632,
+    "val_nmse": 0.32594454288482666,
+    "val_cos": 0.8543860912322998,
+    "lr": 0.000165679269490148
+   },
+   {
+    "epoch": 26,
+    "train_jepa": 0.11005453376177456,
+    "train_pos": 0.1694553498080782,
+    "train_total": 0.12700006874258238,
+    "val_jepa": 0.2750266575541221,
+    "val_pos": 0.17841468475291405,
+    "val_total": 0.2928681260294135,
+    "latent_std": 0.9019876718521118,
+    "val_nmse": 0.3211718499660492,
+    "val_cos": 0.8547869920730591,
+    "lr": 0.0001552349245053751
+   },
+   {
+    "epoch": 27,
+    "train_jepa": 0.10635381938477918,
+    "train_pos": 0.1688147916475777,
+    "train_total": 0.12323529854953695,
+    "val_jepa": 0.2736972886999675,
+    "val_pos": 0.17775291392611559,
+    "val_total": 0.2914725800925791,
+    "latent_std": 0.9016128778457642,
+    "val_nmse": 0.32059475779533386,
+    "val_cos": 0.8555718064308167,
+    "lr": 0.00014476507549462486
+   },
+   {
+    "epoch": 28,
+    "train_jepa": 0.10601534370147961,
+    "train_pos": 0.16891400800417553,
+    "train_total": 0.12290674450189716,
+    "val_jepa": 0.2770242996419579,
+    "val_pos": 0.17851148855890242,
+    "val_total": 0.29487544849784814,
+    "latent_std": 0.8958711624145508,
+    "val_nmse": 0.3292194604873657,
+    "val_cos": 0.8537899255752563,
+    "lr": 0.000134320730509852
+   },
+   {
+    "epoch": 29,
+    "train_jepa": 0.10338721871593679,
+    "train_pos": 0.16864314855247764,
+    "train_total": 0.12025153357118455,
+    "val_jepa": 0.2628407314571309,
+    "val_pos": 0.1783195142968066,
+    "val_total": 0.2806726828868115,
+    "latent_std": 0.897240161895752,
+    "val_nmse": 0.3110380470752716,
+    "val_cos": 0.861568033695221,
+    "lr": 0.00012395277334996044
+   },
+   {
+    "epoch": 30,
+    "train_jepa": 0.09964229114999325,
+    "train_pos": 0.1681035701929072,
+    "train_total": 0.11645264816928397,
+    "val_jepa": 0.26055985597486503,
+    "val_pos": 0.17798545439081848,
+    "val_total": 0.27835840141394685,
+    "latent_std": 0.895979106426239,
+    "val_nmse": 0.3089694678783417,
+    "val_cos": 0.8626102805137634,
+    "lr": 0.00011371171566004985
+   },
+   {
+    "epoch": 31,
+    "train_jepa": 0.09554282917179523,
+    "train_pos": 0.1679897440530309,
+    "train_total": 0.11234180357709832,
+    "val_jepa": 0.2638220403706634,
+    "val_pos": 0.178041413995682,
+    "val_total": 0.28162618177023163,
+    "latent_std": 0.8987597227096558,
+    "val_nmse": 0.31026002764701843,
+    "val_cos": 0.8609325885772705,
+    "lr": 0.0001036474508437579
+   },
+   {
+    "epoch": 32,
+    "train_jepa": 0.09340454996386661,
+    "train_pos": 0.16786652314453998,
+    "train_total": 0.1101912022783206,
+    "val_jepa": 0.26413400357723593,
+    "val_pos": 0.17728794870897666,
+    "val_total": 0.2818627984481336,
+    "latent_std": 0.901430606842041,
+    "val_nmse": 0.30872073769569397,
+    "val_cos": 0.8608276844024658,
+    "lr": 9.380901098761319e-05
+   },
+   {
+    "epoch": 33,
+    "train_jepa": 0.09355367650481951,
+    "train_pos": 0.16752316070740503,
+    "train_total": 0.11030599257556001,
+    "val_jepa": 0.27289310162755287,
+    "val_pos": 0.17785555218547192,
+    "val_total": 0.29067865684610006,
+    "latent_std": 0.9024877548217773,
+    "val_nmse": 0.3185902535915375,
+    "val_cos": 0.8560488820075989,
+    "lr": 8.424432798163842e-05
+   },
+   {
+    "epoch": 34,
+    "train_jepa": 0.09221670419674188,
+    "train_pos": 0.167390061518814,
+    "train_total": 0.10895571034862328,
+    "val_jepa": 0.2744743168738485,
+    "val_pos": 0.17792481060168253,
+    "val_total": 0.2922667979340167,
+    "latent_std": 0.9031320214271545,
+    "val_nmse": 0.32055824995040894,
+    "val_cos": 0.8552975058555603,
+    "lr": 7.500000000000002e-05
+   },
+   {
+    "epoch": 35,
+    "train_jepa": 0.08909478974768922,
+    "train_pos": 0.1672726287320619,
+    "train_total": 0.10582205262089542,
+    "val_jepa": 0.2649831758912341,
+    "val_pos": 0.17738301150040542,
+    "val_total": 0.28272147704127465,
+    "latent_std": 0.9070122838020325,
+    "val_nmse": 0.30692583322525024,
+    "val_cos": 0.8602870106697083,
+    "lr": 6.612106447938799e-05
+   },
+   {
+    "epoch": 36,
+    "train_jepa": 0.08671480707076995,
+    "train_pos": 0.167074859447001,
+    "train_total": 0.10342229301547005,
+    "val_jepa": 0.2671096441512722,
+    "val_pos": 0.17789969471482184,
+    "val_total": 0.2848996136227544,
+    "latent_std": 0.9076492190361023,
+    "val_nmse": 0.30889683961868286,
+    "val_cos": 0.8593736886978149,
+    "lr": 5.765077870115125e-05
+   },
+   {
+    "epoch": 37,
+    "train_jepa": 0.08307647324206185,
+    "train_pos": 0.16704736397526396,
+    "train_total": 0.09978120963958825,
+    "val_jepa": 0.2610878749657907,
+    "val_pos": 0.1772396264870863,
+    "val_total": 0.27881183761449935,
+    "latent_std": 0.9076260328292847,
+    "val_nmse": 0.30152443051338196,
+    "val_cos": 0.8624910712242126,
+    "lr": 4.963040904617126e-05
+   },
+   {
+    "epoch": 38,
+    "train_jepa": 0.08128198753124667,
+    "train_pos": 0.16668202557547532,
+    "train_total": 0.0979501900887942,
+    "val_jepa": 0.2592271358122219,
+    "val_pos": 0.1772100133181387,
+    "val_total": 0.27694813714403577,
+    "latent_std": 0.9081152677536011,
+    "val_nmse": 0.2998194396495819,
+    "val_cos": 0.8635973930358887,
+    "lr": 4.209902994920235e-05
+   },
+   {
+    "epoch": 39,
+    "train_jepa": 0.08017516886849889,
+    "train_pos": 0.1665274311644193,
+    "train_total": 0.09682791198494081,
+    "val_jepa": 0.25837620956020596,
+    "val_pos": 0.17676453245052834,
+    "val_total": 0.2760526628052588,
+    "latent_std": 0.9105199575424194,
+    "val_nmse": 0.2978552281856537,
+    "val_cos": 0.8639950752258301,
+    "lr": 3.509333353215331e-05
+   },
+   {
+    "epoch": 40,
+    "train_jepa": 0.08000946312439071,
+    "train_pos": 0.16624793463986015,
+    "train_total": 0.09663425658837671,
+    "val_jepa": 0.2598571211683694,
+    "val_pos": 0.1770462301344648,
+    "val_total": 0.2775617441818159,
+    "latent_std": 0.9115234613418579,
+    "val_nmse": 0.2992826998233795,
+    "val_cos": 0.8633072972297668,
+    "lr": 2.8647450843757897e-05
+   },
+   {
+    "epoch": 41,
+    "train_jepa": 0.07810753895134866,
+    "train_pos": 0.16637823315012654,
+    "train_total": 0.09474536226636131,
+    "val_jepa": 0.2619034840093006,
+    "val_pos": 0.17686165325829717,
+    "val_total": 0.2795896493351303,
+    "latent_std": 0.9126453399658203,
+    "val_nmse": 0.3012565076351166,
+    "val_cos": 0.8621076941490173,
+    "lr": 2.2792785576536105e-05
+   },
+   {
+    "epoch": 42,
+    "train_jepa": 0.07700785028747308,
+    "train_pos": 0.1665094661677824,
+    "train_total": 0.09365879690425132,
+    "val_jepa": 0.2609402578082874,
+    "val_pos": 0.17709959593918742,
+    "val_total": 0.27865021740220614,
+    "latent_std": 0.9127752780914307,
+    "val_nmse": 0.3001282811164856,
+    "val_cos": 0.8627913594245911,
+    "lr": 1.755786107116095e-05
+   },
+   {
+    "epoch": 43,
+    "train_jepa": 0.07835437295035239,
+    "train_pos": 0.16631089368546717,
+    "train_total": 0.09498546231889911,
+    "val_jepa": 0.26080007095160657,
+    "val_pos": 0.17708602327325745,
+    "val_total": 0.2785086732789323,
+    "latent_std": 0.9121713638305664,
+    "val_nmse": 0.30059510469436646,
+    "val_cos": 0.8627025485038757,
+    "lr": 1.2968181353609886e-05
+   },
+   {
+    "epoch": 44,
+    "train_jepa": 0.0776831489038212,
+    "train_pos": 0.16633426667188367,
+    "train_total": 0.09431657557100957,
+    "val_jepa": 0.26080982478372927,
+    "val_pos": 0.1771643474768303,
+    "val_total": 0.2785262595314123,
+    "latent_std": 0.911056399345398,
+    "val_nmse": 0.30117547512054443,
+    "val_cos": 0.862683117389679,
+    "lr": 9.046106882113751e-06
+   },
+   {
+    "epoch": 45,
+    "train_jepa": 0.07759266587730566,
+    "train_pos": 0.16636325640943056,
+    "train_total": 0.09422899151824872,
+    "val_jepa": 0.2595399398124712,
+    "val_pos": 0.17696842832176124,
+    "val_total": 0.27723678264464735,
+    "latent_std": 0.9108338356018066,
+    "val_nmse": 0.2998332679271698,
+    "val_cos": 0.8633542060852051,
+    "lr": 5.810745609252165e-06
+   },
+   {
+    "epoch": 46,
+    "train_jepa": 0.07782213435759505,
+    "train_pos": 0.16637680509074174,
+    "train_total": 0.09445981486666923,
+    "val_jepa": 0.2616262017157556,
+    "val_pos": 0.17709921681534946,
+    "val_total": 0.2793361233972906,
+    "latent_std": 0.9104084968566895,
+    "val_nmse": 0.30243250727653503,
+    "val_cos": 0.862227737903595,
+    "lr": 3.2778598899291465e-06
+   },
+   {
+    "epoch": 47,
+    "train_jepa": 0.07772224219633808,
+    "train_pos": 0.16641951170264804,
+    "train_total": 0.0943641933666029,
+    "val_jepa": 0.2615799990888566,
+    "val_pos": 0.1770463261916897,
+    "val_total": 0.2792846317080256,
+    "latent_std": 0.9105886220932007,
+    "val_nmse": 0.3023165762424469,
+    "val_cos": 0.8622365593910217,
+    "lr": 1.4597896887644456e-06
+   },
+   {
+    "epoch": 48,
+    "train_jepa": 0.07800924399107724,
+    "train_pos": 0.16650292609601544,
+    "train_total": 0.09465953660067879,
+    "val_jepa": 0.2617459762291588,
+    "val_pos": 0.1770380149368789,
+    "val_total": 0.2794497777228467,
+    "latent_std": 0.9104276895523071,
+    "val_nmse": 0.3026305139064789,
+    "val_cos": 0.8621503710746765,
+    "lr": 3.653924610263537e-07
+   },
+   {
+    "epoch": 49,
+    "train_jepa": 0.0764598639168665,
+    "train_pos": 0.1664569900092735,
+    "train_total": 0.09310556291779386,
+    "val_jepa": 0.2618888536936235,
+    "val_pos": 0.17704107808478267,
+    "val_total": 0.2795929615021018,
+    "latent_std": 0.9104104042053223,
+    "val_nmse": 0.3027907907962799,
+    "val_cos": 0.862075924873352,
+    "lr": 0.0
+   }
+  ]
+ },
+ "table3a_scores": {
+  "shipped row (old in-house replication, 12d, epoch-0 checkpoint)": {
+   "auroc": 0.696,
+   "mae": 0.217,
+   "mae_gain": "-1.5%",
+   "rho": 0.001
+  },
+  "agentjepa_official (this file: full 50-epoch schedule, epoch 49)": {
+   "auroc": 0.699,
+   "mae": 0.216,
+   "mae_gain": "-1.0%",
+   "rho": -0.003
+  },
+  "agentjepa_official_bestval (paper-literal best-validation-loss checkpoint, epoch 1/50)": {
+   "auroc": 0.711,
+   "mae": 0.205,
+   "mae_gain": "+4.1%",
+   "rho": 0.151
+  },
+  "agentjepa_official_randinit (paper Sec. 4.2 Ablation 2, random encoder)": {
+   "auroc": 0.698,
+   "mae": 0.215,
+   "mae_gain": "-0.6%",
+   "rho": -0.009
+  }
+ },
+ "score_diagnostics": {
+  "rho(route mean surprise, n_windows per route)": {
+   "final (50-epoch schedule)": -0.088,
+   "bestval (epoch 1/50)": -0.466,
+   "random encoder (Ablation 2)": -0.209
+  },
+  "rho between checkpoints (route mean surprise)": {
+   "final (50-epoch schedule) vs bestval (epoch 1/50)": -0.069,
+   "final (50-epoch schedule) vs random encoder (Ablation 2)": -0.052,
+   "bestval (epoch 1/50) vs random encoder (Ablation 2)": 0.759
+  },
+  "reading": "The epoch-1 checkpoint that the paper's own best-validation-loss rule selects is the only variant with a non-trivial Table 3A rho (+.151) -- but its per-route score ranks the bank the same way the RANDOM-weight encoder does (rho +0.76) and is largely a route-duration proxy (rho -0.47 with the number of 5 s windows in the route). So that +.151 is a random-feature/route-length effect, not learned complexity. The fully trained model (50-epoch schedule) correlates with nothing -- not route duration, not the epoch-1 model, not the random encoder -- and lands exactly on the planner-only null."
+ },
+ "contamination_audit": {
+  "train_clips": 1000,
+  "train_route_ids": "1..1636 (1000 distinct)",
+  "eval_route_ids": "1711..28330 (220 distinct)",
+  "route_id_overlap_train_vs_eval": [],
+  "n_train_scenario_types": 43,
+  "n_eval_scenario_types": 44,
+  "eval_types_absent_from_train": [
+   "SequentialLaneChange",
+   "T_Junction",
+   "VanillaNonSignalizedTurn"
+  ],
+  "train_types_absent_from_eval": [
+   "LaneChange",
+   "TJunction"
+  ],
+  "verdict": "No evaluation route appears in the training corpus (route-id sets are disjoint: train 1..1636 are Bench2Drive v1 expert clips, eval 1711..28330 are the 220 held-out routes). 41 of the 44 evaluation scenario-type NAMES also occur among the 43 training-clip types (the three that do not -- SequentialLaneChange, T_Junction, VanillaNonSignalizedTurn -- are mostly spelling variants of LaneChange / TJunction). That type-level overlap is inherent to the split the shipped row used and is label-free: training touches no planner response, no difficulty value and no type label -- the loss is self-supervised on agent state only. It does mean the row must NOT be described as trained on calibration types only, unlike the RelGraph encoder row, which is retrained per draw on the 36 calibration types."
+ },
+ "per_route_sanity": {
+  "n_routes": 220,
+  "d": 3,
+  "columns": [
+   "mean",
+   "p90",
+   "max"
+  ],
+  "windows_per_route": {
+   "min": 5,
+   "median": 28.0,
+   "max": 391,
+   "total": 10967
+  },
+  "per_column": {
+   "mean": {
+    "min": 0.34544288342261253,
+    "p25": 0.7558204282363592,
+    "median": 0.974741769248531,
+    "p75": 1.1772226545505409,
+    "max": 2.3594828128814695,
+    "mean": 0.9924611430205974,
+    "std": 0.3187965025698427
+   },
+   "p90": {
+    "min": 0.33410078287124634,
+    "p25": 1.1254052579402922,
+    "median": 1.3862165927886962,
+    "p75": 1.7546884506940843,
+    "max": 4.983812713623048,
+    "mean": 1.5001550815051252,
+    "std": 0.605896318954641
+   },
+   "max": {
+    "min": 0.780369758605957,
+    "p25": 1.509674221277237,
+    "median": 1.93452650308609,
+    "p75": 2.362798273563385,
+    "max": 5.8516526222229,
+    "mean": 2.0524442304264414,
+    "std": 0.8430112042285508
+   }
+  },
+  "n_nonfinite": 0,
+  "n_constant_columns": 0
+ },
+ "notes": "Primary row file is agentjepa_official.npz (full 50-epoch schedule, epoch 49). agentjepa_official_bestval.npz is the paper's own best-validation-loss checkpoint, which lands at epoch 1 of 50 on this corpus. agentjepa_official_randinit.npz is the paper Sec. 4.2 Ablation 2 random-encoder control. All three come from one training run and one extraction path."
+}

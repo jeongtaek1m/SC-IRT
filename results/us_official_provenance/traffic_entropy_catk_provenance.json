@@ -1,0 +1,169 @@
+{
+  "name": "traffic_entropy_catk",
+  "family": "Traffic entropy",
+  "written_utc": "2026-09-06T09:18:54+00:00",
+  "what_was_run": {
+    "repo": "NVlabs/catk (CAT-K, Zhang et al., CVPR 2025, arXiv:2412.05334)",
+    "checkout": "/home/jeongtae/IRT/catk",
+    "commit": "d23886761fc5b5628c5973148c40284452745745",
+    "entry_points": [
+      "src.smart.tokens.token_processor:TokenProcessor.forward",
+      "src.smart.modules.smart_decoder:SMARTDecoder.forward",
+      "src.smart.utils.preprocess:preprocess_map"
+    ],
+    "producing_script": "/home/jeongtae/SC-IRT/experiments/us_official/traffic_entropy.py",
+    "geometry_converter": "/data1/jeongtae/smart_difficulty/scripts/b2d_to_smart_viz.py (build_map, smart_type, load_frame; imported read-only)",
+    "checkpoint": {
+      "ckpt": "/home/jeongtae/IRT/SMART/ckpts/pre_bc_E31.ckpt",
+      "epoch": 31,
+      "global_step": 194829,
+      "n_tensors_loaded": 811,
+      "n_tensors_model": 811,
+      "agent_token_file": "agent_vocab_555_s2.pkl",
+      "map_token_file": "map_traj_token5.pkl",
+      "n_token_agent": 2048,
+      "decoder": {
+        "hidden_dim": 128,
+        "num_freq_bands": 64,
+        "num_heads": 8,
+        "head_dim": 16,
+        "dropout": 0.1,
+        "hist_drop_prob": 0.1,
+        "num_map_layers": 3,
+        "num_agent_layers": 6,
+        "pl2pl_radius": 10,
+        "pl2a_radius": 30,
+        "a2a_radius": 60,
+        "time_span": 30,
+        "num_historical_steps": 11,
+        "num_future_steps": 80
+      }
+    },
+    "load_mode": "load_state_dict(strict=True) after stripping the \"encoder.\" prefix; set(ckpt) == set(model) asserted both directions and every shape checked"
+  },
+  "formula": {
+    "definition": "H(scene) = mean_{agents, 16 token steps} -sum_k p_k log p_k, p = softmax(next_token_logits), nats",
+    "source": "SMART (Wu et al., NeurIPS 2024) next-token distribution over the 2048-entry agent motion-token vocabulary; the exact tensor is CAT-K src/smart/modules/agent_decoder.py:SMARTAgentDecoder.forward -> \"next_token_logits\" [n_agent, 16, n_token] with validity \"next_token_valid\" (= tokenized valid_mask[:, 1:-1]); the model's own open-loop validation (src/smart/model/smart.py, val_open_loop) scores exactly these logits.",
+    "token_steps": "actions (10->15), (15->20), ..., (85->90) at 2 Hz, i.e. 16 steps x 0.5 s covering t = 1.0 s .. 9.0 s",
+    "teacher_forced": true,
+    "teacher_forcing_note": "open-loop forward: every agent is conditioned on the tokenised RECORDED trajectory (TokenProcessor with agent_token_sampling.num_k = 1 outside training makes sampled_idx == gt_idx), so the 9.1 s window is fully teacher-forced on the recorded future; no rollout, no sampling, model in eval() so dropout and hist_drop are off",
+    "ego_policy": "primary column = ego INCLUDED (ego is one agent among the others, as in the model's own loss); the ego-excluded column is shipped as traffic_entropy_catk_noego.npz and as the \"ent_ego_excluded\" array here"
+  },
+  "parameters": {
+    "window": "one centred 91-frame (9.1 s @ 10 Hz) window per route: start = max(0, (n_frames - 91) // 2)",
+    "short_routes": "10 of 220 routes have < 91 frames (min 66); frames past the end are empty, so those steps are invalid for every agent and drop out of the mean (same policy as b2d_smart_220.py)",
+    "agents_per_scene": "actors valid at step 10 with > 3 valid frames, in first-seen order, capped at 47, restricted to CAT-K types {0 vehicle, 1 pedestrian, 2 cyclist}, plus ego last",
+    "map_radius_m": 60.0,
+    "map_resample_m": 0.25,
+    "coordinate_fix": "CARLA is left-handed: y -> -y and heading -> -deg2rad(rotation[2]) (b2d_to_smart_viz B2D_MIRROR_FIX)",
+    "map_vocabulary_remap": {
+      "0": 8,
+      "1": 8,
+      "2": 6,
+      "3": 6,
+      "4": 8,
+      "5": 8,
+      "6": 8,
+      "7": 8,
+      "8": 7,
+      "9": 7,
+      "10": 8,
+      "11": 8,
+      "12": 4,
+      "14": 4
+    },
+    "light_type": "all polygons NO_LANE_STATE (0): B2D anno carries no per-lane signal state",
+    "device": "cuda",
+    "dtype": "float32 forward, entropy accumulated in float32, stored float64"
+  },
+  "differences_from_source": [
+    "CAT-K preprocesses Waymo Open Motion protos; B2D scenes are converted here instead (its own preprocess_map is used for the map side, and the agent dict mirrors get_agent_features: interp1d gap fill, static shape, 2-D velocity, role flags).",
+    "CARLA lane-marking types are mapped into the WOMD vocabulary; unpainted / unmapped lane boundaries (the majority of B2D boundary polylines) are sent to ROAD_EDGE_BOUNDARY. Sensitivity of the descriptor to that choice is reported in sanity.map_unknown_sensitivity when the \"sens\" stage was run.",
+    "No traffic-light state (B2D anno has none) -> NO_LANE_STATE everywhere; CAT-K's light embedding therefore sees one constant class.",
+    "Agent z is 0 and the scene is not centred on the WOMD ego frame; the model is fully translation/rotation equivariant in its relative encodings, so this only affects the (unused) gt_z_raw.",
+    "One 9.1 s window per route (the descriptor is one scalar per route), whereas WOMD validation scores every 9.1 s scenario in the split."
+  ],
+  "differences_from_the_shipped_row": [
+    "ckpt loaded strict=True into CAT-K (811/811 tensors) instead of strict=False into rainmaker22/SMART (808/818, 10 tensors left at initialisation)",
+    "tokenised with agent_vocab_555_s2.pkl (the vocabulary the checkpoint was trained with) instead of rainmaker22 cluster_frame_5_2048.pkl",
+    "map/agent/light vocabularies remapped to CAT-K's 10/4/3-class WOMD spaces instead of rainmaker22's 17/5/4-class spaces (that mismatch alone left type_pt_emb / light_pl_emb / type_a_emb partly unused or out of range)",
+    "same routes, same rollout, same centred 9.1 s window, same pooled mean"
+  ],
+  "sanity": {
+    "n_routes": 220,
+    "ent_ego_included": {
+      "mean": 3.7980701018463483,
+      "sd": 0.9537129790099971,
+      "min": 1.150088906288147,
+      "max": 5.113682746887207
+    },
+    "ent_ego_excluded": {
+      "mean": 3.815457195043564,
+      "sd": 0.9318066597560068,
+      "min": 1.1076240539550781,
+      "max": 5.04207181930542
+    },
+    "ent_ego_only": {
+      "mean": 3.782277239452709,
+      "sd": 1.3882822448123422
+    },
+    "agents_per_scene": {
+      "mean": 10.795454545454545,
+      "min": 3,
+      "max": 36
+    },
+    "valid_agent_step_cells": {
+      "mean": 149.88181818181818,
+      "min": 26,
+      "max": 576,
+      "max_possible_per_agent": 16
+    },
+    "frames_used": {
+      "min": 66,
+      "max": 91,
+      "n_routes_below_91": 10
+    },
+    "nan_routes": [],
+    "spearman_new_vs_shipped": 0.9782580030766976,
+    "spearman_egoincl_vs_egoexcl": 0.9750032401120233,
+    "shipped_row_stats": {
+      "mean": 4.012795451012525,
+      "sd": 0.7700082173744442,
+      "min": 1.9897483587265015,
+      "max": 5.275670051574707
+    },
+    "map_unknown_sensitivity": {
+      "n": 30,
+      "mean_kept": 3.7575901985168456,
+      "mean_dropped": 3.732243800163269,
+      "mean_abs_delta": 0.0392874002456665,
+      "spearman": 0.9977753058954394
+    }
+  },
+  "leakage_statement": "Computed only from the PDM-Lite reference rollout of each route (ego + agent tracks + HD-map geometry). PDM-Lite is EXCLUDED_PLANNER and is not one of the 16 evaluated planners; the RelGraph encoder reads the same rollout. No response matrix, planner outcome or scenario-type label was read at any point.",
+  "table3a_score": {
+    "how": "experiments/us_official/score_one.py <npz> \u2014 run_us.load_descriptor_arms patched with the new arm; same unified split, 16 draws, 640 pooled route evaluations, two-stage Ridge plug-in (alpha 10 for d<=10), shipped anchors asserted (anchors OK)",
+    "planner_only_null": {
+      "auroc": 0.699,
+      "scene_mae": 0.214
+    },
+    "shipped_row_eval_smart_ent": {
+      "auroc": 0.706,
+      "scene_mae": 0.212,
+      "mae_gain": "+0.7%",
+      "rho": 0.097
+    },
+    "rebuilt_ego_included": {
+      "auroc": 0.704,
+      "scene_mae": 0.213,
+      "mae_gain": "+0.2%",
+      "rho": 0.072
+    },
+    "rebuilt_ego_excluded": {
+      "auroc": 0.702,
+      "scene_mae": 0.214,
+      "mae_gain": "-0.3%",
+      "rho": 0.056
+    }
+  }
+}

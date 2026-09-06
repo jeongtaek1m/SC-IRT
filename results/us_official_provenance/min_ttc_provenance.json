@@ -1,0 +1,169 @@
+{
+  "name": "min_ttc",
+  "family": "Min-TTC",
+  "written": "2026-09-06 18:27:54 KST",
+  "produced_by": "SC-IRT/experiments/us_official/min_ttc.py:route_features (pair_ttc)",
+  "scirt_repo": {
+    "path": "/home/jeongtae/SC-IRT",
+    "commit": "a20a38b71d177c97fba2521210dc916b7420264f"
+  },
+  "official_code_run": null,
+  "official_code_consulted": {
+    "commonroad-crime 0.4.5 (TUM CPS, sdist from PyPI)": {
+      "files": [
+        "commonroad_crime/measure/time/ttc_star.py",
+        "commonroad_crime/measure/time/tet.py",
+        "commonroad_crime/measure/time/tit.py",
+        "commonroad_crime/measure/time/ttc.py"
+      ],
+      "used_for": "TET/TIT accumulation convention (+= dt when TTC <= tau; += (tau - TTC)*dt when TTC <= tau) and the OBB-footprint reading of \"collide\" (TTCStar builds pycrcc.RectOBB boxes).",
+      "not_run_because": "CriMe operates on CommonRoad scenarios with a lanelet network and the compiled commonroad-drivability-checker. Its TTC class is a lane-projected car-following formula (needs find_lanelet_by_position, undefined for Bench2Drive/CARLA rollouts without a CommonRoad map), and its TTCStar sweeps the RECORDED future of the other actors rather than a constant-velocity DMM, so neither implements the metric this row claims. No official implementation of the general constant-velocity footprint TTC exists for Bench2Drive annotations, so the published definition was implemented directly and cross-checked against brute force."
+    }
+  },
+  "definitions": {
+    "TTC": "Westhofen et al., arXiv:2108.02403, Sec. 5.2.1: \"For two actors A1, A2 at time t, the TTC metric returns the minimal time until A1 and A2 collide according to a given DMM, or infinity if the predicted trajectories do not intersect [33, 94].\" Formula: TTC(A1,A2,t) = min({t~ >= 0 | d(p1(t+t~), p2(t+t~)) = 0} u {inf}). Ref [33] = Hayward JC (1972), Near miss determination through use of a scale of danger, 51st HRB annual meeting, vol 384, pp 24-34.",
+    "TET": "Westhofen Sec. 5.2.6: TET(A1,A2,tau) = int_{t0}^{te} 1_{TTC(A1,A2,t) <= tau} dt. Ref [66] = Minderhoud & Bovy (2001), Extended time-to-collision measures for road traffic safety assessment, Accid Anal Prev 33:89-97.",
+    "TIT": "Westhofen Sec. 5.2.7: TIT(A1,A2,tau) = int_{t0}^{te} 1_{TTC(A1,A2,t) <= tau} (tau - TTC(A1,A2,t)) dt. Ref [66] as above.",
+    "scene_aggregation": "per-frame TTC = min over agents (Westhofen Sec. 5.2.1 notes TTC must be \"meaningfully aggregated over actors\" in multi-actor scenes); route min-TTC = min over frames."
+  },
+  "parameters": {
+    "DT_s": 0.1,
+    "tau_s": 3.0,
+    "TTC_censor_s": 10.0,
+    "DMM": "constant velocity, orientation held fixed over the extrapolation",
+    "prediction_horizon": "none (unbounded t~, per the definition)",
+    "footprint": "oriented bounding box centred at anno `location`, half-extents (extent[0], extent[1]), yaw = radians(rotation[2])",
+    "agent_classes": [
+      "vehicle",
+      "walker"
+    ],
+    "ego_excluded_from_agents": true,
+    "velocity": "central finite differences of `location` per track id at DT; one-sided at track ends; speed*(cos yaw, sin yaw) for a track seen in a single frame",
+    "zero_tol": 1e-12,
+    "solver": "closed-form ray/convex-polygon clip on the Minkowski difference (8 facet normals); no time discretisation"
+  },
+  "data": {
+    "root": "/data1/jeongtae/b2d_eval_sensors",
+    "rollout": "PDM-Lite reference rollout, 10 Hz anno/*.json.gz",
+    "n_routes": 220,
+    "n_frames_total": 64278,
+    "leakage_note": "PDM-Lite is EXCLUDED_PLANNER (atdrive/b2d.py) and is not one of the 16 evaluated planners; the RelGraph encoder reads the same rollout. No response matrix, planner outcome or held-out scenario type was read while building this descriptor."
+  },
+  "deviations_from_source": [
+    "Westhofen writes d as the Euclidean distance between actor POSITIONS p1, p2 (their Table 1); taken literally, d = 0 requires two points to coincide and the metric would be degenerate for extended bodies. We instantiate d on the actors' occupied sets (rigid oriented rectangles), so d = 0 iff the footprints intersect. This is the reading of \"until A1 and A2 collide\" used by commonroad-crime TTCStar (pycrcc.RectOBB + collision checker) and by CARLA/Bench2Drive collision events.",
+    "Orientation is held constant during the extrapolation (yaw rate not propagated); this is what the constant-velocity DMM specifies and keeps the solver exact.",
+    "tau = 3 s for TET/TIT as specified for this rebuild; commonroad-crime 0.4.5 defaults to tau = 2 s (configuration.py:244).",
+    "The 1-d table column censors min-TTC at TTC_CENSOR = 10 s so the Ridge plug-in has a finite input for routes whose constant-velocity extrapolations never intersect; min_ttc_raw in the npz keeps the uncensored value (+inf where applicable).",
+    "The anno `location` is the actor transform origin (it equals the ego x/y exactly); CARLA bounding boxes can carry a small (<0.5 m) longitudinal offset from it, which is not modelled.",
+    "Westhofen defines TET/TIT as continuous-time integrals; they are evaluated as Riemann sums at the 10 Hz annotation rate, matching Minderhoud & Bovy's discrete formulation and commonroad-crime."
+  ],
+  "convention_checks": {
+    "heading": "The direction of motion in the anno (x, y) frame equals radians(rotation[2]) (yaw), NOT the top-level `theta`, which is offset by +pi/2. Verified by finite differences of the ego and of moving agents. The replaced ssm_hazard_features() uses `theta`.",
+    "velocity": "Central finite differences reproduce the recorded scalar `speed` to MAE 0.0747 m/s (p99 1.291 m/s) across all routes; forward differences are ~3x worse (MAE 0.113 m/s on a 4-route probe), so the recorded `speed` is the instantaneous speed at the frame and central differences are the matching convention. Central differences are used because the TTC needs the velocity VECTOR, which the scalar `speed` field does not give.",
+    "extent": "extent = half-extents (ego 2.446 x 0.918 -> 4.89 m x 1.84 m, a Lincoln MKZ 2020)."
+  },
+  "sanity": {
+    "n_routes": 220,
+    "n_finite_min_ttc": 220,
+    "n_censored_at_10s": 0,
+    "n_zero_min_ttc": 14,
+    "zero_min_ttc_routes": [
+      "11755",
+      "17563",
+      "2201",
+      "24092",
+      "24757",
+      "2513",
+      "27018",
+      "28087",
+      "28099",
+      "2913",
+      "3307",
+      "3380",
+      "3697",
+      "3712"
+    ],
+    "zero_min_ttc_note": "min-TTC = 0 means the footprints already intersect at some frame (t~ = 0 satisfies the definition). On those routes the deepest separating-axis interpenetration is 0.076-0.502 m, i.e. the ego is in contact or within the box model's tolerance of it; the fraction of frames in that state ranges 0.013-0.948. Kept, because censoring it would be a deviation from the definition -- but the reader should know 14/220 routes tie at 0 on the 1-d column, which is why TET/TIT are shipped alongside it.",
+    "min_ttc_raw_quantiles_s": {
+      "p0": 0.0,
+      "p5": 0.0,
+      "p25": 0.6059444038929334,
+      "p50": 0.9977548531595061,
+      "p75": 1.4018358833018447,
+      "p95": 2.7228611284993063,
+      "p100": 5.164074934130689
+    },
+    "TET_tau3_s": {
+      "mean": 6.801818181818183,
+      "median": 3.05,
+      "max": 192.5,
+      "n_zero": 8
+    },
+    "TIT_tau3_s2": {
+      "mean": 14.297121983851211,
+      "median": 3.1290227773379597,
+      "max": 573.0343908963678,
+      "n_zero": 8
+    },
+    "frames_per_route": {
+      "min": 66,
+      "max": 2000,
+      "total": 64278
+    },
+    "mean_agents_per_frame": 9.424502079627487,
+    "vs_shipped_ssm_min_ttc": {
+      "n_compared": 220,
+      "spearman": 0.19308753386901484,
+      "pearson": 0.3786907000888549,
+      "shipped_mean": 0.6019358677462532,
+      "new_mean": 1.086759477240334,
+      "shipped_note": "ssm_min_ttc = min over frames of (centre-to-centre range / radial closing speed) over agents with closing speed > 0.1 m/s, per-frame value clipped at 30 s."
+    }
+  },
+  "table3a_scoring": {
+    "scored_by": "experiments/us_official/score_one.py (wraps experiments/run_us.py; same unified split, 16 draws, two-stage Ridge plug-in, pooled 640 route evaluations)",
+    "command": "python score_one.py /data2/jeongtae/official_baselines/us_features/min_ttc_1d.npz /data2/jeongtae/official_baselines/us_features/min_ttc.npz",
+    "planner_only_null": {
+      "auroc": 0.699,
+      "scene_mae": 0.214
+    },
+    "shipped_Min_TTC_row": {
+      "auroc": 0.692,
+      "scene_mae": 0.219,
+      "rho": -0.061,
+      "note": "reproduced exactly in the same run"
+    },
+    "rebuilt_1d_min_ttc": {
+      "auroc": 0.713,
+      "scene_mae": 0.213,
+      "rho": 0.217
+    },
+    "rebuilt_3d_min_ttc_TET_TIT": {
+      "auroc": 0.711,
+      "scene_mae": 0.214,
+      "rho": 0.206
+    },
+    "anchors": "null / kinematics / hand-crafted risk / RelGraph all reproduced (run_us.py assertions passed with the extra arms present)"
+  },
+  "npz": {
+    "path": "/data2/jeongtae/official_baselines/us_features/min_ttc.npz",
+    "stats_columns": [
+      "min_ttc_censored_10s (the 1-d Table 3A row)",
+      "TET_tau3_s",
+      "TIT_tau3_s2"
+    ],
+    "names_format": "route_<id>",
+    "extra_arrays": [
+      "min_ttc_raw (uncensored, +inf where the constant-velocity extrapolations never intersect)",
+      "n_frames",
+      "frac_finite_frames",
+      "frac_zero_frames",
+      "median_finite_ttc",
+      "mean_agents"
+    ],
+    "one_d_slice": {
+      "path": "/data2/jeongtae/official_baselines/us_features/min_ttc_1d.npz",
+      "why": "experiments/us_official/score_one.py feeds every column of a file to the Ridge plug-in as a single arm, so column 0 alone -- the row that goes in Table 3A -- is also written as its own file. It is a slice of min_ttc.npz, not a separate computation."
+    }
+  }
+}

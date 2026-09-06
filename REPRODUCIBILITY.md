@@ -45,6 +45,7 @@ past a failed anchor.
 | `run_us.py` | Table 3A: null, the two hand-crafted rows, RelGraph 3-run means; Table 3A(b): the rho of the four controls |
 | `run_ups.py` | Table 3B: representative MAE cells per policy (tol .003), incl. the Delta-R1 cells under the speed-ablated prior |
 | `run_ups_full.py --merge` | 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .0025 in the readout and in the acquisition |
+| `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the ATLAS stopping rule, and the 2 recorded ATLAS failures |
 | `run_nuplan_zeroshot.py` | panel constants, oracle point estimates, arm means, the permutation-fixed T_null with the count of null per-permutation means at or above each arm and the verdicts, the whole-panel Spearman of both arms and their null counts |
 | `run_model_adequacy.py` | held-out NLL of 1PL / 2PL / 3PL and the split-half reliability of log a on the UP bank |
 | `run_readout_dropin.py` | the drop-in cells (incl. AnchorPoints K12 B55 / B110) |
@@ -186,3 +187,26 @@ python experiments/run_readout_dropin.py
 python experiments/run_model_adequacy.py
 python experiments/make_figures.py; python experiments/make_icc_figure.py; python experiments/make_uncertainty_figure.py
 ```
+
+
+## Baselines run through their own code
+
+`experiments/official/` runs each published Table 1 baseline through its official
+implementation and `experiments/us_official/` rebuilds the Table 3A descriptors
+(see the README in each directory for the per-method provenance, and
+`results/us_official_provenance/` for the descriptor column documentation).
+Neither is exercised by `pytest` and neither runs from a clean checkout of this
+repository alone: they need the upstream repositories and two environments that
+are outside version control because they carry their own licences.
+
+  /data2/jeongtae/official_baselines/          clones of the six upstream repositories
+                                               (commit ids recorded in results/up_official.json)
+  /data2/jeongtae/envs/atdrive_official/       python 3.10, torch 2.2.2+cpu, numpy 1.26,
+                                               pyro 1.9.1, py-irt 0.6.5, scikit-learn, kmedoids,
+                                               fluid-benchmarking and tinyBenchmarks (editable)
+  /data2/jeongtae/envs/r_metabench/            R 4.4 with mirt 1.47 and catR 3.17
+
+The Table 1 official run is 1,344 cells and about 41 core-hours single-threaded
+(ATLAS is two thirds of it); shard it with `--methods` and `--seeds`. Shard files
+are named by method and seed range — two shards of different methods over the same
+seed range would otherwise write the same file.

@@ -180,6 +180,14 @@ tests/          fast invariants
   the ego-route relation improves rho by +.03; shuffling correspondences
   changes nothing beyond seed noise), and so is the ego-speed channel
   (+.01).
+- Every published baseline of Table 1 was also run through **its own official
+  implementation** (`experiments/official/`, `results/up_official.json`): ATDrive is
+  lower in 12 of 12 cells against every method except catR (11 of 12, losing one cell
+  by .0003), and the re-implementations reported in Table 1 are if anything more
+  generous to the baselines than their own code is. Three of the seven are not
+  reproducible as published (unseeded medoids, a `set.seed(NULL)` inside catR's item
+  selection, and a selection rule with no randomness at all), and ATLAS's 3PL is
+  unidentified at this panel size (RESULTS.md, "Table 1 through the baselines' OWN code").
 - Zero-shot on nuPlan val14, against a label-shuffle null that carries the
   arm's own variance structure (20 fixed permutations x 3 training seeds),
   the speed-ablated encoder clears on the top-5% performance drop (no

@@ -1,0 +1,2074 @@
+{
+ "title": "Provenance of the four in-house descriptor rows of ATDrive Table 3A (US)",
+ "written": "2026-09-06T09:16:17+00:00",
+ "generator": "/home/jeongtae/SC-IRT/experiments/us_official/inhouse_provenance.py",
+ "atdrive_commit": "a20a38b71d177c97fba2521210dc916b7420264f",
+ "python": "3.9.23",
+ "numpy": "1.23.4",
+ "audit_verdict": "No published method stands behind any of these four rows. They were designed inside this project. Every column is computed from the PDM-Lite reference rollout of the route (/data1/jeongtae/b2d_eval_sensors/route_<id>/anno/*.json.gz, 10 Hz), which is the same rollout the RelGraph encoder reads, so this is the protocol definition of a route representation and not leakage -- PDM-Lite is EXCLUDED_PLANNER and is not one of the 16 evaluated planners. But the rows must be described as PROBE-ROLLOUT descriptors, not as scene-only descriptors: the ego pose, the ego speed and the rollout length that enter them are PDM-Lite behaviour, and in three of the four sets a majority of the dimensions is either pure probe motion or an agent quantity measured in the probe frame.",
+ "route_bank": {
+  "n_routes": 220,
+  "source_dir": "/data1/jeongtae/b2d_eval_sensors/route_<id>/anno",
+  "rate_hz": 10,
+  "reference_rollout": "PDM-Lite (EXCLUDED_PLANNER)"
+ },
+ "how_scored": "experiments/run_us.py:load_descriptor_arms -> two-stage Ridge plug-in: z-score on the calibration-type fold, Ridge(alpha = 100 if d > 10 else 10) fit b_hat ~ x, predict the evaluation types; pooled over 16 draws (640 route evaluations); AUROC / scene-MAE / Spearman rho.",
+ "sets": {
+  "Route geometry": {
+   "table_row": "Route geometry",
+   "file": "/home/jeongtae/SC-IRT/data/features/eval_routegeom.npz",
+   "shape": [
+    220,
+    16
+   ],
+   "dtype": "float32",
+   "names_format": "route_<id>",
+   "producer": "/home/jeongtae/SCIRT/b2d_irt/scripts/cmdkin_decompose.py:routegeom (lines 36-87), run(split=\"eval\")",
+   "producer_status": "present in the repo, reads /data1/jeongtae/b2d_jepa/eval_feats/route_<id>.npz {ego, cmd}, which b2d_irt/scripts/eval_pipeline.py:load_anno wrote from the raw anno",
+   "published_method": null,
+   "shipped_layout_string": "route_len,n_wp,sum_turn,max_turn,turn_per_m,max_turn_20m,n_cmd_seg,seg_per_100m,n_uniq_cmd,lookahead_mean,distfrac_cmd1,distfrac_cmd2,distfrac_cmd3,distfrac_cmd4,distfrac_cmd5,distfrac_cmd6 = 16d (route geometry from nav waypoints + DISTANCE-weighted command fractions; no time weighting -> dwell-invariant)",
+   "verified": "recomputed for all 220 routes by calling cmdkin_decompose.routegeom on the eval_feats ego/cmd arrays: bit-for-bit identical to the shipped npz (0 routes differ).",
+   "columns": [
+    {
+     "index": 0,
+     "name": "route_len",
+     "formula": "sum over valid frames of hypot(dx, dy) of the ego position",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 104.2227821523493,
+      "std": 32.468523641005035,
+      "min": 33.528564453125,
+      "max": 221.49749755859375,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 1,
+     "name": "n_wp",
+     "formula": "number of distinct consecutive near-target waypoints (|d(x,y)| > 1e-3) seen along the rollout",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 3.2772727272727273,
+      "std": 1.061915857898449,
+      "min": 1.0,
+      "max": 8.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 2,
+     "name": "sum_turn",
+     "formula": "sum of |wrap(d heading)| between consecutive polyline segments of the unique near-target waypoints, segments shorter than 0.5 m dropped",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.5708489694245641,
+      "std": 0.5855026082187861,
+      "min": 0.0,
+      "max": 3.1438190937042236,
+      "n_zero": 33
+     }
+    },
+    {
+     "index": 3,
+     "name": "max_turn",
+     "formula": "max of the same per-vertex |wrap(d heading)|",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.44644568987337563,
+      "std": 0.37559826780008615,
+      "min": 0.0,
+      "max": 1.2160239219665527,
+      "n_zero": 33
+     }
+    },
+    {
+     "index": 4,
+     "name": "turn_per_m",
+     "formula": "sum_turn / max(route_len, 1.0)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.0062503009741249034,
+      "std": 0.005861014837846285,
+      "min": 0.0,
+      "max": 0.021406125277280807,
+      "n_zero": 33
+     }
+    },
+    {
+     "index": 5,
+     "name": "max_turn_20m",
+     "formula": "largest cumulative |d heading| inside any 20 m stretch of the waypoint polyline",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.541633693725122,
+      "std": 0.5361329547928528,
+      "min": 0.0,
+      "max": 3.1429591178894043,
+      "n_zero": 33
+     }
+    },
+    {
+     "index": 6,
+     "name": "n_cmd_seg",
+     "formula": "number of runs of constant command_near along the rollout frames",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 2.2363636363636363,
+      "std": 1.08231463016892,
+      "min": 1.0,
+      "max": 4.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 7,
+     "name": "seg_per_100m",
+     "formula": "n_cmd_seg / max(route_len / 100, 1e-6)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 2.546475381471894,
+      "std": 1.627947837881703,
+      "min": 0.6488279700279236,
+      "max": 7.563670635223389,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 8,
+     "name": "n_uniq_cmd",
+     "formula": "number of distinct command_near values in 1..6 over the rollout",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 1.7,
+      "std": 0.6543560331973858,
+      "min": 1.0,
+      "max": 3.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 9,
+     "name": "lookahead_mean",
+     "formula": "mean over frames of the distance between the far and the near command target",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 34.995337191495025,
+      "std": 11.503275769937432,
+      "min": 11.201350212097168,
+      "max": 53.08540344238281,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 10,
+     "name": "distfrac_cmd1",
+     "formula": "ego travelled distance spent under command_near == 1, divided by the total travelled distance (distance-weighted, so a stopped probe adds nothing)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.0574690967798233,
+      "std": 0.10635482372325324,
+      "min": 0.0,
+      "max": 0.4469483494758606,
+      "n_zero": 168
+     }
+    },
+    {
+     "index": 11,
+     "name": "distfrac_cmd2",
+     "formula": "ego travelled distance spent under command_near == 2, divided by the total travelled distance (distance-weighted, so a stopped probe adds nothing)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.03685985566540198,
+      "std": 0.09018372072969512,
+      "min": 0.0,
+      "max": 0.46178215742111206,
+      "n_zero": 184
+     }
+    },
+    {
+     "index": 12,
+     "name": "distfrac_cmd3",
+     "formula": "ego travelled distance spent under command_near == 3, divided by the total travelled distance (distance-weighted, so a stopped probe adds nothing)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.07262731898914684,
+      "std": 0.17135411100989062,
+      "min": 0.0,
+      "max": 0.6461681127548218,
+      "n_zero": 183
+     }
+    },
+    {
+     "index": 13,
+     "name": "distfrac_cmd4",
+     "formula": "ego travelled distance spent under command_near == 4, divided by the total travelled distance (distance-weighted, so a stopped probe adds nothing)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.7963759040629322,
+      "std": 0.2323330508795492,
+      "min": 0.09138891100883484,
+      "max": 1.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 14,
+     "name": "distfrac_cmd5",
+     "formula": "ego travelled distance spent under command_near == 5, divided by the total travelled distance (distance-weighted, so a stopped probe adds nothing)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.031422678465870296,
+      "std": 0.12888491728843646,
+      "min": 0.0,
+      "max": 0.7625149488449097,
+      "n_zero": 199
+     }
+    },
+    {
+     "index": 15,
+     "name": "distfrac_cmd6",
+     "formula": "ego travelled distance spent under command_near == 6, divided by the total travelled distance (distance-weighted, so a stopped probe adds nothing)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout) + anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_ego_x_command",
+     "sanity": {
+      "mean": 0.005245145003903996,
+      "std": 0.03609688547998423,
+      "min": 0.0,
+      "max": 0.438022643327713,
+      "n_zero": 212
+     }
+    }
+   ],
+   "source_tally": {
+    "probe_ego_motion": 1,
+    "probe_route_command": 7,
+    "probe_ego_x_command": 8
+   }
+  },
+  "Agent density + kin.": {
+   "table_row": "Agent density + kin.",
+   "file": "/home/jeongtae/SC-IRT/data/b2d/baseline_kin_den.npz",
+   "shape": [
+    220,
+    18
+   ],
+   "dtype": "float32",
+   "names_format": "<id> (bare, keys 'kin_names' / 'den_names'; concatenated kin||den at load time by run_us.py:load_descriptor_arms)",
+   "producer": "/home/jeongtae/SCIRT/b2d_irt/extract_baseline_feats.py (lines 16-40)",
+   "producer_status": "present in the repo, reads the raw anno directly; the third block it writes (dino, 1024d) is not used by Table 3A and is not in the shipped npz",
+   "published_method": null,
+   "shipped_layout_string": null,
+   "verified": "the documented formulas were re-run from the raw anno for 4 routes (10857, 11381, 11715, 11755): bit-for-bit identical to the shipped npz.",
+   "columns": [
+    {
+     "index": 0,
+     "name": "v_mean",
+     "formula": "mean(speed)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 5.713169439543377,
+      "std": 2.954983190758397,
+      "min": 0.16752809286117554,
+      "max": 14.686806678771973,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 1,
+     "name": "v_max",
+     "formula": "max(speed)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 13.075770937312733,
+      "std": 3.2534303720373394,
+      "min": 8.030017852783203,
+      "max": 20.72315216064453,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 2,
+     "name": "absa_mean",
+     "formula": "mean(|diff(speed) / 0.1|)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 2.766242915391922,
+      "std": 1.282656078341454,
+      "min": 0.18538741767406464,
+      "max": 6.739243507385254,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 3,
+     "name": "absa_max",
+     "formula": "max(|diff(speed) / 0.1|)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 23.911934497139672,
+      "std": 15.522032213224547,
+      "min": 9.104722023010254,
+      "max": 178.78753662109375,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 4,
+     "name": "absjerk_mean",
+     "formula": "mean(|diff(diff(speed) / 0.1) / 0.1|)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 17.948941593278537,
+      "std": 8.938529834141407,
+      "min": 1.3290330171585083,
+      "max": 57.20030212402344,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 5,
+     "name": "frac_stop",
+     "formula": "mean(speed < 0.5)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.3069624843753197,
+      "std": 0.2800115332428379,
+      "min": 0.016129031777381897,
+      "max": 0.9729999899864197,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 6,
+     "name": "path_len",
+     "formula": "sum of the per-frame ego displacement norms",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 104.2227820483121,
+      "std": 32.46852372940315,
+      "min": 33.528564453125,
+      "max": 221.49749755859375,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 7,
+     "name": "duration_s",
+     "formula": "number of annotated frames x 0.1 s, i.e. how long the PDM-Lite rollout lasted",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 29.21727266745134,
+      "std": 34.482763403839726,
+      "min": 6.599999904632568,
+      "max": 200.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 8,
+     "name": "dheading_mean",
+     "formula": "mean(|diff(unwrap(atan2(dy, dx)))|) with the heading taken from the ego position increments (not from theta)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.09584913028785112,
+      "std": 0.07982227300026186,
+      "min": 0.0019231019541621208,
+      "max": 0.6166582107543945,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 9,
+     "name": "dheading_max",
+     "formula": "max of the same per-frame heading increment",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 2.593403268300674,
+      "std": 0.8716883294180241,
+      "min": 0.0737575814127922,
+      "max": 3.1415927410125732,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 10,
+     "name": "n_agents_mean",
+     "formula": "mean over frames of the number of non-ego bounding boxes (no class filter, no radius filter)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference)",
+     "source": "other_agents",
+     "sanity": {
+      "mean": 9.42450209530917,
+      "std": 4.707774838841812,
+      "min": 2.3904762268066406,
+      "max": 33.38949966430664,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 11,
+     "name": "n_agents_max",
+     "formula": "max over frames of the same count",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference)",
+     "source": "other_agents",
+     "sanity": {
+      "mean": 13.213636363636363,
+      "std": 5.537869253401402,
+      "min": 4.0,
+      "max": 35.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 12,
+     "name": "n_near10_mean",
+     "formula": "mean over frames of the number of non-ego boxes within 10 m of the ego position",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.8198415982452306,
+      "std": 0.5922914041010976,
+      "min": 0.0,
+      "max": 3.3767123222351074,
+      "n_zero": 9
+     }
+    },
+    {
+     "index": 13,
+     "name": "n_near10_max",
+     "formula": "max over frames of the same count",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 2.3727272727272726,
+      "std": 1.1025515111371185,
+      "min": 0.0,
+      "max": 6.0,
+      "n_zero": 9
+     }
+    },
+    {
+     "index": 14,
+     "name": "n_walker_mean",
+     "formula": "mean over frames of the number of boxes with class == 'walker'",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference)",
+     "source": "other_agents",
+     "sanity": {
+      "mean": 0.059310988946394486,
+      "std": 0.23116213252772527,
+      "min": 0.0,
+      "max": 1.6470588445663452,
+      "n_zero": 200
+     }
+    },
+    {
+     "index": 15,
+     "name": "frac_frames_with_walker",
+     "formula": "fraction of frames with at least one walker box",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference)",
+     "source": "other_agents",
+     "sanity": {
+      "mean": 0.04374504787000743,
+      "std": 0.15885059238811752,
+      "min": 0.0,
+      "max": 0.9682835936546326,
+      "n_zero": 200
+     }
+    },
+    {
+     "index": 16,
+     "name": "relspeed_mean",
+     "formula": "mean over frames of the per-frame mean of |agent speed - ego speed| over all non-ego boxes",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 3.617952535436912,
+      "std": 1.415739458050993,
+      "min": 0.18144166469573975,
+      "max": 8.163016319274902,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 17,
+     "name": "relspeed_max",
+     "formula": "max over frames of the per-frame max of |agent speed - ego speed|",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 13.687474005872554,
+      "std": 3.789913267207553,
+      "min": 7.998372554779053,
+      "max": 26.201583862304688,
+      "n_zero": 0
+     }
+    }
+   ],
+   "source_tally": {
+    "probe_ego_motion": 10,
+    "other_agents": 4,
+    "other_agents_at_probe_pose": 2,
+    "other_agents_at_probe_pose_and_speed": 2
+   },
+   "notes": [
+    "the heading used by dheading_mean/max comes from the ego position increments (atan2 of diff x, diff y), not from the logged theta, so it is undefined-noisy while the probe is stopped",
+    "no frame-validity mask is applied: every annotated frame of the rollout is used, and routes with fewer than 5 annotation files are skipped entirely by the producer",
+    "duration_s is the rollout length, i.e. it encodes how long PDM-Lite needed / how early the route terminated -- the most explicitly probe-dependent column of the set"
+   ]
+  },
+  "Kinematics (cmdkin, 25d)": {
+   "table_row": "Kinematics (cmdkin, 25d)",
+   "file": "/home/jeongtae/SC-IRT/data/features/eval_cmdkin_stats.npz",
+   "shape": [
+    220,
+    25
+   ],
+   "dtype": "float32",
+   "names_format": "route_<id>",
+   "producer": "ORIGINAL PRODUCER MISSING from every repo; reconstructed at experiments/us_official/cmdkin.py:cmdkin and verified bit-for-bit (all 220 x 25 float32 values equal) against the shipped npz, recomputed from the raw anno",
+   "producer_status": "reconstructed 2026-09; the two surviving slices (eval_cmdkin_kinonly.npz = cols 0:12, eval_cmdkin_cmdonly.npz = cols 12:25) are cut from this file by b2d_irt/scripts/cmdkin_decompose.py",
+   "published_method": null,
+   "shipped_layout_string": "same 25d",
+   "reconstruction": {
+    "script": "/home/jeongtae/SC-IRT/experiments/us_official/cmdkin.py",
+    "output": "/data2/jeongtae/official_baselines/us_features/inhouse_cmdkin.npz",
+    "bit_for_bit": true,
+    "columns_not_reproduced": [],
+    "numeric_detail": "all statistics are evaluated on the float32 ego/cmd arrays produced by the eval_pipeline.load_anno cast; heading differences are wrapped with the float32 modulo form ((dh + pi) %% (2 pi) - pi). Any other wrap (np.angle(exp(i dh)), np.unwrap, arctan2, or the same modulo in float64) reproduces yaw_mean / yaw_max only to about 1.8e-07, i.e. not bit-for-bit; computing the whole block in float64 breaks 9 of the 25 columns at the float32 ULP level.",
+    "scored": "AUROC 0.7519106345648979 / scene-MAE 0.18029126621966515 / rho 0.49723177046454564 -- identical to 16 digits to the shipped \"Kinematics (cmdkin)\" row (experiments/us_official/score_one.py)."
+   },
+   "verified": "all 220 x 25 float32 values regenerated from the raw anno by experiments/us_official/cmdkin.py are bit-for-bit identical to the shipped npz, and the rebuilt file scores identically to 16 digits in Table 3A.",
+   "columns": [
+    {
+     "index": 0,
+     "name": "v_mean",
+     "formula": "mean(v)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 5.713169427825646,
+      "std": 2.9549831461129847,
+      "min": 0.16752810776233673,
+      "max": 14.686806678771973,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 1,
+     "name": "v_std",
+     "formula": "std(v), ddof = 0",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 3.8569280908866364,
+      "std": 1.104564626894201,
+      "min": 0.9776051640510559,
+      "max": 7.225746154785156,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 2,
+     "name": "v_max",
+     "formula": "max(v)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 13.075770937312733,
+      "std": 3.2534303720373394,
+      "min": 8.030017852783203,
+      "max": 20.72315216064453,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 3,
+     "name": "v_p10",
+     "formula": "percentile(v, 10), numpy linear interpolation",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 1.1223305956014828,
+      "std": 1.7466055280549493,
+      "min": -0.0029743758495897055,
+      "max": 6.982653617858887,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 4,
+     "name": "frac_stop",
+     "formula": "mean(v < 0.5)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.3069624843753197,
+      "std": 0.2800115332428379,
+      "min": 0.016129031777381897,
+      "max": 0.9729999899864197,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 5,
+     "name": "a_std",
+     "formula": "std(a), a = diff(v) / 0.1",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 4.474500719525597,
+      "std": 1.7244839082337384,
+      "min": 1.2117347717285156,
+      "max": 16.70027732849121,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 6,
+     "name": "a_min",
+     "formula": "min(a)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": -22.42485214580189,
+      "std": 10.874953968360908,
+      "min": -113.23616027832031,
+      "max": -2.9360389709472656,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 7,
+     "name": "a_max",
+     "formula": "max(a)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 11.89860765283758,
+      "std": 12.826738993047506,
+      "min": 7.864389419555664,
+      "max": 178.78753662109375,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 8,
+     "name": "a_p05",
+     "formula": "percentile(a, 5)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": -5.448621632103459,
+      "std": 2.9089711195009302,
+      "min": -18.57370376586914,
+      "max": -0.00043604831444099545,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 9,
+     "name": "absa_p95",
+     "formula": "percentile(|a|, 95)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 8.125498295101252,
+      "std": 2.2624626299320463,
+      "min": 0.3996393382549286,
+      "max": 20.817106246948242,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 10,
+     "name": "yaw_mean",
+     "formula": "mean(|wrap(diff(theta - pi/2))|), radians PER FRAME (not divided by dt)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.008828611061624707,
+      "std": 0.006699004866176046,
+      "min": 1.113602047553286e-05,
+      "max": 0.03087415173649788,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 11,
+     "name": "yaw_max",
+     "formula": "max(|wrap(diff(theta - pi/2))|)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.1071598464792425,
+      "std": 0.061941939663473146,
+      "min": 0.0005757808685302734,
+      "max": 0.25095629692077637,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 12,
+     "name": "frac_cmd_near_1",
+     "formula": "fraction of rollout FRAMES with command_near == 1 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.0900389710356566,
+      "std": 0.19584518822809557,
+      "min": 0.0,
+      "max": 0.9804999828338623,
+      "n_zero": 168
+     }
+    },
+    {
+     "index": 13,
+     "name": "frac_cmd_near_2",
+     "formula": "fraction of rollout FRAMES with command_near == 2 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.04696968031877821,
+      "std": 0.13030791616132092,
+      "min": 0.0,
+      "max": 0.6920583248138428,
+      "n_zero": 184
+     }
+    },
+    {
+     "index": 14,
+     "name": "frac_cmd_near_3",
+     "formula": "fraction of rollout FRAMES with command_near == 3 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.07125342063267123,
+      "std": 0.17625618579957966,
+      "min": 0.0,
+      "max": 0.9626942873001099,
+      "n_zero": 183
+     }
+    },
+    {
+     "index": 15,
+     "name": "frac_cmd_near_4",
+     "formula": "fraction of rollout FRAMES with command_near == 4 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.7506743559952487,
+      "std": 0.28057303358625574,
+      "min": 0.019500000402331352,
+      "max": 1.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 16,
+     "name": "frac_cmd_near_5",
+     "formula": "fraction of rollout FRAMES with command_near == 5 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.030967342921278694,
+      "std": 0.13006437707431295,
+      "min": 0.0,
+      "max": 0.9606234431266785,
+      "n_zero": 199
+     }
+    },
+    {
+     "index": 17,
+     "name": "frac_cmd_near_6",
+     "formula": "fraction of rollout FRAMES with command_near == 6 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.010096229308030821,
+      "std": 0.07322358933393164,
+      "min": 0.0,
+      "max": 0.9313346147537231,
+      "n_zero": 212
+     }
+    },
+    {
+     "index": 18,
+     "name": "frac_cmd_far_1",
+     "formula": "fraction of rollout FRAMES with command_far == 1 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.0733898687007075,
+      "std": 0.17206061462449204,
+      "min": 0.0,
+      "max": 0.8511796593666077,
+      "n_zero": 168
+     }
+    },
+    {
+     "index": 19,
+     "name": "frac_cmd_far_2",
+     "formula": "fraction of rollout FRAMES with command_far == 2 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.0564840007065372,
+      "std": 0.16192601807168433,
+      "min": 0.0,
+      "max": 0.892578125,
+      "n_zero": 184
+     }
+    },
+    {
+     "index": 20,
+     "name": "frac_cmd_far_3",
+     "formula": "fraction of rollout FRAMES with command_far == 3 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.049304254454645244,
+      "std": 0.13975959044515537,
+      "min": 0.0,
+      "max": 0.6019417643547058,
+      "n_zero": 185
+     }
+    },
+    {
+     "index": 21,
+     "name": "frac_cmd_far_4",
+     "formula": "fraction of rollout FRAMES with command_far == 4 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.7781430345028639,
+      "std": 0.2648261101895034,
+      "min": 0.107421875,
+      "max": 1.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 22,
+     "name": "frac_cmd_far_5",
+     "formula": "fraction of rollout FRAMES with command_far == 5 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.03484983125870878,
+      "std": 0.12694100493353744,
+      "min": 0.0,
+      "max": 0.8535031676292419,
+      "n_zero": 199
+     }
+    },
+    {
+     "index": 23,
+     "name": "frac_cmd_far_6",
+     "formula": "fraction of rollout FRAMES with command_far == 6 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.007829010689800436,
+      "std": 0.04372437574311448,
+      "min": 0.0,
+      "max": 0.3310810923576355,
+      "n_zero": 212
+     }
+    },
+    {
+     "index": 24,
+     "name": "cmd_switch_rate",
+     "formula": "mean(diff(command_near) != 0), i.e. command changes per frame",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.007489869076049548,
+      "std": 0.008199836376199959,
+      "min": 0.0,
+      "max": 0.03076923079788685,
+      "n_zero": 90
+     }
+    }
+   ],
+   "source_tally": {
+    "probe_ego_motion": 12,
+    "probe_route_command": 13
+   }
+  },
+  "Hand-crafted risk (cmdkin+gtrisk, 73d)": {
+   "table_row": "Hand-crafted risk (cmdkin+gtrisk, 73d)",
+   "file": "concatenation of /home/jeongtae/SC-IRT/data/features/eval_cmdkin_stats.npz (25d, cols 0-24) and /home/jeongtae/SC-IRT/data/features/eval_gtrisk.npz (48d, cols 25-72)",
+   "shape": [
+    220,
+    73
+   ],
+   "dtype": "float32",
+   "names_format": "route_<id>",
+   "producer": "cmdkin block: see above. gtrisk block: /home/jeongtae/SCIRT/b2d_irt/scripts/gt_risk.py (step_risk / step_static / scene_series / agg), run --split eval",
+   "producer_status": "gt_risk.py present in the repo and reads the raw anno directly (every 5th frame, 2 Hz; 60 m agent radius)",
+   "published_method": null,
+   "shipped_layout_string": "[mean,p90,maxm] x [inv_ttc_vr,rdec_vr,n_conflict_vr,inv_ttc_v0,rdec_v0,n_conflict_v0,inv_gap,closing_max,occl_frac,n_occluded,n_near20,n_ped30,n_cross40,lane_share,agent_spd_std,n_agents60] = 48d (p90/maxm from a fixed-size bootstrap resample, m=20 reps=128 -> no scene-length bias). WARNING: the '_v0 is probe-free' claim was REFUTED by review -- ego pose is still the probe's rollout pose (55% of eval steps are a stopped probe) and the whole 39-d 'probe-free' subset drops to rho +0.072 after residualising on cmdkin.",
+   "parameters": {
+    "GRID": 5,
+    "V0": 8.0,
+    "HOR": 4.0,
+    "R_MAX": 60.0,
+    "FOV_deg": 60.0,
+    "MARGIN_m": 0.3,
+    "bootstrap_m": 20,
+    "bootstrap_reps": 128,
+    "bootstrap_seed": 0,
+    "ttc_floor_s": 0.5,
+    "gap_floor_m": 0.5
+   },
+   "verified": "gtrisk block re-run from the raw anno for 8 routes with gt_risk.agg(gt_risk.scene_series(...)): bit-for-bit identical to the shipped npz. cmdkin block: full 220-route bit-for-bit reconstruction, see the set above.",
+   "columns": [
+    {
+     "index": 0,
+     "name": "cmdkin_v_mean",
+     "formula": "mean(v)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 5.713169427825646,
+      "std": 2.9549831461129847,
+      "min": 0.16752810776233673,
+      "max": 14.686806678771973,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 1,
+     "name": "cmdkin_v_std",
+     "formula": "std(v), ddof = 0",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 3.8569280908866364,
+      "std": 1.104564626894201,
+      "min": 0.9776051640510559,
+      "max": 7.225746154785156,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 2,
+     "name": "cmdkin_v_max",
+     "formula": "max(v)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 13.075770937312733,
+      "std": 3.2534303720373394,
+      "min": 8.030017852783203,
+      "max": 20.72315216064453,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 3,
+     "name": "cmdkin_v_p10",
+     "formula": "percentile(v, 10), numpy linear interpolation",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 1.1223305956014828,
+      "std": 1.7466055280549493,
+      "min": -0.0029743758495897055,
+      "max": 6.982653617858887,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 4,
+     "name": "cmdkin_frac_stop",
+     "formula": "mean(v < 0.5)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.3069624843753197,
+      "std": 0.2800115332428379,
+      "min": 0.016129031777381897,
+      "max": 0.9729999899864197,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 5,
+     "name": "cmdkin_a_std",
+     "formula": "std(a), a = diff(v) / 0.1",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 4.474500719525597,
+      "std": 1.7244839082337384,
+      "min": 1.2117347717285156,
+      "max": 16.70027732849121,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 6,
+     "name": "cmdkin_a_min",
+     "formula": "min(a)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": -22.42485214580189,
+      "std": 10.874953968360908,
+      "min": -113.23616027832031,
+      "max": -2.9360389709472656,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 7,
+     "name": "cmdkin_a_max",
+     "formula": "max(a)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 11.89860765283758,
+      "std": 12.826738993047506,
+      "min": 7.864389419555664,
+      "max": 178.78753662109375,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 8,
+     "name": "cmdkin_a_p05",
+     "formula": "percentile(a, 5)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": -5.448621632103459,
+      "std": 2.9089711195009302,
+      "min": -18.57370376586914,
+      "max": -0.00043604831444099545,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 9,
+     "name": "cmdkin_absa_p95",
+     "formula": "percentile(|a|, 95)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 8.125498295101252,
+      "std": 2.2624626299320463,
+      "min": 0.3996393382549286,
+      "max": 20.817106246948242,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 10,
+     "name": "cmdkin_yaw_mean",
+     "formula": "mean(|wrap(diff(theta - pi/2))|), radians PER FRAME (not divided by dt)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.008828611061624707,
+      "std": 0.006699004866176046,
+      "min": 1.113602047553286e-05,
+      "max": 0.03087415173649788,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 11,
+     "name": "cmdkin_yaw_max",
+     "formula": "max(|wrap(diff(theta - pi/2))|)",
+     "input": "anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "probe_ego_motion",
+     "sanity": {
+      "mean": 0.1071598464792425,
+      "std": 0.061941939663473146,
+      "min": 0.0005757808685302734,
+      "max": 0.25095629692077637,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 12,
+     "name": "cmdkin_frac_cmd_near_1",
+     "formula": "fraction of rollout FRAMES with command_near == 1 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.0900389710356566,
+      "std": 0.19584518822809557,
+      "min": 0.0,
+      "max": 0.9804999828338623,
+      "n_zero": 168
+     }
+    },
+    {
+     "index": 13,
+     "name": "cmdkin_frac_cmd_near_2",
+     "formula": "fraction of rollout FRAMES with command_near == 2 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.04696968031877821,
+      "std": 0.13030791616132092,
+      "min": 0.0,
+      "max": 0.6920583248138428,
+      "n_zero": 184
+     }
+    },
+    {
+     "index": 14,
+     "name": "cmdkin_frac_cmd_near_3",
+     "formula": "fraction of rollout FRAMES with command_near == 3 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.07125342063267123,
+      "std": 0.17625618579957966,
+      "min": 0.0,
+      "max": 0.9626942873001099,
+      "n_zero": 183
+     }
+    },
+    {
+     "index": 15,
+     "name": "cmdkin_frac_cmd_near_4",
+     "formula": "fraction of rollout FRAMES with command_near == 4 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.7506743559952487,
+      "std": 0.28057303358625574,
+      "min": 0.019500000402331352,
+      "max": 1.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 16,
+     "name": "cmdkin_frac_cmd_near_5",
+     "formula": "fraction of rollout FRAMES with command_near == 5 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.030967342921278694,
+      "std": 0.13006437707431295,
+      "min": 0.0,
+      "max": 0.9606234431266785,
+      "n_zero": 199
+     }
+    },
+    {
+     "index": 17,
+     "name": "cmdkin_frac_cmd_near_6",
+     "formula": "fraction of rollout FRAMES with command_near == 6 (time-weighted: a stopped probe inflates whichever command it was dwelling in)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.010096229308030821,
+      "std": 0.07322358933393164,
+      "min": 0.0,
+      "max": 0.9313346147537231,
+      "n_zero": 212
+     }
+    },
+    {
+     "index": 18,
+     "name": "cmdkin_frac_cmd_far_1",
+     "formula": "fraction of rollout FRAMES with command_far == 1 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.0733898687007075,
+      "std": 0.17206061462449204,
+      "min": 0.0,
+      "max": 0.8511796593666077,
+      "n_zero": 168
+     }
+    },
+    {
+     "index": 19,
+     "name": "cmdkin_frac_cmd_far_2",
+     "formula": "fraction of rollout FRAMES with command_far == 2 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.0564840007065372,
+      "std": 0.16192601807168433,
+      "min": 0.0,
+      "max": 0.892578125,
+      "n_zero": 184
+     }
+    },
+    {
+     "index": 20,
+     "name": "cmdkin_frac_cmd_far_3",
+     "formula": "fraction of rollout FRAMES with command_far == 3 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.049304254454645244,
+      "std": 0.13975959044515537,
+      "min": 0.0,
+      "max": 0.6019417643547058,
+      "n_zero": 185
+     }
+    },
+    {
+     "index": 21,
+     "name": "cmdkin_frac_cmd_far_4",
+     "formula": "fraction of rollout FRAMES with command_far == 4 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.7781430345028639,
+      "std": 0.2648261101895034,
+      "min": 0.107421875,
+      "max": 1.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 22,
+     "name": "cmdkin_frac_cmd_far_5",
+     "formula": "fraction of rollout FRAMES with command_far == 5 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.03484983125870878,
+      "std": 0.12694100493353744,
+      "min": 0.0,
+      "max": 0.8535031676292419,
+      "n_zero": 199
+     }
+    },
+    {
+     "index": 23,
+     "name": "cmdkin_frac_cmd_far_6",
+     "formula": "fraction of rollout FRAMES with command_far == 6 (time-weighted)",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.007829010689800436,
+      "std": 0.04372437574311448,
+      "min": 0.0,
+      "max": 0.3310810923576355,
+      "n_zero": 212
+     }
+    },
+    {
+     "index": 24,
+     "name": "cmdkin_cmd_switch_rate",
+     "formula": "mean(diff(command_near) != 0), i.e. command changes per frame",
+     "input": "anno['command_near'], anno['command_far'], anno['x_command_near'], anno['y_command_near'], anno['x_command_far'], anno['y_command_far']",
+     "source": "probe_route_command",
+     "sanity": {
+      "mean": 0.007489869076049548,
+      "std": 0.008199836376199959,
+      "min": 0.0,
+      "max": 0.03076923079788685,
+      "n_zero": 90
+     }
+    },
+    {
+     "index": 25,
+     "name": "gtrisk_mean_inv_ttc_vr",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: 1 / max(min_agent TTC, 0.5) with TTC the first root of the elliptical-footprint overlap under constant velocity, ego driving straight at its realized speed; footprint semi-axes (ego half-length + agent half-length + 0.3 m) x (ego half-width + agent half-width + 0.3 m); TTC = 0 when already overlapping",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 0.15725613513388287,
+      "std": 0.10114935395427944,
+      "min": 9.637555194785818e-06,
+      "max": 0.7106431722640991,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 26,
+     "name": "gtrisk_mean_rdec_vr",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: max over agents inside the ego corridor (|y_ego-frame| < B and x > 0) of dv^2 / (2 gap), dv = ego realized speed - agent longitudinal speed, gap = max(x - A, 0.5)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 0.7679614783264697,
+      "std": 3.766901419204126,
+      "min": 0.0,
+      "max": 52.500911712646484,
+      "n_zero": 1
+     }
+    },
+    {
+     "index": 27,
+     "name": "gtrisk_mean_n_conflict_vr",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of agents whose constant-velocity closest approach within a 4 s horizon lands inside the inflated ego footprint (normalized elliptical distance < 1), ego at its realized speed",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 0.2705616463907063,
+      "std": 0.20860056358080206,
+      "min": 0.0,
+      "max": 1.1538461446762085,
+      "n_zero": 8
+     }
+    },
+    {
+     "index": 28,
+     "name": "gtrisk_mean_inv_ttc_v0",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: same as inv_ttc_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 0.3647928880654614,
+      "std": 0.3628585247475531,
+      "min": 0.012216518633067608,
+      "max": 1.6276856660842896,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 29,
+     "name": "gtrisk_mean_rdec_v0",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: same as rdec_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 2.0259520876898685,
+      "std": 5.718477423958737,
+      "min": 0.0,
+      "max": 72.458251953125,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 30,
+     "name": "gtrisk_mean_n_conflict_v0",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: same as n_conflict_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 0.4800234695727175,
+      "std": 0.4024817493827309,
+      "min": 0.010869565419852734,
+      "max": 2.630000114440918,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 31,
+     "name": "gtrisk_mean_inv_gap",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: 1 / min over agents of max(range - ego silhouette radius - agent silhouette radius, 0.5)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.6434231542050839,
+      "std": 0.38674067554597247,
+      "min": 0.051633719354867935,
+      "max": 1.965059757232666,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 32,
+     "name": "gtrisk_mean_closing_max",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: max over agents of the positive range rate towards a STATIONARY ego, -(px ux + py uy) / max(range, 0.1)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 6.656091670827432,
+      "std": 2.252410577507128,
+      "min": 0.19179314374923706,
+      "max": 12.559165954589844,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 33,
+     "name": "gtrisk_mean_occl_frac",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: fraction of the +-60 deg forward field of view covered by the union of the agents angular extents",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.31660348109223624,
+      "std": 0.13886129939417335,
+      "min": 0.016367608681321144,
+      "max": 0.7944021224975586,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 34,
+     "name": "gtrisk_mean_n_occluded",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of agents whose angular interval is hidden behind a nearer agent",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 3.612063362381675,
+      "std": 2.65572996914685,
+      "min": 0.2222222238779068,
+      "max": 20.610000610351562,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 35,
+     "name": "gtrisk_mean_n_near20",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of agents within 20 m of the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 2.8237161590294404,
+      "std": 1.4942994311168707,
+      "min": 0.4545454680919647,
+      "max": 8.901638984680176,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 36,
+     "name": "gtrisk_mean_n_ped30",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of walkers within 30 m of the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.05360612544146451,
+      "std": 0.2193713084301968,
+      "min": 0.0,
+      "max": 1.6451612710952759,
+      "n_zero": 200
+     }
+    },
+    {
+     "index": 37,
+     "name": "gtrisk_mean_n_cross40",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of agents within 40 m whose relative heading is between 45 and 135 deg",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 1.08627363469621,
+      "std": 1.7588695033225625,
+      "min": 0.0,
+      "max": 11.452500343322754,
+      "n_zero": 83
+     }
+    },
+    {
+     "index": 38,
+     "name": "gtrisk_mean_lane_share",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of agents ahead, within 40 m, with the same (lane_id, road_id) as the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.8079394108912146,
+      "std": 0.6824310853449369,
+      "min": 0.0,
+      "max": 2.551020383834839,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 39,
+     "name": "gtrisk_mean_agent_spd_std",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: std of agent speeds within 40 m (0 if fewer than 2)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 2.0731194267896087,
+      "std": 0.9538422994107811,
+      "min": 0.13648293912410736,
+      "max": 6.689487934112549,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 40,
+     "name": "gtrisk_mean_n_agents60",
+     "formula": "plain mean over the sub-sampled time steps (every 5th frame, 2 Hz) of the per-step channel: number of vehicle/walker agents within the 60 m selection radius",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 8.953780809315768,
+      "std": 4.556810250332396,
+      "min": 2.238095283508301,
+      "max": 32.38750076293945,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 41,
+     "name": "gtrisk_p90_inv_ttc_vr",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: 1 / max(min_agent TTC, 0.5) with TTC the first root of the elliptical-footprint overlap under constant velocity, ego driving straight at its realized speed; footprint semi-axes (ego half-length + agent half-length + 0.3 m) x (ego half-width + agent half-width + 0.3 m); TTC = 0 when already overlapping",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 0.4087419029384529,
+      "std": 0.2625018599439527,
+      "min": 1.3123639291734435e-05,
+      "max": 1.909360647201538,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 42,
+     "name": "gtrisk_p90_rdec_vr",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: max over agents inside the ego corridor (|y_ego-frame| < B and x > 0) of dv^2 / (2 gap), dv = ego realized speed - agent longitudinal speed, gap = max(x - A, 0.5)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 2.2450593710976796,
+      "std": 11.516628797557853,
+      "min": 0.0,
+      "max": 160.1667022705078,
+      "n_zero": 1
+     }
+    },
+    {
+     "index": 43,
+     "name": "gtrisk_p90_n_conflict_vr",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of agents whose constant-velocity closest approach within a 4 s horizon lands inside the inflated ego footprint (normalized elliptical distance < 1), ego at its realized speed",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 0.7808274140510052,
+      "std": 0.5421298014494419,
+      "min": 0.0,
+      "max": 2.3828125,
+      "n_zero": 8
+     }
+    },
+    {
+     "index": 44,
+     "name": "gtrisk_p90_inv_ttc_v0",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: same as inv_ttc_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 0.8237297244147737,
+      "std": 0.6322928010484946,
+      "min": 0.0023249636869877577,
+      "max": 2.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 45,
+     "name": "gtrisk_p90_rdec_v0",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: same as rdec_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 5.018415612640621,
+      "std": 17.104835397559498,
+      "min": 0.0,
+      "max": 224.86805725097656,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 46,
+     "name": "gtrisk_p90_n_conflict_v0",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: same as n_conflict_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 1.093220881113666,
+      "std": 0.6280174182335485,
+      "min": 0.0007812500116415322,
+      "max": 3.1539063453674316,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 47,
+     "name": "gtrisk_p90_inv_gap",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: 1 / min over agents of max(range - ego silhouette radius - agent silhouette radius, 0.5)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 1.4787653553553604,
+      "std": 0.5890065290912349,
+      "min": 0.09818843752145767,
+      "max": 2.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 48,
+     "name": "gtrisk_p90_closing_max",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: max over agents of the positive range rate towards a STATIONARY ego, -(px ux + py uy) / max(range, 0.1)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 9.854505843872374,
+      "std": 2.9398848788056258,
+      "min": 0.1862967312335968,
+      "max": 23.59468650817871,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 49,
+     "name": "gtrisk_p90_occl_frac",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: fraction of the +-60 deg forward field of view covered by the union of the agents angular extents",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.47601013351231813,
+      "std": 0.15843366815353263,
+      "min": 0.04397457465529442,
+      "max": 0.9661036729812622,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 50,
+     "name": "gtrisk_p90_n_occluded",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of agents whose angular interval is hidden behind a nearer agent",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 5.409495746005665,
+      "std": 3.17110533893609,
+      "min": 0.80859375,
+      "max": 22.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 51,
+     "name": "gtrisk_p90_n_near20",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of agents within 20 m of the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 4.240348008004102,
+      "std": 1.7008654734441522,
+      "min": 1.1218750476837158,
+      "max": 11.617968559265137,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 52,
+     "name": "gtrisk_p90_n_ped30",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of walkers within 30 m of the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.11618963046507402,
+      "std": 0.44533427970899586,
+      "min": 0.0,
+      "max": 3.0,
+      "n_zero": 200
+     }
+    },
+    {
+     "index": 53,
+     "name": "gtrisk_p90_n_cross40",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of agents within 40 m whose relative heading is between 45 and 135 deg",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 2.0550035399165196,
+      "std": 2.5795367831196274,
+      "min": 0.0,
+      "max": 12.0,
+      "n_zero": 84
+     }
+    },
+    {
+     "index": 54,
+     "name": "gtrisk_p90_lane_share",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of agents ahead, within 40 m, with the same (lane_id, road_id) as the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 1.400539775157813,
+      "std": 0.8748461962636688,
+      "min": 0.0,
+      "max": 3.774218797683716,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 55,
+     "name": "gtrisk_p90_agent_spd_std",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: std of agent speeds within 40 m (0 if fewer than 2)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 3.512902476841753,
+      "std": 1.3317517481461771,
+      "min": 0.19587922096252441,
+      "max": 9.067392349243164,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 56,
+     "name": "gtrisk_p90_n_agents60",
+     "formula": "90th percentile of a fixed-size bootstrap resample (m = 20 rows with replacement, 128 reps, seed 0), averaged over reps of the per-step channel: number of vehicle/walker agents within the 60 m selection radius",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 11.723817485029047,
+      "std": 5.218810598613448,
+      "min": 3.188281297683716,
+      "max": 34.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 57,
+     "name": "gtrisk_maxm_inv_ttc_vr",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: 1 / max(min_agent TTC, 0.5) with TTC the first root of the elliptical-footprint overlap under constant velocity, ego driving straight at its realized speed; footprint semi-axes (ego half-length + agent half-length + 0.3 m) x (ego half-width + agent half-width + 0.3 m); TTC = 0 when already overlapping",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 0.7164484145150875,
+      "std": 0.38259848334985974,
+      "min": 0.00012649291602429003,
+      "max": 1.9933292865753174,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 58,
+     "name": "gtrisk_maxm_rdec_vr",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: max over agents inside the ego corridor (|y_ego-frame| < B and x > 0) of dv^2 / (2 gap), dv = ego realized speed - agent longitudinal speed, gap = max(x - A, 0.5)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 6.110947174892168,
+      "std": 37.450578662317334,
+      "min": 0.0,
+      "max": 552.7161254882812,
+      "n_zero": 1
+     }
+    },
+    {
+     "index": 59,
+     "name": "gtrisk_maxm_n_conflict_vr",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of agents whose constant-velocity closest approach within a 4 s horizon lands inside the inflated ego footprint (normalized elliptical distance < 1), ego at its realized speed",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_and_speed",
+     "sanity": {
+      "mean": 1.3248579545454546,
+      "std": 0.6413892353052227,
+      "min": 0.0,
+      "max": 3.390625,
+      "n_zero": 8
+     }
+    },
+    {
+     "index": 60,
+     "name": "gtrisk_maxm_inv_ttc_v0",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: same as inv_ttc_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 1.1273948773741722,
+      "std": 0.5738353492203053,
+      "min": 0.1767331063747406,
+      "max": 2.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 61,
+     "name": "gtrisk_maxm_rdec_v0",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: same as rdec_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 9.60868748385798,
+      "std": 32.93958703087648,
+      "min": 0.0,
+      "max": 392.790771484375,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 62,
+     "name": "gtrisk_maxm_n_conflict_v0",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: same as n_conflict_vr with the ego speed replaced by V0 = 8 m/s",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose_counterfactual_speed",
+     "sanity": {
+      "mean": 1.5797585227272728,
+      "std": 0.6495793576629378,
+      "min": 0.1875,
+      "max": 4.203125,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 63,
+     "name": "gtrisk_maxm_inv_gap",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: 1 / min over agents of max(range - ego silhouette radius - agent silhouette radius, 0.5)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 1.7864825018088926,
+      "std": 0.46504136175494126,
+      "min": 0.11037681251764297,
+      "max": 2.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 64,
+     "name": "gtrisk_maxm_closing_max",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: max over agents of the positive range rate towards a STATIONARY ego, -(px ux + py uy) / max(range, 0.1)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 11.192019691250541,
+      "std": 3.798765099565224,
+      "min": 3.230504274368286,
+      "max": 31.917402267456055,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 65,
+     "name": "gtrisk_maxm_occl_frac",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: fraction of the +-60 deg forward field of view covered by the union of the agents angular extents",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.57050806873224,
+      "std": 0.15393755362295453,
+      "min": 0.15380071103572845,
+      "max": 0.9825730919837952,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 66,
+     "name": "gtrisk_maxm_n_occluded",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of agents whose angular interval is hidden behind a nearer agent",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 6.333877840909091,
+      "std": 3.467518589213362,
+      "min": 1.265625,
+      "max": 22.0,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 67,
+     "name": "gtrisk_maxm_n_near20",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of agents within 20 m of the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 4.8797230113636365,
+      "std": 1.7507503809445357,
+      "min": 1.6875,
+      "max": 11.9921875,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 68,
+     "name": "gtrisk_maxm_n_ped30",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of walkers within 30 m of the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 0.13405539772727273,
+      "std": 0.49525655014797393,
+      "min": 0.0,
+      "max": 3.0,
+      "n_zero": 200
+     }
+    },
+    {
+     "index": 69,
+     "name": "gtrisk_maxm_n_cross40",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of agents within 40 m whose relative heading is between 45 and 135 deg",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 2.615234375,
+      "std": 2.9745274622369413,
+      "min": 0.0,
+      "max": 12.0,
+      "n_zero": 83
+     }
+    },
+    {
+     "index": 70,
+     "name": "gtrisk_maxm_lane_share",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of agents ahead, within 40 m, with the same (lane_id, road_id) as the ego",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 1.7394886363636364,
+      "std": 0.7691743853858185,
+      "min": 0.0,
+      "max": 4.0,
+      "n_zero": 2
+     }
+    },
+    {
+     "index": 71,
+     "name": "gtrisk_maxm_agent_spd_std",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: std of agent speeds within 40 m (0 if fewer than 2)",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 4.143840990825133,
+      "std": 1.3293589024796413,
+      "min": 1.7798449993133545,
+      "max": 10.958240509033203,
+      "n_zero": 0
+     }
+    },
+    {
+     "index": 72,
+     "name": "gtrisk_maxm_n_agents60",
+     "formula": "max of the same fixed-size bootstrap resample, averaged over reps of the per-step channel: number of vehicle/walker agents within the 60 m selection radius",
+     "input": "anno['bounding_boxes'][*]: class, location, rotation, extent, speed, lane_id, road_id (ego_vehicle entry excluded / used as the ego reference) + anno['x'], anno['y'], anno['theta'], anno['speed'] (10 Hz; PDM-Lite reference rollout)",
+     "source": "other_agents_at_probe_pose",
+     "sanity": {
+      "mean": 12.404758522727272,
+      "std": 5.349978717559208,
+      "min": 3.765625,
+      "max": 34.0,
+      "n_zero": 0
+     }
+    }
+   ],
+   "source_tally": {
+    "other_agents_at_probe_pose_counterfactual_speed": 9,
+    "other_agents_at_probe_pose": 30,
+    "probe_route_command": 13,
+    "probe_ego_motion": 12,
+    "other_agents_at_probe_pose_and_speed": 9
+   }
+  }
+ },
+ "source_taxonomy": {
+  "probe_ego_motion": "PDM-Lite's own recorded ego pose / speed only",
+  "probe_route_command": "the route command + nav-target channel logged frame by frame along the PDM-Lite rollout (route definition, but truncated / resampled by where and how long the probe actually drove)",
+  "probe_ego_x_command": "a ratio or weighting that mixes PDM-Lite's travelled distance with the route command channel",
+  "other_agents": "other agents only (counts over all logged boxes; no ego reference)",
+  "other_agents_at_probe_pose": "other agents evaluated in PDM-Lite's rollout ego frame (pose/heading), but not using the ego speed",
+  "other_agents_at_probe_pose_and_speed": "other agents evaluated at PDM-Lite's rollout pose AND its realized speed",
+  "other_agents_at_probe_pose_counterfactual_speed": "other agents evaluated at PDM-Lite's rollout pose with the ego speed replaced by a nominal 8 m/s"
+ },
+ "probe_vs_scene_accounting": {
+  "question": "per set, how many dimensions come from PDM-Lite own ego motion versus the surrounding scene",
+  "Route geometry (16d)": {
+   "probe_ego_motion_only": 1,
+   "probe_route_command_only": 7,
+   "mixed_ego_x_command": 8,
+   "other_agents": 0,
+   "reading": "all 16 dimensions are read off the PDM-Lite rollout log; zero dimensions see any other agent. The 7 \"route command\" dimensions describe the nav route rather than the probe motion, but they are still rollout-conditioned (the waypoint polyline only extends as far as PDM-Lite drove, and n_cmd_seg counts frames)."
+  },
+  "Agent density + kin. (18d)": {
+   "probe_ego_motion_only": 10,
+   "other_agents_ego_independent": 4,
+   "other_agents_at_probe_pose": 2,
+   "other_agents_at_probe_pose_and_speed": 2,
+   "reading": "10 of 18 are pure probe motion (including duration_s, which is literally how long PDM-Lite took). Of the 8 scene dimensions only 4 (n_agents_mean/max, n_walker_mean, frac_frames_with_walker) are ego-independent; the other 4 are measured relative to the probe pose (10 m radius) or its speed."
+  },
+  "Kinematics (cmdkin, 25d)": {
+   "probe_ego_motion_only": 12,
+   "probe_route_command_only": 13,
+   "other_agents": 0,
+   "reading": "all 25 dimensions come from the PDM-Lite rollout and none sees another agent. The 13 command dimensions are TIME-weighted fractions, so probe dwell time (55% of the eval steps are a stopped probe) enters them directly."
+  },
+  "Hand-crafted risk (cmdkin+gtrisk, 73d)": {
+   "probe_ego_motion_only": 12,
+   "probe_route_command_only": 13,
+   "other_agents_at_probe_pose": 30,
+   "other_agents_at_probe_pose_and_speed": 9,
+   "other_agents_at_probe_pose_counterfactual_speed": 9,
+   "reading": "25 of 73 are the probe-only cmdkin block. All 48 gtrisk dimensions involve other agents but every one of them is evaluated in the probe rollout ego frame; 9 also use the probe realized speed and 9 replace it with 8 m/s. Zero dimensions are independent of the probe."
+  },
+  "paper_wording": "these four rows are probe-rollout descriptors, not scene-only descriptors"
+ },
+ "ssm_conformance": {
+  "reference": "B. Westhofen, C. Neurohr, T. Koopmann, M. Butz, B. Boede, F. Reichenbaecher, M. Bollmann, R. Schuldes, J. Hoffmann, \"Criticality Metrics for Automated Driving: A Review and Suitability Analysis of the Available Metrics\", arXiv:2108.02403 (Artificial Intelligence Review, 2023); TTC/DRAC/PET definitions in the time-scale and deceleration-scale metric sections.",
+  "scope": "the surrogate-safety columns of the gtrisk block only (b2d_irt/scripts/gt_risk.py:step_risk / step_static)",
+  "channels": {
+   "inv_ttc_vr": {
+    "claimed": "TTC",
+    "conformant": "partly",
+    "why": "It is a legitimate 2D constant-velocity TTC: first positive root of the relative-motion overlap of two inflated elliptical footprints, minimised over agents. Deviations from the standard definition: (a) the ego is propagated STRAIGHT along its current heading, its yaw rate is ignored, so TTC is wrong on exactly the turning conflicts the bank is full of; (b) footprints are ellipses inflated by 0.3 m rather than rectangles, which makes overlap optimistic at the corners; (c) the value stored is 1 / max(TTC, 0.5 s), a monotone but saturating transform, so every conflict below 0.5 s is indistinguishable (cap 2.0); (d) already-overlapping agents get TTC = 0 -> the cap value."
+   },
+   "inv_ttc_v0": {
+    "claimed": "TTC",
+    "conformant": "no",
+    "why": "the ego speed is replaced by a nominal 8 m/s, so it is not the TTC of the observed scene but of a counterfactual constant-speed ego on the probe path. It is a what-if criticality index, not a surrogate safety measure of the log."
+   },
+   "rdec_vr": {
+    "claimed": "DRAC (deceleration rate to avoid a crash)",
+    "conformant": "yes, with two caveats",
+    "why": "the formula dv^2 / (2 gap) is exactly the standard DRAC. Caveats: the leader set is chosen by a rectangular corridor test in the ego frame (|lateral| < combined half-width + 0.3 m, longitudinal > 0) rather than by lane assignment, and the gap is floored at 0.5 m so DRAC saturates instead of diverging on contact; the scene value is the max over in-corridor agents (a scene-level aggregation of a pairwise metric, which is standard practice)."
+   },
+   "rdec_v0": {
+    "claimed": "DRAC",
+    "conformant": "no",
+    "why": "same counterfactual 8 m/s ego speed as inv_ttc_v0; DRAC is defined on the observed closing speed."
+   },
+   "n_conflict_vr / n_conflict_v0": {
+    "claimed": "conflict count",
+    "conformant": "n/a (not a named SSM)",
+    "why": "counts agents whose constant-velocity closest approach inside a 4 s horizon falls inside the inflated ego footprint. This is a thresholded distance-of-closest-approach / predicted-minimum-distance quantity, not TTC, DRAC or PET. Reporting it as \"conflicts\" is fine as long as the paper does not call it an SSM."
+   },
+   "inv_gap": {
+    "claimed": "proximity",
+    "conformant": "n/a",
+    "why": "inverse minimum surface-to-surface distance; a distance-scale proximity index, not one of the named SSMs."
+   },
+   "closing_max": {
+    "claimed": "range rate",
+    "conformant": "n/a",
+    "why": "positive range rate towards a STATIONARY ego. It is a legitimate probe-free approach-rate channel but it is not TTC (no size, no collision condition)."
+   }
+  },
+  "PET": {
+   "present": false,
+   "why": "no post-encroachment time is computed anywhere in gtrisk. PET requires the times at which two road users successively occupy a shared conflict area, which needs a conflict-area definition and no motion prediction; the gtrisk conflict channels are prediction-based instead. If the paper text claims a PET baseline, that claim is unsupported by this feature file."
+  },
+  "summary": "Of the standard trio, DRAC is implemented conformantly (in the _vr variant), TTC is implemented as a straight-line constant-velocity 2D approximation with a 0.5 s floor and an inverted scale, and PET is absent. The _v0 duplicates of TTC and DRAC are counterfactual and should not be described as surrogate safety measures of the recorded scene."
+ },
+ "known_defects_inherited_from_the_producers": [
+  "gt_risk.py's own layout string records that the '_v0 is probe-free' claim was refuted on review: the ego POSE is still the probe rollout pose (about 55% of eval steps are a stopped probe), and the 39-d \"probe-free\" subset falls to rho +0.072 after residualising on cmdkin.",
+  "cmdkin_decompose.py documents that the cmdkin command block is TIME-weighted, so a probe that dwells inflates whichever command it was in; that is why the distance-weighted routegeom arm exists.",
+  "baseline_kin_den den channels apply no class filter and no radius filter to the bounding boxes; in the 220 eval routes the only classes present are vehicle / walker / ego_vehicle, so the count is effectively \"all vehicles and walkers logged in the frame\", however far away."
+ ]
+}
