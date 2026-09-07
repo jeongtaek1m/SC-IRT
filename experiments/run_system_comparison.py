@@ -181,7 +181,9 @@ ANCHORS = ((4, 'ATDrive eps=0.05', 'rollouts', 83.5, 1.0),
            (12, 'Fluid  fixed B=match', 'mae', .0264, .002),
            (4, 'Fluid  SE<=delta*', 'rollouts', 3.2, 0.5),
            (4, 'Fluid  SE<=delta*', 'mae', .1406, .005),
-           (12, 'Fluid  SE<=delta*', 'rollouts', 19.0, 0.5))
+           (12, 'Fluid  SE<=delta*', 'rollouts', 19.0, 0.5),
+           (8, 'ATLAS fixed B=30', 'mae', .0428, .0005),      # the fixed-budget prefix of the ATLAS-style trajectory (Table 1 row)
+           (12, 'ATLAS fixed B=55', 'mae', .0314, .0005))
 
 
 def subsample(cols, seed, Kc):
@@ -709,6 +711,25 @@ def main():
         recs = run(range(R_DRAWS))
         json.dump(recs, open(OUT / 'syscmp.json', 'w'))
     res = report(recs)
+    # Table 1's ATLAS-style row: the ATLAS-style system (its own 3PL with c and sigma_b profiled on the
+    # calibration block, EAP ability, top-5 randomesque Fisher, p-IRT readout) read at a fixed budget,
+    # i.e. its saved trajectory cut at B -- the same draws, planners and banks as run_up_frontier.py,
+    # paired to ATDrive's own fixed-B estimate (Table 1's ATDrive cells) by the planner-cluster bootstrap.
+    print('\n===== ATLAS-style at fixed budgets (trajectory prefix; Table 1 row); * = paired 95% CI vs ATDrive at the same B excludes 0 =====')
+    print('   ' + ' '.join(f'K{K}B{B:<4d}' for K in KCALS for B in (30, 55, 110, 165)) + '   macro   macro(B<=110)')
+    line, mac = [], []
+    for K in KCALS:
+        rs = [r for r in recs if r['K'] == K]
+        for B in (30, 55, 110, 165):
+            ea = np.array([abs(r['ATLAS']['Shat'][B - 1] - r['SR']) for r in rs])
+            ed = np.array([abs(r['ATDrive']['Shat'][B - 1] - r['SR']) for r in rs])
+            d, lo, hi = paired_cluster_boot(ea, ed, [r['js'] for r in rs])
+            res[f'K{K}|ATLAS fixed B={B}'] = {'rollouts': float(B), 'mae': float(ea.mean()), 'atdrive_mae': float(ed.mean()),
+                                              'delta_vs_atdrive_fixed': [float(d), float(lo), float(hi)]}
+            line.append(f"{ea.mean():.4f}{'*' if lo > 0 or hi < 0 else ' '}"); mac.append(float(ea.mean()))
+    print('   ' + ' '.join(f'{x:8s}' for x in line) + f'   {np.mean(mac):.4f}   {np.mean([m for k, m in enumerate(mac) if k % 4 != 3]):.4f}')
+    print('   ATDrive at the same B: ' + ' '.join(f"{res[f'K{K}|ATLAS fixed B={B}']['atdrive_mae']:.4f}" for K in KCALS for B in (30, 55, 110, 165)))
+    print('   paired delta (ATLAS - ATDrive): ' + ' '.join('{:+.4f}[{:+.4f},{:+.4f}]'.format(*res[f'K{K}|ATLAS fixed B={B}']['delta_vs_atdrive_fixed']) for K in KCALS for B in (30, 55, 110, 165)))
     out_path = OUT / ('syscmp_official_table.json' if OFFICIAL else 'syscmp_table.json')
     json.dump(res, open(out_path, 'w'), indent=1)
     print(f'\nwritten: {out_path}')

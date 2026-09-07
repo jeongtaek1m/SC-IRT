@@ -54,20 +54,28 @@ the benchmark). Each method uses its native readout.
 | tinyBenchmarks-lite | .0660* | .0488* | .0243 | .0154* | .0516 | .0369 | .0212 | .0122* | .0451 | .0331* | .0204 | .0121 | .0323 |
 | metabench-lite | .0728* | .0452* | .0308* | .0204* | .0501 | .0420 | .0276* | .0152* | .0629 | .0388* | .0247* | .0154* | .0372 |
 | Fluid-style | .0541 | .0387 | .0312* | .0165* | .0499 | .0364 | .0210 | .0105 | .0404 | .0281 | .0243* | .0119* | .0303 |
-| **ATDrive** | **.0450** | **.0332** | .0223 | **.0116** | **.0448** | .0337 | .0202 | **.0082** | .0477 | **.0231** | **.0160** | **.0081** | **.0262** |
+| ATLAS-style | .0514 | .0410* | .0277* | .0160* | .0428 | .0320 | .0211 | .0099 | .0437 | .0314 | .0227* | .0121* | .0293 |
+| **ATDrive** | **.0450** | **.0332** | .0223 | **.0116** | .0448 | .0337 | .0202 | **.0082** | .0477 | **.0231** | **.0160** | **.0081** | **.0262** |
 
 The three random-policy rows are the expected error over five independent
-orders per evaluation; every other row is deterministic. AnchorPoints is
+orders per evaluation; every other row is deterministic. ATLAS-style is
+ATLAS as its own system — its 3PL (guessing c and sigma_b profiled on the
+calibration block), EAP ability, top-5 randomesque Fisher selection and
+p-IRT readout — read at a fixed budget: the prefix of its
+`run_system_comparison.py` trajectory on the same draws, planners and banks
+(`results/syscmp_table.json`, `K*|ATLAS fixed B=*`; its own stopping rule is
+in the complete-system section). AnchorPoints is
 degenerate at K_cal = 4: four binary responses admit only 14-23 distinct
 route patterns, the correlation distance collapses and the same anchor
 estimate comes out at every budget.
 
-Reading. ATDrive has the lowest error in 8 of 12 cells and the lowest macro
-average by a clear margin (.0262 against .0303 for Fluid-style, .0307 for
-type-stratified Random and .0316 for Random + IRT). The four cells it does
-not win are ties inside the intervals: K4 B110 and K8 B55/B110, where the
-type-stratified order is lower by .001-.002, and K12 B30, where Fluid is
-lower by .007. The margin grows with the budget and with the
+Reading. ATDrive has the lowest error in 7 of 12 cells and the lowest macro
+average by a clear margin (.0262 against .0293 for ATLAS-style, .0303 for
+Fluid-style, .0307 for type-stratified Random and .0316 for Random + IRT).
+The five cells it does not win are ties inside the intervals: K4 B110 and
+K8 B55/B110, where the type-stratified order is lower by .001-.002, K8 B30,
+where ATLAS-style is lower by .002, and K12 B30, where Fluid is lower by
+.007. The margin grows with the budget and with the
 calibration panel — at K_cal = 12 ATDrive is .0231 / .0160 / .0081 at
 B = 55 / 110 / 165 while the best baseline sits at .0281 / .0195 / .0112 —
 because a better-calibrated bank makes the Delta-R1 score sharper.

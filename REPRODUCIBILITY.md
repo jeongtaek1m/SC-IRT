@@ -37,7 +37,7 @@ past a failed anchor.
 | `run_adaptive.py --merge` | fixed-t track errors of ATDrive / Random / Fluid at representative (K_cal, t); "what each budget buys" rows at K4 B30, K8 B55, K12 B30, K12 B165 |
 | `run_ablation.py --merge` | full and each off-arm at representative cells |
 | `run_system_ablation.py` | full-system ablation: fixed-budget and risk-target cells of the five arms |
-| `run_system_comparison.py --merge` | complete-system comparison: ATDrive rows (= Table 2), ATLAS tau cells, Fluid B=100 / B=match / SE<=delta* cells; with `ATDRIVE_OFFICIAL_ORDERS=1` the same anchors plus the official-code rows (`results/syscmp_official_table.json`) |
+| `run_system_comparison.py --merge` | complete-system comparison: ATDrive rows (= Table 2), ATLAS tau cells, Fluid B=100 / B=match / SE<=delta* cells; the fixed-budget ATLAS-style cells (Table 1 row: K8 B30 .0428, K12 B55 .0314); with `ATDRIVE_OFFICIAL_ORDERS=1` the same anchors plus the official-code rows (`results/syscmp_official_table.json`) |
 | `run_cat_objective.py --merge` | the pooled-c CAT-objective cells (Delta-R1 / Fisher / Random at eps=.05, the matched ability-SD stop) at K4 / K8 / K12 |
 | `run_policy_matrix.py` | policy matrix: ATDrive rows (= Table 2), the degenerate ATLAS rows, the matched rows, the IES reference .0393 at K12; factorial: C-B, F-E, G-B exclude zero, B-A, E-A, F-C include zero, fixed-budget Fisher - Delta-R1 at B=55 / 78 |
 | `run_ranking_quality.py` | 13 insertion cells, the \|Delta rank\| identity < 1e-9, mae_only in {5, 6} with the boundary cell, mae_rank_exact .0203 (1417 of 2112), rank<=1 at K8, Fluid SE stop macro; co-estimated and within-draw rank-only cells, Table 1's pairwise column reproduced, K8 Fluid B=match +.0521 |

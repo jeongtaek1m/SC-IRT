@@ -356,7 +356,11 @@ description implies where that is possible on 4-12 calibration planners.
 All 2PL item parameters come from one calibration (`calibrate(mode='2pl')`,
 explicit priors log a ~ N(0, .5^2), b ~ N(0, sigma_b^2) with sigma_b from
 the 1PL empirical-Bayes fit) — not from the methods' own fitting code. The
-adaptations, per row:
+one exception is the ATLAS-style row: ATLAS is a 3PL system, so it runs its
+own calibration (guessing c and sigma_b profiled on the calibration block,
+Section 8) and Table 1 reads the fixed-B prefix of its complete-system
+trajectory — the same native-model principle under which ATDrive runs its 1PL.
+The adaptations, per row:
 
 **Tie and seed convention of the static baselines.** Total-Fisher, Marginal-Fisher and DISCO break ties
 by the project convention -- round the score to `TIE_DECIMALS = 10` (`atdrive/acquisition.py`), then take the

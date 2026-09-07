@@ -141,10 +141,10 @@ tests/          fast invariants
 - Every 64-evaluation cell rests on n_eff = 16 planner clusters; stars are uncorrected paired
   95% intervals. Differences below about .005 SR-MAE are inside the paired 95% intervals
   at 64 evaluations per cell; the tables mark which cells are.
-- ATDrive has the lowest error in 8 of 12 cells of Table 1 (macro .0262 vs
-  .0303 for Fluid and .0307 for type-stratified Random); the four it does
-  not win are ties inside the intervals, the largest K12 B30, where Fluid is
-  lower by .007. Random-policy rows are expected errors over five orders.
+- ATDrive has the lowest error in 7 of 12 cells of Table 1 (macro .0262 vs
+  .0293 for ATLAS-style, .0303 for Fluid and .0307 for type-stratified Random);
+  the five it does not win are ties inside the intervals, the largest K12 B30,
+  where Fluid is lower by .007. Random-policy rows are expected errors over five orders.
 - Route-level AUROC on the routes an order did not buy cannot separate
   ATDrive from the type-stratified order (pooled +.0009, 95% CI
   [-.019, +.019]); once a zero-rollout predictor is subtracted the
