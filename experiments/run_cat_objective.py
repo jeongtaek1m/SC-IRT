@@ -209,6 +209,8 @@ def main():
     if a.merge:
         recs = [r for f in sorted(glob.glob(str(OUT / 'cat_objective_*_*.json'))) for r in json.load(open(f))]
         if recs:                                # the trajectories of record, 8 decimals (about half the size)
+            assert len(recs) == len(KCALS) * 16 * 12, \
+                f'{len(recs)} records (expected K_cal x 16 draws x 12 leave-one-out planners): a shard is missing or a stale partition was merged in'
             json.dump(_round(recs), open(OUT / 'cat_objective.json', 'w'), separators=(',', ':'))
         else:                                   # no shards (a clone): score the results of record
             recs = json.load(open(OUT / 'cat_objective.json'))

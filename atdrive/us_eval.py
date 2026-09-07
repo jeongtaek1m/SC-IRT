@@ -14,9 +14,11 @@ descriptor rows and encoder predictions are all scored on one
 theta. Predictions may be a subset of the C routes of a draw; missing
 routes are skipped (and counted).
 
-The shipped encoder artifacts (data/encoder/relgraph_r2_s*.npz) are in
-this format: keys draw{r}_rt / draw{r}_bt, plus draw{r}_sigma (the
-residual SD learned on that draw's calibration block, used by run_ups.py).
+The shipped encoder artifacts are in this format: keys draw{r}_rt /
+draw{r}_bt, plus draw{r}_sigma (the residual SD learned on that draw's
+calibration block, used by run_ups.py). The encoder of record is the
+lane-free data/encoder/relgraph_r2nolane_s*.npz; data/encoder/relgraph_r2_s*.npz
+and the other relgraph_r2_*_s*.npz are the controls of Table 3A(b).
 """
 import numpy as np
 from scipy.stats import spearmanr

@@ -354,9 +354,9 @@ def main():
     assert 5 <= len(res['separation']['mae_only']) <= 6      # ... and 5-6 SR-MAE calls are lost (K12 ATLAS tau=0.2
     d, lo, hi = res['separation']['boundary_cell']['d_mae']  #     sits on the 95% boundary: 5 or 6 by bootstrap draw)
     assert abs(d - .0107) < .001 and abs(lo) < .001, (d, lo, hi)
-    assert abs(res['separation']['mae_rank_exact'] - .0203) < .001 and res['separation']['n_rank_exact'] == 1417
+    assert abs(res['separation']['mae_rank_exact'] - 0.0202) < .001 and res['separation']['n_rank_exact'] == 1419
     assert res['separation']['n_scored'] == 2112
-    assert abs(res['eps05_rank_le1']['K8'] - 0.953125) < 1e-9 and abs(res['fluid_se_stop_macro']['rank_err'] - 1.391) < 5e-3
+    assert abs(res['eps05_rank_le1']['K8'] - 0.953125) < 1e-9 and abs(res['fluid_se_stop_macro']['rank_err'] - 1.370) < 5e-3
     # the co-estimated readings: 2-3 cells separate that SR-MAE ties; at K_cal = 8 they favour Fluid
     assert res['coestimated']['rank_only'] == ['K8|Fluid  fixed B=100', 'K12|ATDrive B=110'], res['coestimated']['rank_only']
     assert res['withindraw']['rank_only'] == ['K8|Fluid  fixed B=100', 'K8|Fluid  fixed B=match', 'K12|ATDrive B=110']
@@ -364,7 +364,7 @@ def main():
     for K, B, v in ((4, 30, .9167), (8, 55, .9063), (12, 30, .8958), (12, 165, 1.0)):   # = Table 1's column
         assert abs(W[f'K{K}|ATDrive B={B}']['acc'] - v) < 5e-4, (K, B, W[f'K{K}|ATDrive B={B}']['acc'])
     d, lo, hi = W['K8|Fluid  fixed B=match']['d_acc']
-    assert abs(d - .0521) < .002 and lo > 0, (d, lo, hi)
+    assert abs(d - 0.0417) < .002 and lo > 0, (d, lo, hi)
     assert (res['withindraw']['both'], len(res['withindraw']['mae_only']), res['withindraw']['neither']) == (15, 8, 7)
     print('anchors OK')
 

@@ -1,0 +1,16 @@
+NLe_full_s1|--arch r2 --seed 1 --phase full --tag NLe
+C4nl_p0_full_s2|--perm 0 --arch r2 --label-shuffle --seed 2 --phase full --tag C4nl_p0
+C4nl_p2_full_s0|--perm 2 --arch r2 --label-shuffle --seed 0 --phase full --tag C4nl_p2
+C4nl_p3_full_s1|--perm 3 --arch r2 --label-shuffle --seed 1 --phase full --tag C4nl_p3
+C4nl_p4_full_s2|--perm 4 --arch r2 --label-shuffle --seed 2 --phase full --tag C4nl_p4
+C4nl_p6_full_s0|--perm 6 --arch r2 --label-shuffle --seed 0 --phase full --tag C4nl_p6
+C4nl_p7_full_s1|--perm 7 --arch r2 --label-shuffle --seed 1 --phase full --tag C4nl_p7
+C4nl_p8_full_s2|--perm 8 --arch r2 --label-shuffle --seed 2 --phase full --tag C4nl_p8
+C4nl_p10_full_s0|--perm 10 --arch r2 --label-shuffle --seed 0 --phase full --tag C4nl_p10
+C4nl_p11_full_s1|--perm 11 --arch r2 --label-shuffle --seed 1 --phase full --tag C4nl_p11
+C4nl_p12_full_s2|--perm 12 --arch r2 --label-shuffle --seed 2 --phase full --tag C4nl_p12
+C4nl_p14_full_s0|--perm 14 --arch r2 --label-shuffle --seed 0 --phase full --tag C4nl_p14
+C4nl_p15_full_s1|--perm 15 --arch r2 --label-shuffle --seed 1 --phase full --tag C4nl_p15
+C4nl_p16_full_s2|--perm 16 --arch r2 --label-shuffle --seed 2 --phase full --tag C4nl_p16
+C4nl_p18_full_s0|--perm 18 --arch r2 --label-shuffle --seed 0 --phase full --tag C4nl_p18
+C4nl_p19_full_s1|--perm 19 --arch r2 --label-shuffle --seed 1 --phase full --tag C4nl_p19

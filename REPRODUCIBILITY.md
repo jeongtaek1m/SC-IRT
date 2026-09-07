@@ -37,16 +37,16 @@ past a failed anchor.
 | `run_adaptive.py --merge` | fixed-t track errors of ATDrive / Random / Fluid at representative (K_cal, t); "what each budget buys" rows at K4 B30, K8 B55, K12 B30, K12 B165 |
 | `run_ablation.py --merge` | full and each off-arm at representative cells |
 | `run_system_ablation.py` | full-system ablation: fixed-budget and risk-target cells of the five arms |
-| `run_system_comparison.py --merge` | complete-system comparison: ATDrive rows (= Table 2), ATLAS tau cells, Fluid B=100 / B=match / SE<=delta* cells |
+| `run_system_comparison.py --merge` | complete-system comparison: ATDrive rows (= Table 2), ATLAS tau cells, Fluid B=100 / B=match / SE<=delta* cells; with `ATDRIVE_OFFICIAL_ORDERS=1` the same anchors plus the official-code rows (`results/syscmp_official_table.json`) |
 | `run_cat_objective.py --merge` | the pooled-c CAT-objective cells (Delta-R1 / Fisher / Random at eps=.05, the matched ability-SD stop) at K4 / K8 / K12 |
 | `run_policy_matrix.py` | policy matrix: ATDrive rows (= Table 2), the degenerate ATLAS rows, the matched rows, the IES reference .0393 at K12; factorial: C-B, F-E, G-B exclude zero, B-A, E-A, F-C include zero, fixed-budget Fisher - Delta-R1 at B=55 / 78 |
 | `run_ranking_quality.py` | 13 insertion cells, the \|Delta rank\| identity < 1e-9, mae_only in {5, 6} with the boundary cell, mae_rank_exact .0203 (1417 of 2112), rank<=1 at K8, Fluid SE stop macro; co-estimated and within-draw rank-only cells, Table 1's pairwise column reproduced, K8 Fluid B=match +.0521 |
 | `run_route_discrimination.py --merge` | 6 AUROC cells, macro AUROC / Brier of 3 orders, 36 drops, both rank-agreement rhos, pooled ATDrive - Random-strat spans 0 (n 751, 9 of 12), zero-rollout macro Brier of every order, Brier skill / AUROC gain of Random-strat > 0, common-set macro AUROC and spread |
-| `run_us.py` | Table 3A: null, the two hand-crafted rows, RelGraph 3-run means; Table 3A(b): the rho of the four controls |
-| `run_ups.py` | Table 3B: representative MAE cells per policy (tol .003), incl. the Delta-R1 cells under the speed-ablated prior |
-| `run_ups_full.py --merge` | 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .0025 in the readout and in the acquisition |
+| `run_us.py` | Table 3A: null, the two hand-crafted rows, the 3-run means of the encoder of record (lane-free R2-noLane); Table 3A(b): the rho of the five controls (the lane-carrying R2, noroute, sroute, sa2l, nospeed) |
+| `run_ups.py` | Table 3B: representative MAE cells per policy under the lane-free prior of record (tol .003), and the Delta-R1 MAE + per-cell NLL cells of all three priors (lane-free, the lane-carrying control, the speed-ablated control) |
+| `run_ups_full.py --merge` | the scene prior's identity (npz name + content md5, checked before any anchor); 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .003 in the readout and in the acquisition |
 | `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the ATLAS stopping rule, and the 2 recorded ATLAS failures |
-| `run_nuplan_zeroshot.py` | panel constants, oracle point estimates, arm means, the permutation-fixed T_null with the count of null per-permutation means at or above each arm and the verdicts, the whole-panel Spearman of both arms and their null counts |
+| `run_nuplan_zeroshot.py` | panel constants, oracle point estimates, arm means, the permutation-fixed T_null with the count of null per-permutation means at or above each arm and the verdicts, the whole-panel Spearman of the three arms (NLe, C0e, A2e) and their null counts |
 | `run_model_adequacy.py` | held-out NLL of 1PL / 2PL / 3PL and the split-half reliability of log a on the UP bank |
 | `run_readout_dropin.py` | the drop-in cells (incl. AnchorPoints K12 B55 / B110) |
 | `tests/` | grids and index identities, exact-posterior and testlet invariants, split pinning (draw 0), panel shape, r1_pick determinism, IES definition, the entry-point registry |
@@ -108,38 +108,53 @@ mean +- SD, never an averaged prediction.
   evaluated planners' rollouts. The scenario-definition parameters
   (scenparamz) that earlier versions used were removed: they are the
   benchmark's own construction values, not observable scene content.
-- `data/encoder/relgraph_r2_s{0,1,2}.npz` — per-draw difficulty predictions
-  from the RelGraph R2 scene encoder (ego, agent and lane tokens; R-GCN
-  lane-lane message passing, agent-lane cross-attention over
-  relative-geometry relations and an ego-route relation; d = 64), trained
-  per draw on the 36 calibration types of the 12 calibration planners
-  with the shared-sigma epsilon-marginalised objective and predicting the 8
-  evaluation types out-of-fold; three seeds, one file per run. Each file
-  also carries `draw{r}_sigma`, the shared residual SD the encoder learned
-  on that draw's calibration block (the UPS prior width).
-  `relgraph_r2_{noroute,sroute,sa2l}_s{0,1,2}.npz` are the structural
-  controls of Table 3A(b): the same architecture, recipe and seeds with the
+- `data/encoder/relgraph_r2nolane_s{0,1,2}.npz` — THE ENCODER OF RECORD:
+  per-draw difficulty predictions from RelGraph R2-noLane, which HAS NO LANE
+  GRAPH (ego, command and agent tracks only; no lane tokens, lane_feat, L2L
+  edges, A2L candidates or route_rel; d = 64), trained per draw on the 36
+  calibration types of the 12 calibration planners with the shared-sigma
+  epsilon-marginalised objective and predicting the 8 evaluation types
+  out-of-fold; three seeds, one file per run. Each file also carries
+  `draw{r}_sigma`, the shared residual SD the encoder learned on that draw's
+  calibration block (the UPS prior width). It is the default of
+  `eval_us_predictions.py` and the prior read by `run_ups.py` (canonical arm)
+  and `run_ups_full.py`.
+  The six controls of Table 3A(b) are in the same format:
+  `relgraph_r2_s{0,1,2}.npz` is the lane-carrying R2 that earlier releases
+  shipped as canonical (ego, agent and lane tokens; R-GCN lane-lane message
+  passing, agent-lane cross-attention over relative-geometry relations and an
+  ego-route relation), and it also drives the lane-carrying repeat of Table 3B
+  (`results/ups_lane.json`); `relgraph_r2_{noroute,sroute,sa2l}_s{0,1,2}.npz`
+  are the structural controls (the same architecture, recipe and seeds with the
   ego-route relation removed / the route correspondence shuffled / the
-  agent-lane correspondence shuffled (shuffle seed = model seed);
-  `relgraph_r2_nospeed_s{0,1,2}.npz` is the channel control with the
-  ego-speed channel removed from both ego paths (the arm that clears the
-  nuPlan shuffle null; it also drives the speed-ablated repeat of Table 3B,
-  `results/ups_nospeed.json`). All 15 files are exported by
+  agent-lane correspondence shuffled, shuffle seed = model seed);
+  `relgraph_r2_nospeed_s{0,1,2}.npz` is the channel control with the ego-speed
+  channel removed from both ego paths of the LANE-CARRYING model, and
+  `relgraph_r2nolane_nospeed_s{0,1,2}.npz` the same ablation of the encoder of
+  record (lane-free), which also drives the speed-ablated repeat of Table 3B
+  (`results/ups_nospeed.json`). All 21 files are exported by
   `experiments/build_data.py` from the run outputs of the 16-planner RelGraph
-  training harness (`relgraph_e16sel`: `r2_b2d_s{k}.npz` and the four control
-  runs); the harness calibrates its training-fold abilities with
+  training harness (`relgraph_e16sel`: `r2nolane_b2d_s{k}.npz` and the six
+  control runs); the harness calibrates its training-fold abilities with
   `atdrive.calibration.calibrate_dense` from this package, so the encoder is
-  trained against the release's own Rasch fit. The harness itself depends on
-  Bench2Drive raw rollouts (not redistributable) and is staged for a separate
-  release.
+  trained against the release's own Rasch fit. The harness is in `encoder/`
+  (code verbatim, the Bench2Drive scene tensors it trains on, the launchers of
+  every run of record and the nuPlan stage-2 drivers; `encoder/README.md`). One caveat on the lane-carrying control: the harness rerun of
+  2026-09-06 overwrote its `r2_b2d_s{0,1,2}.npz` in place and does NOT
+  reproduce the shipped predictions (max |d b_tilde| 1.4e-02 / 1.8e-01 /
+  1.7e-02 over the three runs), so `build_data.py` exports that row from the
+  byte-identical originals kept in `relgraph_e16sel/repro_backup/`. The
+  encoder of record and the other four controls are exported from the
+  harness's own current output.
 - `data/nuplan/val14_zeroshot.npz` — the nuPlan val14 zero-shot panel of
   `run_nuplan_zeroshot.py`: 584 scenarios (tokens, logs), the 11 x 584
   closed-loop score matrix with the planner names, its binarised failures,
   the per-scene failure rate and the response-calibrated difficulty b_ref,
-  and the logged-ego predicted difficulty of every encoder run — the arms
-  C0e x 3 and A2e x 3 training seeds, the label-shuffle nulls C4r2n and
-  C4r2e as 20 fixed permutations x 3 training seeds — all trained on the
-  panel of record (`b2d_e2e16sel`) with the repo calibration, exported by
+  and the logged-ego predicted difficulty of every encoder run — the three
+  arms NLe (lane-free, the encoder of record), C0e and A2e at 3 training
+  seeds each, and their matched label-shuffle nulls C4nl, C4r2n and C4r2e as
+  20 fixed permutations x 3 training seeds each — all trained on the panel of
+  record (`b2d_e2e16sel`) with the repo calibration, exported by
   `experiments/build_data.py` from the encoder's stage-2 transfer outputs.
 - `data/live/risk_scale.json` — cached risk scales c of `atdrive.live.LiveEvaluator`,
   keyed by a bank fingerprint (planner set, route list, iterations) and
@@ -179,7 +194,7 @@ python experiments/run_policy_matrix.py                # adaptive policies under
 for lo in 0 4 8 12; do python experiments/run_route_discrimination.py --seeds $lo $((lo+4)) & done; wait
 python experiments/run_route_discrimination.py --merge # route-level discrimination (reads up_frontier.json, adaptive.json)
 python experiments/run_us.py                           # Table 3A + 3A(b)
-python experiments/run_ups.py                          # Table 3B (+ the speed-ablated prior)
+python experiments/run_ups.py                          # Table 3B (results/ups.json) + the two control priors (ups_lane.json, ups_nospeed.json)
 for lo in 0 2 4 6 8 10 12 14; do ATDRIVE_DEVICE=cpu python experiments/run_ups_full.py --seeds $lo $((lo+2)) & done; wait
 python experiments/run_ups_full.py --merge             # UPS on the full 220-route SR
 python experiments/run_nuplan_zeroshot.py              # nuPlan val14 zero-shot (data/nuplan/val14_zeroshot.npz)

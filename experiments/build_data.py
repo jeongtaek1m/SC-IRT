@@ -16,20 +16,37 @@ REPO = Path(__file__).resolve().parents[1]
 FEAT_SRC = Path('/data1/jeongtae/b2d_jepa/features')
 IRT = Path('/home/jeongtae/SCIRT/b2d_irt')
 RELG_RAW = Path('/data2/jeongtae/relgraph_e16sel')   # the 16-planner RelGraph harness the shipped npz come from:
-#   r2_b2d_s{k}.npz (pred (R_DRAWS, 220), routes, sigma (R_DRAWS,)) and the four controls
-#   r2noroute_b2d_s{k}, sroute{k}_b2d_s{k}, sa2l{k}_b2d_s{k}, nospeed/r2nospeed_r2_b2d_s{k}
+#   r2nolane_b2d_s{k}.npz (pred (R_DRAWS, 220), routes, sigma (R_DRAWS,)) -- THE ENCODER OF RECORD,
+#   which has no lane graph -- and the five controls: r2_b2d_s{k} (the lane-carrying model),
+#   r2noroute_b2d_s{k}, sroute{k}_b2d_s{k}, sa2l{k}_b2d_s{k}, nospeed/r2nospeed_r2_b2d_s{k},
+#   nolane_nospeed/nlnospeed_r2nolane_b2d_s{k} (the speed ablation of the encoder of record)
+# The reproduction run of 09-06 rewrote r2_b2d_s{0,1,2}.npz IN PLACE and its output does NOT
+# reproduce the shipped lane-carrying predictions: transformed through export_relgraph the current
+# RELG_RAW copies differ from data/encoder/relgraph_r2_s{0,1,2}.npz by max |d b_tilde|
+# 1.427e-02 / 1.813e-01 / 1.727e-02 (GPU nondeterminism plus the one-line encode() fix r2_graph.py
+# records). The byte-identical originals are hand-kept here and the lane-carrying CONTROL row is
+# exported from THEM, so that row alone has a manual link in its provenance; run_repro.log in that
+# directory is its only record. export_relgraph asserts identity against the shipped npz, so
+# exporting the control from RELG_RAW instead would fail rather than silently ship other numbers.
+# Every other row -- the encoder of record and the four other controls -- comes from RELG_RAW.
+RELG_SHIPPED = RELG_RAW / 'repro_backup'
 CKPT = Path('/data1/jeongtae/b2d_eval_sensors/checkpoints')
 # nuPlan val14 zero-shot inputs (run_nuplan_zeroshot.py): the r0 target npz (tokens, logs, Y,
-# fail, b_ref), the stage-2 prediction npz of the encoder arms and the label-shuffle nulls
+# fail, b_ref), the stage-2 prediction npz of the three encoder arms and their label-shuffle nulls
 # (all trained on the panel of record, b2d_e2e16sel, with the repo calibration, by the
 # chdrop_sel.py wrapper around the frozen stage-2 driver, kept with the run logs under
 # NUPLAN_S2/provenance), and the 11 x 584 closed-loop
 # score matrix
 NUPLAN_TGT = Path('/data2/jeongtae/relgraph/transfer/nuplan/r0_nuplan_oof_s0.npz')
 NUPLAN_S2 = Path('/data2/jeongtae/relgraph_e16sel/nuplan_stage2')
+NUPLAN_S2_NL = Path('/data2/jeongtae/relgraph_e16sel/nuplan_stage2_nolane')
 NUPLAN_CLS = Path('/home/jeongtae/SCIRT/SC-IRT/result/nuplan_val14_k11_response_matrix.csv')
-NUPLAN_ARMS = ('C0e', 'A2e')            # <arm>_b2d2nuplan_s<k>.npz, k < NUPLAN_SEEDS
-NUPLAN_NULLS = ('C4r2n', 'C4r2e')       # <fam>_p<p>_b2d2nuplan_s<k>.npz: permutation p fixed, training seed k
+# (arm, stage-2 directory, lane-free?): <arm>_b2d2nuplan_s<k>.npz, k < NUPLAN_SEEDS
+NUPLAN_ARMS = (('NLe', NUPLAN_S2_NL, True),      # the encoder of record: no lane graph
+               ('C0e', NUPLAN_S2, False),        # control: lane graph kept, speed kept
+               ('A2e', NUPLAN_S2, False))        # control: lane graph kept, speed removed
+# one matched null family per arm: <fam>_p<p>_b2d2nuplan_s<k>.npz, permutation p fixed, training seed k
+NUPLAN_NULLS = (('C4nl', NUPLAN_S2_NL, True), ('C4r2n', NUPLAN_S2, False), ('C4r2e', NUPLAN_S2, False))
 NUPLAN_SEEDS, NUPLAN_PERMS = 3, 20
 NUPLAN_PERM_SEED0 = 90000               # zs21_common.shuffle_route_labels: default_rng(90000 + p).permutation(220)
 
@@ -97,8 +114,11 @@ def export_nuplan(dst):
     binary failures, NaN = no record), fail (per-scene failure rate), b_ref (the
     response-calibrated difficulty), cls (11 x 584 closed-loop scores) with the
     planner names, pred_<arm>_s<k> = the stage-2 `pred_logged` of every encoder arm
-    at widx == 0, and pred_<fam>_p<p>_s<k> the same for the label-shuffle nulls
-    (permutation p, training seed k). Verifies against the shipped file."""
+    at widx == 0 (NLe, the lane-free encoder of record, and the lane-carrying controls
+    C0e / A2e), and pred_<fam>_p<p>_s<k> the same for the three label-shuffle null
+    families (permutation p, training seed k). The lane-free runs record ablate_lane in
+    their raw npz and the lane-carrying ones have no such key, which is checked here.
+    Every key already in the shipped file must come back identical; new arms extend it."""
     import csv
     import numpy as np
     z = np.load(NUPLAN_TGT, allow_pickle=True)
@@ -123,26 +143,34 @@ def export_nuplan(dst):
         v = np.full(len(tok), np.nan, np.float32)
         v[[pos[str(t)] for t in a['tgt_groups'][wi]]] = np.asarray(a['pred_logged'], np.float32)[wi]
         return a, v
-    for arm in NUPLAN_ARMS:
+    def lane_ok(a, nolane):        # the lane-free runs carry ablate_lane; the lane-carrying ones have no such key
+        return bool(a['ablate_lane']) if nolane else 'ablate_lane' not in a.files
+    for arm, d, nolane in NUPLAN_ARMS:
         for k in range(NUPLAN_SEEDS):
-            a, out[f'pred_{arm}_s{k}'] = readout(NUPLAN_S2 / f'{arm}_b2d2nuplan_s{k}.npz')
+            a, out[f'pred_{arm}_s{k}'] = readout(d / f'{arm}_b2d2nuplan_s{k}.npz')
             assert int(a['seed']) == k and not bool(a['stage2_label_shuffle']), (arm, k)
-    for fam in NUPLAN_NULLS:                       # permutation-fixed null: perm p x training seed k
+            assert lane_ok(a, nolane), (arm, k, 'lane ablation flag')
+    for fam, d, nolane in NUPLAN_NULLS:            # permutation-fixed null: perm p x training seed k
         for p in range(NUPLAN_PERMS):
             perm = np.random.default_rng(NUPLAN_PERM_SEED0 + p).permutation(220)
             for k in range(NUPLAN_SEEDS):
-                a, out[f'pred_{fam}_p{p}_s{k}'] = readout(NUPLAN_S2 / f'{fam}_p{p}_b2d2nuplan_s{k}.npz')
+                a, out[f'pred_{fam}_p{p}_s{k}'] = readout(d / f'{fam}_p{p}_b2d2nuplan_s{k}.npz')
                 assert int(a['seed']) == k and bool(a['label_shuffle']) and np.array_equal(a['label_perm'], perm), (fam, p, k)
+                assert lane_ok(a, nolane), (fam, p, k, 'lane ablation flag')
     if dst.exists():
         old = np.load(dst, allow_pickle=True)
-        assert set(old.files) == set(out) and all(np.array_equal(old[k], out[k], equal_nan=True)
-                                                  if out[k].dtype.kind == 'f' else np.array_equal(old[k], out[k])
-                                                  for k in out), dst
-        print(f'  {dst.name} identical to the raw export')
-    else:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(dst, **out)
-        print(f'  {dst.name} written')
+        eq = lambda k: (np.array_equal(old[k], out[k], equal_nan=True) if out[k].dtype.kind == 'f'
+                        else np.array_equal(old[k], out[k]))
+        assert not set(old.files) - set(out), (dst, 'the shipped file has keys this export no longer makes')
+        assert all(eq(k) for k in old.files), dst        # every shipped key comes back unchanged
+        if set(old.files) == set(out):
+            print(f'  {dst.name} identical to the raw export')
+            return
+        print(f'  {dst.name}: shipped keys identical, {len(set(out) - set(old.files))} new keys '
+              f'(the lane-free arm NLe and its null family C4nl); rewriting')
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(dst, **out)
+    print(f'  {dst.name} written')
 
 
 def main():
@@ -152,15 +180,23 @@ def main():
     print('descriptor tables:')
     copy_checked(IRT / 'b2d_traffic_features_220.csv', REPO / 'data/b2d/traffic_features_220.csv')
     copy_checked(IRT / 'baseline_kin_den.npz', REPO / 'data/b2d/baseline_kin_den.npz')
-    print('encoder artifacts (unified split, per-run — no ensembling):')
+    print('encoder of record — R2-noLane, no lane graph (unified split, per-run — no ensembling):')
     for s in (0, 1, 2):
-        export_relgraph(RELG_RAW / f'r2_b2d_s{s}.npz', REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')
+        export_relgraph(RELG_RAW / f'r2nolane_b2d_s{s}.npz',
+                        REPO / 'data/encoder' / f'relgraph_r2nolane_s{s}.npz')
+    print('encoder controls (same architecture, recipe and seeds):')
+    for s in (0, 1, 2):        # the lane-carrying model, now a control row; exported from the shipped
+        export_relgraph(RELG_SHIPPED / f'r2_b2d_s{s}.npz',      # originals, because the reproduction run
+                        REPO / 'data/encoder' / f'relgraph_r2_s{s}.npz')   # rewrote RELG_RAW's copies
     for tag, name in (('r2noroute', 'noroute'), ('sroute{s}', 'sroute'), ('sa2l{s}', 'sa2l'),   # structural controls (shuffle seed = model seed)
                       ('nospeed/r2nospeed_r2', 'nospeed')):                                     # channel control (ego speed removed)
         for s in (0, 1, 2):
             src = RELG_RAW / (tag.format(s=s) + f'_b2d_s{s}.npz')
             if src.exists():
                 export_relgraph(src, REPO / 'data/encoder' / f'relgraph_r2_{name}_s{s}.npz')
+    for s in (0, 1, 2):        # the same channel ablation on the encoder of record (lane-free)
+        export_relgraph(RELG_RAW / 'nolane_nospeed' / f'nlnospeed_r2nolane_b2d_s{s}.npz',
+                        REPO / 'data/encoder' / f'relgraph_r2nolane_nospeed_s{s}.npz')
     print('nuPlan val14 zero-shot panel:')
     export_nuplan(REPO / 'data/nuplan/val14_zeroshot.npz')
     print('checks:')

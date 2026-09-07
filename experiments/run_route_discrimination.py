@@ -42,6 +42,14 @@ spread over the (draw, K_cal) grid (seed 5 / K8, 11 / K12, 14 / K4, first
 held-out planner) reproduced those selections exactly, 165 / 165 routes each,
 so reuse costs nothing and keeps one selection of record.
 
+ATDRIVE_OFFICIAL_ORDERS=1 replaces the Fluid and metabench bank orders with the
+ones those methods' OWN code selects (experiments/official/orders.py); the
+posterior, the scores and the two controls are untouched and the records go to
+results/route_discrimination_official*.json. The ATDrive, Random and
+Random-strat rows are unchanged, so their anchors are still asserted; the
+common-set control changes for every row (the common set is what no order
+bought) and is reported without anchors in that arm.
+
     python experiments/run_route_discrimination.py                # all 16 draws
     python experiments/run_route_discrimination.py --seeds 0 4    # shard
     python experiments/run_route_discrimination.py --merge        # tables + anchors
@@ -64,6 +72,12 @@ from atdrive.calibration import calibrate
 from atdrive.bayes import bank_from_fit, State
 from atdrive.baselines import fluid_order, metabench_order, stratified_order
 from atdrive.metrics import paired_cluster_boot
+
+OFFICIAL = os.environ.get('ATDRIVE_OFFICIAL_ORDERS', '0') == '1'   # Fluid / metabench from their own code
+TAG = '_official' if OFFICIAL else ''
+if OFFICIAL:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from official.orders import order as official_order, padded, slot_of
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
@@ -95,15 +109,24 @@ def auroc(y, p):
     return float((r[y > 0.5].sum() - n1 * (n1 + 1) / 2) / (n0 * n1))
 
 
-def orders_for(f2, bi, yy, typ, seed, js, sel, rid_of):
+def orders_for(f2, bi, yy, typ, seed, js, sel, rid_of, Kc):
     """The five bank orders as bank indices. ATDrive's is Table 1's stored
     Delta-R1 selection (route ids -> bank indices); the others are the
-    Table 2 constructions, whose prefixes at 165 are their own prefixes."""
+    Table 2 constructions, whose prefixes at 165 are their own prefixes
+    (metabench's ability grid is sized to the request, so this is its 165-route
+    order sliced, not Table 1's per-budget subsets)."""
     n = len(bi)
     T = max(BGRID)
+    if OFFICIAL:               # the official code's own orders, padded to the bank (official.orders.padded)
+        p = slot_of(seed, js)
+        fl = padded(official_order('fluid', seed, Kc, p, n_bank=n)['order'], n)[:T]
+        mb = padded(official_order('metabench', seed, Kc, p, n_bank=n)['order'], n)[:T]
+    else:
+        fl = fluid_order(f2['a'][bi], f2['b'][bi], yy, T)
+        mb = [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], f2['th'], T, n, prefix=True)]
     return {'ATDrive': [rid_of[r] for r in sel[:T]],
-            'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, T),
-            'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], T, n)],
+            'Fluid': fl,
+            'metabench': mb,
             'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:T]],
             'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(100 + seed * PJ + js))[:T]]}
 
@@ -161,7 +184,7 @@ def run(seeds):
                 rid_of = {calR[bi[i]]: i for i in range(len(bi))}
                 sel = SEL[(seed, Kc, int(js))]
                 assert len(sel) >= max(BGRID) and all(r in rid_of for r in sel[:max(BGRID)])
-                od = orders_for(f2, bi, yy, typ, seed, js, sel, rid_of)
+                od = orders_for(f2, bi, yy, typ, seed, js, sel, rid_of, Kc)
                 p0 = State(bank, yy).predictive_all()            # before any rollout of this planner
                 U = {B: np.setdiff1d(np.arange(len(bi)), np.concatenate([od[o][:B] for o in ORD]))
                      for B in COMMON_B}                          # routes no order administered
@@ -236,7 +259,7 @@ def report(recs):
 
 def common_mae():
     """Common-readout SR-MAE per (K_cal, order, B) from results/adaptive.json."""
-    ad = OUT / 'adaptive.json'
+    ad = OUT / f'adaptive{TAG}.json'
     if not ad.exists():
         return None
     A = json.load(open(ad))
@@ -374,7 +397,10 @@ def ranking(AUC, BRI):
     if MAE:
         src['common readout (Table 2 machine)'] = MAE
     fr = OUT / 'up_frontier.json'
-    if fr.exists():
+    if OFFICIAL:                  # up_frontier.json's native errors belong to OUR orders, not the swapped ones
+        print('\n(native-readout ranking skipped in the official-order arm: Table 1 of record is the '
+              're-implementations\' native readout; the official-code native errors are in results/up_official.json)')
+    elif fr.exists():
         F = json.load(open(fr))
         src['native readout (Table 1)'] = {
             (K, o, B): float(np.mean([r['err'][NATIVE[o]][str(B)] for r in F if r['K'] == K]))
@@ -417,52 +443,69 @@ def main():
     args = ap.parse_args()
     OUT.mkdir(exist_ok=True)
     if args.merge:
-        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'route_discrimination_*_*.json')))], [])
+        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / f'route_discrimination{TAG}_[0-9]*_[0-9]*.json')))], [])
         if recs:
-            json.dump(recs, open(OUT / 'route_discrimination.json', 'w'))
+            json.dump(recs, open(OUT / f'route_discrimination{TAG}.json', 'w'))
         else:                                   # no shards (a clone): score the results of record
-            recs = json.load(open(OUT / 'route_discrimination.json'))
+            recs = json.load(open(OUT / f'route_discrimination{TAG}.json'))
     elif args.seeds:
         lo, hi = args.seeds
         recs = run(range(lo, hi))
-        json.dump(recs, open(OUT / f'route_discrimination_{lo}_{hi}.json', 'w'))
+        json.dump(recs, open(OUT / f'route_discrimination{TAG}_{lo}_{hi}.json', 'w'))
         print('shard saved; run with --merge after all shards')
         return
     else:
         recs = run(range(R_DRAWS))
-        json.dump(recs, open(OUT / 'route_discrimination.json', 'w'))
+        json.dump(recs, open(OUT / f'route_discrimination{TAG}.json', 'w'))
+    if OFFICIAL:
+        print('\nOFFICIAL-ORDER ARM: Fluid and metabench are the orders their own code selects '
+              '(experiments/official/orders.py); ATDrive, Random and Random-strat are unchanged.')
     AUC, BRI = report(recs)
     ctl = controls(recs, AUC, BRI)
     rho = ranking(AUC, BRI)
     assert len(recs) == len(KCALS) * 64
-    for (K, o, B, v) in ((4, 'ATDrive', 30, .7316), (4, 'Random-strat', 165, .7750), (8, 'metabench', 55, .7589),
+    SWAPPED = ('Fluid', 'metabench') if OFFICIAL else ()      # rows whose order the official arm replaced
+    for (K, o, B, v) in ((4, 'ATDrive', 30, .7319), (4, 'Random-strat', 165, .7746), (8, 'metabench', 55, .7678),
                          (12, 'ATDrive', 165, .8281), (12, 'Fluid', 55, .7826), (12, 'Random', 110, .7957)):
+        if o in SWAPPED:
+            print(f'   official-order arm: AUROC K{K} {o} B{B} = {AUC[(K, o, B)]:.4f} (was {v:.4f} on our order)')
+            continue
         assert abs(AUC[(K, o, B)] - v) < .003, (K, o, B, AUC[(K, o, B)])
     mac = lambda D, o: float(np.mean([D[(K, o, B)] for K in KCALS for B in BGRID]))
-    for o, a, b in (('ATDrive', .7768, .1341), ('Random-strat', .7767, .1687), ('metabench', .7500, .1804)):
+    for o, a, b in (('ATDrive', .7767, .1341), ('Random-strat', .7766, .1687), ('metabench', .7600, .1791)):
+        if o in SWAPPED:
+            print(f'   official-order arm: macro {o} AUROC {mac(AUC, o):.4f} / Brier {mac(BRI, o):.4f} '
+                  f'(was {a:.4f} / {b:.4f} on our order)')
+            continue
         assert abs(mac(AUC, o) - a) < .002, (o, mac(AUC, o))       # macro AUROC: ATDrive and Random-strat .0001 apart ...
         assert abs(mac(BRI, o) - b) < .002, (o, mac(BRI, o))       # ... and .035 apart on Brier (own residual sets)
-    assert sum(1 for r in recs for o in ORD for B in BGRID if r[o][str(B)]['auc'] is None) == 36
-    assert abs(rho['common readout (Table 2 machine)'] - 0.533) < .02, rho    # not the SR-MAE ranking
-    assert abs(rho['native readout (Table 1)'] - 0.633) < .02, rho
+    if not OFFICIAL:              # both counts pool every order, so the swapped arm has its own values
+        assert sum(1 for r in recs for o in ORD for B in BGRID if r[o][str(B)]['auc'] is None) == 36
+        assert abs(rho['common readout (Table 2 machine)'] - 0.567) < .02, rho    # not the SR-MAE ranking
+        assert abs(rho['native readout (Table 1)'] - 0.708) < .02, rho
     # the pooled test: ATDrive and Random-strat are unresolved on AUROC, not tied
     d, lo, hi = ctl['pooled_d']
     assert abs(d - .0009) < .002 and lo < 0 < hi and ctl['pooled_n'] == 751 and ctl['ahead'] == 9, ctl
     # control 1: the zero-rollout predictor reproduces the Brier ordering; after subtracting it the
     # type-stratified order is ahead of ATDrive on both route-level scores
-    for o, v in (('ATDrive', .1815), ('Fluid', .1864), ('metabench', .2297), ('Random', .2241), ('Random-strat', .2238)):
+    for o, v in (('ATDrive', .1815), ('Fluid', .1864), ('metabench', .2258), ('Random', .2241), ('Random-strat', .2238)):
+        if o in SWAPPED:                        # the zero-rollout baseline is scored on the order's own residual set
+            print(f'   official-order arm: zero-rollout Brier {o} {ctl["brier0"][o]:.4f} (was {v:.4f})')
+            continue
         assert abs(ctl['brier0'][o] - v) < .002, (o, ctl['brier0'][o])
     for key, v in (('Brier', .0076), ('AUROC', .0118)):
         d, lo, hi = ctl['skill'][(key, 'Random-strat')]
         assert abs(d - v) < .002 and lo > 0, (key, d, lo, hi)
-    # control 2: with the evaluation set held fixed the orders barely separate
+    # control 2: with the evaluation set held fixed the orders barely separate.  The common set is
+    # the routes NO order administered, so every one of these numbers moves when an order is swapped.
     c = ctl['common']
-    assert abs(c['auc']['macro']['ATDrive'] - .7658) < .002 and abs(c['auc']['macro']['Random-strat'] - .7645) < .002, c['auc']['macro']
-    d, lo, hi = c['auc']['Random-strat']
-    assert abs(d + .0014) < .002 and lo < 0 < hi, (d, lo, hi)
-    assert abs(c['brier']['spread'][0] - .0039) < .001 and abs(c['brier']['spread'][1] - .0175) < .002, c['brier']['spread']
-    if 'rho' in c['auc']:
-        assert abs(c['auc']['rho'][0] - 0.10) < .05 and abs(c['auc']['rho'][1] - 0.52) < .05, c['auc']['rho']
+    if not OFFICIAL:
+        assert abs(c['auc']['macro']['ATDrive'] - .7658) < .002 and abs(c['auc']['macro']['Random-strat'] - .7645) < .002, c['auc']['macro']
+        d, lo, hi = c['auc']['Random-strat']
+        assert abs(d + .0014) < .002 and lo < 0 < hi, (d, lo, hi)
+        assert abs(c['brier']['spread'][0] - .0039) < .001 and abs(c['brier']['spread'][1] - .0175) < .002, c['brier']['spread']
+        if 'rho' in c['auc']:
+            assert abs(c['auc']['rho'][0] - 0.10) < .05 and abs(c['auc']['rho'][1] - 0.52) < .05, c['auc']['rho']
     print('anchors OK')
 
 

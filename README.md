@@ -49,9 +49,10 @@ point ends by asserting the published numbers (`anchors OK`).
   panel (leave-one-planner-out) and never selected on evaluation planners,
   and the realised error at the stop is reported.
 - **C4 Scene-conditioned difficulty.** scene -> b via the RelGraph
-  relational scene-graph encoder (learned per draw on the calibration
-  types, shipped as per-run out-of-fold predictions), enabling unseen-scene
-  (US) and joint (UPS) generalisation.
+  scene-graph encoder (learned per draw on the calibration types, shipped as
+  per-run out-of-fold predictions), enabling unseen-scene (US) and joint
+  (UPS) generalisation. The encoder of record, R2-noLane, HAS NO LANE GRAPH:
+  ego, command and agent tracks only. The lane-carrying model is a control.
 
 ## The primary protocol
 
@@ -97,14 +98,14 @@ python experiments/run_ranking_quality.py            # ranking quality of the co
 python experiments/run_route_discrimination.py --merge  # route-level discrimination (after Table 1)
 python experiments/run_readout_dropin.py             # readout drop-in (GPU)
 python experiments/run_us.py                         # Table 3A + 3A(b) (GPU)
-python experiments/run_ups.py                        # Table 3B, incl. the speed-ablated prior (GPU)
+python experiments/run_ups.py                        # Table 3B + the two control priors (GPU)
 python experiments/run_ups_full.py --merge           # UPS retargeted to the full 220-route SR
 python experiments/run_nuplan_zeroshot.py            # nuPlan val14 zero-shot retrieval
 python experiments/run_model_adequacy.py             # model adequacy appendix (GPU)
 python experiments/make_figures.py                   # figs/fig_cost_error, fig_kb_map
 python experiments/make_icc_figure.py                # figs/fig_icc
 python experiments/make_uncertainty_figure.py        # figs/fig_uncertainty
-python experiments/eval_us_predictions.py [npz ...]  # score any US difficulty predictions (GPU)
+python experiments/eval_us_predictions.py [npz ...]  # score any US difficulty predictions; no args = the encoder of record (GPU)
 
 # Use it inside a real closed-loop evaluation (UP): pick routes, ingest outcomes, stop on risk
 python tools/b2d_adaptive_eval.py --dry-run VAD --eps 0.03          # simulate from the matrix (GPU)
@@ -117,13 +118,17 @@ python tools/b2d_adaptive_eval.py --name my_planner --agent ... --agent-config .
 atdrive/        the library (PROTOCOL.md has the maths)
 experiments/    one entry point per RESULTS.md section (listed above) + build_data.py (provenance)
 tools/          b2d_adaptive_eval.py — ATDrive inside a real Bench2Drive evaluation (atdrive/live.py)
+encoder/        the scene-encoder training harness (RelGraph R2 / R2-noLane), its data, the nuPlan stage-2 drivers
 data/
   matrices/     16 x 220 pass/fail panel of record + the 22-planner matrix it was drawn from
   features/     scene-descriptor sets used as US baselines (cmdkin, gtrisk, ...)
   b2d/          traffic-feature table and kin/density baselines
-  encoder/      RelGraph R2 per-run out-of-fold difficulty predictions + the
-                learned residual SD per draw (3 independent runs; no ensembling),
-                and the four controls of Table 3A(b) (noroute, sroute, sa2l, nospeed)
+  encoder/      per-run out-of-fold difficulty predictions + the learned residual SD
+                per draw (3 independent runs; no ensembling) for the encoder of record,
+                the lane-free RelGraph R2-noLane (relgraph_r2nolane_s*.npz), and for the
+                six controls of Table 3A(b): the lane-carrying R2 (relgraph_r2_s*.npz)
+                and noroute / sroute / sa2l / nospeed, and the speed ablation of the
+                encoder of record itself (relgraph_r2nolane_nospeed_s*.npz)
   nuplan/       the 584-scenario nuPlan val14 panel and encoder predictions of the zero-shot test
   live/         cached leave-one-planner-out risk scales for the live evaluator (keyed by bank)
 results/        merged results of record (tracked; per-shard intermediates are not) — RESULTS.md quotes them
@@ -137,8 +142,8 @@ tests/          fast invariants
   95% intervals. Differences below about .005 SR-MAE are inside the paired 95% intervals
   at 64 evaluations per cell; the tables mark which cells are.
 - ATDrive has the lowest error in 8 of 12 cells of Table 1 (macro .0262 vs
-  .0307 for type-stratified Random and .0312 for Fluid); the four it does
-  not win are ties inside the intervals except K12 B30, where Fluid is
+  .0303 for Fluid and .0307 for type-stratified Random); the four it does
+  not win are ties inside the intervals, the largest K12 B30, where Fluid is
   lower by .007. Random-policy rows are expected errors over five orders.
 - Route-level AUROC on the routes an order did not buy cannot separate
   ATDrive from the type-stratified order (pooled +.0009, 95% CI
@@ -156,7 +161,7 @@ tests/          fast invariants
   ranking is: at B = 30 only 36-44% of estimates land within 3 SR points
   while 90-94% of within-draw planner pairs are already ordered correctly.
   The stopping rule never selects a budget that small (it spends 70-129).
-- The stopping rule buys no accuracy at matched cost (paired deltas -.0013 to +.0025 against a fixed
+- The stopping rule buys no accuracy at matched cost (paired deltas -.0047 to +.0034 against a fixed
   budget of the same mean length); what it provides is a stopping time for an error target stated in
   SR units, with c fixed on calibration planners only. The calibration gap (mean
   realised error minus mean scaled risk at the stop) is negative in every
@@ -167,19 +172,27 @@ tests/          fast invariants
   B55/B110 cells by up to .003, so single-cell differences of that size are not interpretable.
 - UPS (Table 3B) is a per-cell result: the transport lowers the predictive
   NLL of the unseen cells at every budget, but its block-SR error sits on
-  the scene-prior floor (.095) and does not beat the planner's own probed
+  the scene-prior floor (.092) and does not beat the planner's own probed
   success rate at B >= 55 (.090 / .087) on this panel. Retargeted to the
   full 220-route SR, the scene prior contributes nothing measurable: a
-  scene-free prior moves the error by at most .0024 with every paired
-  interval containing zero, in the readout and in the acquisition
+  scene-free prior moves the error by at most .0022 in the readout and
+  .0026 in the acquisition, and 23 of those 24 readout intervals and all
+  acquisition intervals contain zero; the one exception (Random order,
+  priorT(const), B = 55: +.0015 [+.0002, +.0028]) goes against the encoder
   (RESULTS.md, UPS retargeted to the full 220-route SR).
-- The RelGraph encoder is tied with the hand-crafted descriptor stack on
-  AUROC and behind it on scene-MAE and rank correlation (-.04 +- .02); its
-  contribution is the input (raw tracks), not extra accuracy. Structural
-  controls show the lane-graph relations are inert on this bank (removing
-  the ego-route relation improves rho by +.03; shuffling correspondences
-  changes nothing beyond seed noise), and so is the ego-speed channel
-  (+.01).
+- **The encoder of record has no lane graph.** R2-noLane deletes the whole map
+  side of the scene graph (lane tokens, lane_feat, lane-lane edges, agent-lane
+  candidates, route relation) and keeps ego, command and agents; the
+  lane-carrying R2 that earlier releases shipped is now a control row. Lane-free
+  is better in all three runs on US (AUROC .761 +- .006 vs .751 +- .003,
+  scene-MAE .181 +- .007 vs .192 +- .003, rho +.545 +- .024 vs +.490 +- .016),
+  better on the UPS block-SR MAE (.0922 / .0920 / .0926 vs .0950 / .0936 / .0950)
+  and better on the nuPlan zero-shot transfer, and **worse in exactly one place:
+  the UPS per-cell NLL (.5974 / .5963 / .5985 against the lane-carrying
+  .5857 / .5848 / .5863)**. Against the hand-crafted descriptor stack the
+  lane-free encoder is slightly ahead on AUROC and rank correlation (+.012 +- .024,
+  within run noise) and still behind on scene-MAE; its contribution is the input
+  (raw tracks), not extra accuracy.
 - Every published baseline of Table 1 was also run through **its own official
   implementation** (`experiments/official/`, `results/up_official.json`): ATDrive is
   lower in 12 of 12 cells against every method except catR (11 of 12, losing one cell
@@ -190,12 +203,13 @@ tests/          fast invariants
   unidentified at this panel size (RESULTS.md, "Table 1 through the baselines' OWN code").
 - Zero-shot on nuPlan val14, against a label-shuffle null that carries the
   arm's own variance structure (20 fixed permutations x 3 training seeds),
-  the speed-ablated encoder clears on the top-5% performance drop (no
-  shuffled labeling reaches it, p .048; all three seeds above the
-  single-run 95th percentile) and is marginal at top-10% (p .095); the
-  canonical encoder does not clear (p .14 / .19), and the whole-panel rank
-  correlation is marginal for both arms (p .095) (RESULTS.md, nuPlan val14
-  zero-shot retrieval).
+  the lane-free encoder of record clears on the performance drop at BOTH
+  budgets (no shuffled labeling of 20 reaches it, p .048 at top-5% and
+  top-10%; all three seeds above the single-run 95th percentile). Of the
+  lane-carrying controls the speed-ablated one clears at top-5% and is
+  marginal at top-10% (p .095), and the speed-kept one does not clear at
+  either (p .14 / .19). The whole-panel rank correlation stays marginal for
+  all three arms (p .095) (RESULTS.md, nuPlan val14 zero-shot retrieval).
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,
@@ -226,8 +240,11 @@ tests/          fast invariants
   and all-fail ties are more common, were not run.
 - **Testlet grid.** UG = [-3, 3] spans >= 2 sigma_g for every fitted value (max 1.5; 4.6%
   truncation), so the sigma_g = 2.0 grid candidate is effectively 1.49.
-- **Encoder.** Shipped as out-of-fold predictions; not retrainable from this release (raw rollouts are
-  not redistributable). nuPlan zero-shot inputs ship as `data/nuplan/val14_zeroshot.npz`.
+- **Encoder.** Shipped as out-of-fold predictions; the training harness, the Bench2Drive scene
+  tensors and every launcher of record are in `encoder/` (`encoder/README.md`; the nuPlan-derived
+  tensors are not shipped). nuPlan zero-shot inputs ship as `data/nuplan/val14_zeroshot.npz`. The
+  lane-free encoder became canonical after the lane-carrying one had been scored on every table,
+  i.e. it was selected on the same panel these numbers are reported on.
 - **2PL baselines** use log a ~ N(0, .5^2) and are prior-shrunk at K_cal = 4 (`run_model_adequacy.py`).
 
 ## Citation

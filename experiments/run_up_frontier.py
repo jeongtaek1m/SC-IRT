@@ -101,7 +101,7 @@ def run(seeds):
                         'Total-Fisher': pirt(b2, a2, yy, orders['tf'][:B]),
                         'Marginal-Fisher': pirt(b2, a2, yy, orders['mf'][:B]),
                         'tinyBenchmarks': pirt(b2, a2, yy, kmeans_anchors(a2, b2, B, n)),
-                        'metabench': pirt(b2, a2, yy, metabench_order(a2, b2, B, n)),
+                        'metabench': pirt(b2, a2, yy, metabench_order(a2, b2, f2['th'], B, n)),
                         'Fluid': pirt(b2, a2, yy, orders['fluid'][:B]),
                         'ATDrive': readout(bank, yy, orders['ours'][:B]),
                     }
@@ -168,7 +168,9 @@ def main():
     macro = np.mean([np.mean(E[K]['ATDrive'][B]) for K in KCALS for B in BGRID])
     for (K, B, ref) in ((4, 30, .0450), (4, 55, .0332), (8, 110, .0202), (12, 55, .0231), (12, 165, .0081)):
         assert abs(np.mean(E[K]['ATDrive'][B]) - ref) < .002, (K, B, np.mean(E[K]['ATDrive'][B]))
-    assert abs(np.mean(E[4]['Fluid'][30]) - .0653) < .002
+    assert abs(np.mean(E[4]['Fluid'][30]) - .0541) < .002   # .0653 before the damped-MAP fix:
+    #   the undamped Newton diverged on one evaluation (seed 9, K_cal 4, planner 11) and that
+    #   single cell set the column.  atdrive.baselines.theta_newton now carries Fluid's own safeguards.
     assert abs(np.mean(E[12]['Random-strat + IRT'][55]) - .0332) < .002
     assert abs(np.mean(E[4]['Random (IRT-free)'][30]) - .0623) < .002
     macro = np.mean([np.mean(E[K]['ATDrive'][B]) for K in KCALS for B in BGRID])

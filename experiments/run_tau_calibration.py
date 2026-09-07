@@ -22,8 +22,17 @@ left-out planners and t in [10, bank size] (results/risk_cal.json), so that
 rather than a cost target. The merge also prints a reliability diagnostic of
 raw vs scaled R1 against the realised error, by deciles of raw R1.
 
+ATDRIVE_OFFICIAL_ORDERS=1 runs the Fluid and metabench LOO tracks on the orders
+those methods' OWN code selects (experiments/official/orders.py, the
+leave-one-planner-out cells of `orders.loo_order`) instead of the
+re-implementations; the readout, the risk definition and the tau grid are
+untouched and the output goes to results/{tau_loo,tau_hat,risk_cal}_official*.json,
+so the thresholds of record are not overwritten. ATDrive, Random and
+Random-strat are unchanged (they are not published methods' orders).
+
     python experiments/run_tau_calibration.py --seeds 0 4   # shard (~25 min each, GPU)
     python experiments/run_tau_calibration.py --merge       # tau_hat.json + summary
+    ATDRIVE_OFFICIAL_ORDERS=1 python experiments/run_tau_calibration.py --seeds 0 4
 """
 import argparse
 import glob
@@ -43,6 +52,12 @@ from atdrive.curves import marginal_curves
 from atdrive.bayes import Bank, bank_from_fit, track, stop_at
 from atdrive.acquisition import r1_traj
 from atdrive.baselines import fluid_order, metabench_order, stratified_order
+
+OFFICIAL = os.environ.get('ATDRIVE_OFFICIAL_ORDERS', '0') == '1'   # Fluid / metabench from their own code
+TAG = '_official' if OFFICIAL else ''
+if OFFICIAL:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from official.orders import loo_order, padded
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
@@ -85,9 +100,15 @@ def run(seeds):
                 bank = (Bank(marginal_curves(f1['b'][bi], np.full(n, 1e-9)), typ[bi], f0['sigma_g']) if POINT_CURVES
                         else bank_from_fit(f1, bi, typ, sigma_g=0.0 if NO_TESTLET else f0['sigma_g']))
                 a, b = f2['a'][bi], f2['b'][bi]
+                if OFFICIAL:            # the official code's own orders on this LOO cell, padded to the bank
+                    fl = padded(loo_order('fluid', seed, Jc, int(j), n_bank=n)['order'], n)[:T]
+                    mb = padded(loo_order('metabench', seed, Jc, int(j), n_bank=n)['order'], n)[:T]
+                else:
+                    fl = fluid_order(a, b, yy, T)
+                    mb = [int(i) for i in metabench_order(a, b, f2['th'], T, n, prefix=True)]
                 orders = {'ATDrive': r1_traj(bank, yy, T),
-                          'Fluid': fluid_order(a, b, yy, T),
-                          'metabench': [int(i) for i in metabench_order(a, b, T, n)],
+                          'Fluid': fl,
+                          'metabench': mb,
                           'Random': [int(i) for i in np.random.RandomState(700 + seed * panel.J + j).permutation(n)[:T]],
                           'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(700 + seed * panel.J + j))[:T]]}
                 rec = {'seed': seed, 'J': Jc, 'j': int(j), 'SR': float(yy.mean()), 'sigma_g': f0['sigma_g']}
@@ -156,12 +177,12 @@ def main():
     args = ap.parse_args()
     OUT.mkdir(exist_ok=True)
     if args.merge:
-        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'tau_loo_*_*.json')))], [])
+        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / f'tau_loo{TAG}_[0-9]*_[0-9]*.json')))], [])
         if not recs:                              # no shards (a clone): re-assert the anchors from the results of record
-            C, TAU = json.load(open(OUT / 'risk_cal.json')), json.load(open(OUT / 'tau_hat.json'))
+            C, TAU = json.load(open(OUT / f'risk_cal{TAG}.json')), json.load(open(OUT / f'tau_hat{TAG}.json'))
             seeds = sorted(set(int(k.split('|')[0]) for k in C))
             assert len(seeds) == R_DRAWS
-            print(f'no tau_loo shards in {OUT}: risk_cal.json / tau_hat.json of record read back (run --seeds to recompute)')
+            print(f'no tau_loo{TAG} shards in {OUT}: risk_cal{TAG}.json / tau_hat{TAG}.json read back (run --seeds to recompute)')
             if NO_TESTLET or POINT_CURVES:
                 return
             for J, v in ((4, 1.97), (8, 2.12), (12, 1.95)):
@@ -173,19 +194,22 @@ def main():
     elif args.seeds:
         lo, hi = args.seeds
         recs = run(range(lo, hi))
-        json.dump(recs, open(OUT / f'tau_loo_{lo}_{hi}.json', 'w'))
+        json.dump(recs, open(OUT / f'tau_loo{TAG}_{lo}_{hi}.json', 'w'))
         print('shard saved; run with --merge after all shards')
         return
     else:
         recs = run(range(R_DRAWS))
-        json.dump(recs, open(OUT / 'tau_loo_0_16.json', 'w'))
+        json.dump(recs, open(OUT / f'tau_loo{TAG}_0_16.json', 'w'))
+    if OFFICIAL:
+        print('\nOFFICIAL-ORDER ARM: the Fluid and metabench LOO tracks use those methods\' own orders '
+              '(experiments/official/orders.py); ATDrive, Random and Random-strat are unchanged.')
     TAU, summary = select(recs)
-    json.dump(TAU, open(OUT / 'tau_hat.json', 'w'))
+    json.dump(TAU, open(OUT / f'tau_hat{TAG}.json', 'w'))
     assert len(set(r['seed'] for r in recs)) == R_DRAWS
-    print('tau_hat.json written')
+    print(f'tau_hat{TAG}.json written')
     C = risk_scale(recs)
-    json.dump(C, open(OUT / 'risk_cal.json', 'w'))
-    print('risk_cal.json written')
+    json.dump(C, open(OUT / f'risk_cal{TAG}.json', 'w'))
+    print(f'risk_cal{TAG}.json written')
     if NO_TESTLET or POINT_CURVES:
         return                                    # the anchors pin the paper's panel, not the switched arms
     for J, v in ((4, 1.97), (8, 2.12), (12, 1.95)):

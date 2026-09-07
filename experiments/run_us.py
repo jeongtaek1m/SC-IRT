@@ -8,12 +8,20 @@ Rows
   planner-only null (b = 0), eight descriptor baselines scored through a
   two-stage Ridge plug-in (b_hat ~ x on the calibration types, predict the
   evaluation types), the response-calibrated oracle ceiling, and the
-  RelGraph R2 scene encoder from the shipped per-run out-of-fold predictions
-  (three independent runs summarised as metric mean +- SD; prediction
-  ensembling is banned).
+  RelGraph R2-noLane scene encoder from the shipped per-run out-of-fold
+  predictions (three independent runs summarised as metric mean +- SD;
+  prediction ensembling is banned).
+
+THE ENCODER OF RECORD HAS NO LANE GRAPH. R2-noLane is the same R2Net with
+the whole map side of the graph removed before any tensor is built (no lane
+tokens, no lane_feat, no L2L edges, no A2L candidates, no route_rel); ego,
+command and agents remain. The lane-carrying R2 that earlier releases shipped
+is now a control: it is the first row of the structural-control block below,
+"R2, lane graph kept", next to noroute / sroute / sa2l / nospeed, and the speed
+ablation of the encoder of record itself (nlnospeed, relgraph_r2nolane_nospeed_s*.npz).
 
 Anchors: null .699/.214; kinematics rho +.497; hand-crafted risk rho +.533;
-RelGraph mean AUROC .751 / rho +.490.
+R2-noLane mean AUROC .761 / rho +.545 (lane-carrying control .751 / +.490).
 """
 import json
 import os
@@ -36,8 +44,16 @@ np.random.seed(0)
 torch.manual_seed(0)
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 RUNS = (0, 1, 2)
-CONTROLS = {'noroute': 'R2 w/o route relation', 'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled',
-            'nospeed': 'R2, speed channel removed'}
+CONTROLS = {'lane': 'R2, lane graph kept', 'noroute': 'R2 w/o route relation',                 # 'lane' = the encoder earlier releases shipped
+            'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled',
+            'nospeed': 'R2, speed channel removed', 'nlnospeed': 'R2-noLane, speed channel removed'}
+
+
+def ctrl_npz(c, s):
+    """The control npz of run s: the lane-carrying model keeps its own file name."""
+    if c == 'nlnospeed':                                   # the speed ablation of the encoder of record
+        return DATA / 'encoder' / f'relgraph_r2nolane_nospeed_s{s}.npz'
+    return DATA / 'encoder' / (f'relgraph_r2_s{s}.npz' if c == 'lane' else f'relgraph_r2_{c}_s{s}.npz')
 
 
 def load_descriptor_arms():
@@ -84,10 +100,10 @@ def main():
     Y0, MK = panel.dense()
     N = len(panel.allr)
     sn, allr = panel.sn, panel.allr
-    RELG = {s_: np.load(DATA / 'encoder' / f'relgraph_r2_s{s_}.npz', allow_pickle=True) for s_ in RUNS}
-    CTRL = {c: {s_: np.load(DATA / 'encoder' / f'relgraph_r2_{c}_s{s_}.npz', allow_pickle=True) for s_ in RUNS}
-            for c in CONTROLS if all((DATA / 'encoder' / f'relgraph_r2_{c}_s{s_}.npz').exists() for s_ in RUNS)}
-    ROWS = list(arms) + ['Oracle (resp-calibrated C)'] + [f'RelGraph R2 s{s_}' for s_ in RUNS] \
+    RELG = {s_: np.load(DATA / 'encoder' / f'relgraph_r2nolane_s{s_}.npz', allow_pickle=True) for s_ in RUNS}
+    CTRL = {c: {s_: np.load(ctrl_npz(c, s_), allow_pickle=True) for s_ in RUNS}
+            for c in CONTROLS if all(ctrl_npz(c, s_).exists() for s_ in RUNS)}
+    ROWS = list(arms) + ['Oracle (resp-calibrated C)'] + [f'RelGraph R2-noLane s{s_}' for s_ in RUNS] \
         + [f'{CONTROLS[c]} s{s_}' for c in CTRL for s_ in RUNS]
     POOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []} for a in ROWS}
     NULLP = {'p': [], 'y': [], 'rp': [], 'ro': []}
@@ -146,19 +162,20 @@ def main():
         print(f'{name:34s} AUROC {auc:.3f} ({auc - auc0:+.3f})  MAE {mae:.3f} '
               f'({1 - mae / mae0:+.1%})  rho {rho:+.3f}')
         results[name] = {'auroc': auc, 'mae': mae, 'rho': rho}
-    rg = [results[f'RelGraph R2 s{s_}'] for s_ in RUNS]
+    rg = [results[f'RelGraph R2-noLane s{s_}'] for s_ in RUNS]
     sd = lambda k: np.std([r[k] for r in rg], ddof=1)
     mn = lambda k: np.mean([r[k] for r in rg])
-    print('RelGraph R2 scene encoder (3 runs)  AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}'.format(
+    print('RelGraph R2-noLane scene encoder (3 runs, lane-free — the encoder of record)  AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}'.format(
         mn('auroc'), sd('auroc'), mn('mae'), sd('mae'), mn('rho'), sd('rho')))
     rho_hc = results['Hand-crafted risk (cmdkin+gtrisk)']['rho']
     d1 = [r['rho'] - rho_hc for r in rg]
-    print(f'Delta rho (RelGraph - hand-crafted risk), per run: {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
+    print(f'Delta rho (R2-noLane - hand-crafted risk), per run: {np.mean(d1):+.3f}+-{np.std(d1, ddof=1):.3f}')
     if CTRL:
         print('\n===== Table 3A(b) — RelGraph controls (same architecture, recipe and seeds; only the graph tensors or the ego channels differ) =====')
+        print('the first row is the lane-carrying encoder earlier releases shipped; Delta rho is paired by seed against R2-noLane')
         for c in CTRL:
             rc = [results[f'{CONTROLS[c]} s{s_}'] for s_ in RUNS]
-            print('{:44s} AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}   Delta rho vs R2 (paired by seed) {:+.3f}+-{:.3f}'.format(
+            print('{:44s} AUROC {:.3f}+-{:.3f}  MAE {:.3f}+-{:.3f}  rho {:+.3f}+-{:.3f}   Delta rho vs R2-noLane (paired by seed) {:+.3f}+-{:.3f}'.format(
                 CONTROLS[c], np.mean([r['auroc'] for r in rc]), np.std([r['auroc'] for r in rc], ddof=1),
                 np.mean([r['mae'] for r in rc]), np.std([r['mae'] for r in rc], ddof=1),
                 np.mean([r['rho'] for r in rc]), np.std([r['rho'] for r in rc], ddof=1),
@@ -171,8 +188,9 @@ def main():
     assert abs(auc0 - 0.699) < 0.002 and abs(mae0 - 0.214) < 0.002
     assert abs(k['auroc'] - 0.752) < 0.002 and abs(k['mae'] - 0.180) < 0.002 and abs(k['rho'] - 0.497) < 0.005
     assert abs(h['auroc'] - 0.758) < 0.002 and abs(h['mae'] - 0.175) < 0.002 and abs(h['rho'] - 0.533) < 0.005
-    assert abs(mn('auroc') - 0.751) < 0.003 and abs(mn('mae') - 0.192) < 0.003 and abs(mn('rho') - 0.490) < 0.005
-    for c, v in (('noroute', 0.520), ('sroute', 0.512), ('sa2l', 0.501), ('nospeed', 0.500)):
+    assert abs(mn('auroc') - 0.761) < 0.003 and abs(mn('mae') - 0.181) < 0.003 and abs(mn('rho') - 0.545) < 0.005
+    for c, v in (('lane', 0.490), ('noroute', 0.520), ('sroute', 0.512), ('sa2l', 0.501), ('nospeed', 0.500),
+                 ('nlnospeed', 0.547)):
         if c not in CTRL:                              # its npz is not in this checkout
             continue
         assert abs(np.mean([results[f'{CONTROLS[c]} s{s_}']['rho'] for s_ in RUNS]) - v) < 0.005, c

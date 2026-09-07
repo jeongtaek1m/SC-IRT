@@ -1,0 +1,1505 @@
+#!/usr/bin/env python3
+"""R2 — the full relational-graph rung of the R-ladder, and its two frozen negative controls.
+
+FOUR ARMS, ONE ARCHITECTURE.  Every arm below is the SAME R2Net with the same parameter count
+and the same training recipe; they differ only in what the graph tensors contain, so a
+difference between them cannot be a capacity difference.
+
+  R2           (default)                    ego + command, agents, lanes + lane_feat, L2L edges,
+                                            A2L with a2l_rel, route_rel masked by route_rel_valid
+  R2-noRoute   --ablate-route               identical, route_rel masked out ENTIRELY
+  S-route      --shuffle route --shuffle-seed K     identical, route correspondence destroyed
+  S-a2l        --shuffle a2l   --shuffle-seed K     identical, A2L correspondence replaced by a
+                                            geometry-matched one with RECOMPUTED relations
+
+Everything outside the model input/architecture is r0_ego.py: split construction, gold targets,
+the IRT loss, the training recipe, both frozen metrics and the output format all come from that
+harness (imported, not re-typed).  The ego branch is r0_ego.build(...).phi plus a verbatim copy
+of r0_ego.SeqNet.forward's [mean, max, softmin, std] pooling, so R2 - R0 is exactly the graph.
+
+The graph is a per-WINDOW object; B2D's gold is per-ROUTE.  So the window vectors of a route are
+pooled with the same distribution pooling before the head.  NavSim is one window per scored scene,
+so that pool is over a single element (degenerate, hence the eps in dist_pool).
+
+────────────────────────────────────────────────────────────────────────────────────────────
+THE CONTROLS.  PROTOCOL_R.md section 2 was AMENDED (2026-08-26, before any R1/R2 number was
+seen) and the draft control this file used to implement was SCRAPPED.  The scrapped one permuted
+a2l_idx while leaving a2l_rel in place, which hands the model lane token l7 carrying the relation
+vector computed for l1 — an internally INCONSISTENT graph.  A reviewer then says the drop comes
+from geometrically inconsistent edge attributes, not from the necessity of correct
+correspondence, and the control collapses exactly when R2 wins big.  Neither control below can
+be attacked that way: every relation vector the model sees is the true geometry of the lane
+token it is attached to.
+
+S-route (PRIMARY control) — `--shuffle route`
+  A2L, lane geometry, lane_feat and L2L are left BYTE-FOR-BYTE untouched.  The route_rel ROWS are
+  permuted across lanes, within a window, within the junction / non-junction class, each lane's
+  whole 5-channel row moving as ONE unit (never channel by channel: that would manufacture route
+  feature combinations that do not exist and inject noise instead of breaking correspondence).
+  Windows with route_rel_valid = False are skipped — there is no route there to destroy, and
+  their route_rel is all-zero anyway, so the permutation is a no-op by construction.
+  No inconsistent edge attribute can arise, because route_rel is a property of a LANE, not the
+  geometry of an agent-lane pair.  The question it attacks directly: is the correct
+  Agent-Lane-Route wiring necessary, or does the route feature DISTRIBUTION alone carry the gain?
+
+S-a2l (SECONDARY control) — `--shuffle a2l`
+  Each agent's candidates are reassigned to different lanes AND the relation vector is RECOMPUTED
+  for the new lane from the stored polyline.  Per candidate slot with true lane l_true:
+      l' = argmin_l D( r(a, l), r(a, l_true) )
+      over l in the same window, same junction/non-junction class, EXCLUDING every lane in that
+      agent's own true candidate set and every lane already given to that agent.
+  The exclusion of the agent's WHOLE true set (not just l_true, which is all the protocol text
+  literally requires) is deliberate and is the difference between a control and a no-op: the
+  model reads the K axis as a SET through a softmax, so if l' were allowed to be another of the
+  agent's own true candidates the "shuffled" set could come back a permutation of itself
+  carrying its own true relations, and nothing would have been destroyed.
+  The input is ALWAYS the recomputed r(a, l'), never the old a2l_rel moved across.
+
+  D — the distance between relation vectors, stated explicitly because the protocol demands it:
+      D(r, r0)^2 = (d_lat - d_lat0)^2 + (d_lon - d_lon0)^2
+                 + PSI_SCALE^2 * [ (cos dpsi - cos dpsi0)^2 + (sin dpsi - sin dpsi0)^2 ]
+      metres on the two translational channels; the heading term is the CHORD distance on the
+      unit circle, |(cos, sin) - (cos0, sin0)| = 2 |sin(dpsi/2)|, converted to metres by
+      PSI_SCALE = 5 m per unit chord.  So a 30 deg heading error costs 2.6 m, 90 deg costs 7.1 m
+      and a full reversal costs 10 m — i.e. a same-heading lane a couple of metres to the side
+      always beats an opposite-heading lane at the same place.  Using the chord rather than the
+      angle keeps D a metric on the stored representation and never has to unwrap an angle.
+
+  THE LOCALITY BOUND, and why argmin D alone is not enough.  The pool is additionally restricted
+  to lanes whose polyline passes within A2L_ALT_RADIUS = 15 m of the agent's anchor.  This is not
+  decoration: measured on B2D without it, argmin D moves the median candidate from 3.4 m to
+  21.9 m from its agent, with a 116 m tail and 58% of replacements beyond 15 m.  The reason is
+  that (d_lat, d_lon) is a LANE-FRAME coordinate pair, not a position: when the agent's
+  projection clamps to a lane's END, d_lat keeps only the component perpendicular to that last
+  tangent and d_lon saturates at the lane's arclength, so an agent 100 m beyond the end of a
+  co-linear lane has d_lat ~ 0, a small d_lon gap and therefore a tiny D.  The extractor never
+  meets those lanes because it forms candidates only within A2L_RADIUS = 5 m; the replacement
+  search has to be told the same thing.  15 m is three to four lane widths — the same local road
+  complex, a genuinely different lane with different topology and different route relations —
+  and it sits well inside the 45 m that PROTOCOL_R section 2 names as the point where the
+  control stops being interpretable.  Both distances are reported before and after.
+
+  Preserved:  candidate degree per agent (elementwise), the global candidate-count distribution,
+              junction class of every candidate, local geometric plausibility, relation marginals
+  Destroyed:  lane identity, lane topology correspondence, lane-route correspondence
+  Reported (PROTOCOL_R section 2 requires all of these, and S-a2l is read as a secondary
+  sensitivity analysis if any of them looks bad):  replacement success rate, same-lane
+  replacement rate (must be 0), d_lat / d_lon / dpsi change distributions, agent candidate degree
+  before/after, lane IN-degree before/after, and the agent -> assigned-lane distance before and
+  after, because a control that moves an agent onto a lane 45 m away is a different experiment.
+
+Both controls: shuffle seeds 0, 1, 2, fixed.  Both verify their invariants IN CODE and print
+them, and both print positive proof that the correspondence actually changed.
+
+Usage:
+  r2_graph.py --domain b2d|navsim --gpu G --seed S
+  r2_graph.py --domain b2d|navsim --gpu G --seed S --ablate-route
+  r2_graph.py --domain b2d|navsim --gpu G --seed S --shuffle route --shuffle-seed K
+  r2_graph.py --domain b2d|navsim --gpu G --seed S --shuffle a2l   --shuffle-seed K
+  r2_graph.py --domain b2d|navsim --gpu G --shuffle a2l --shuffle-seed 0 --verify-only
+"""
+import argparse, math, os, re, sys
+
+import numpy as np
+
+RG = '/data2/jeongtae/relgraph'
+sys.path.insert(0, RG)
+import r0_ego                                     # reference harness — splits, gold, recipe
+import b2d_earlystop as es                        # the ONE B2D checkpoint-selection rule
+
+# ── frozen channel symbols (KEYS.md). NEVER a numeric index. ──────────────────
+LN_X, LN_Y, LN_DX, LN_DY = 0, 1, 2, 3             # lanes (N,M,P,4)
+LF_JUNCTION, LF_ARCLEN = 0, 1                     # lane_feat (N,M,2)
+L2L_SUCC, L2L_LEFT, L2L_RIGHT, L2L_OPP = 0, 1, 2, 3
+A2L_DLAT, A2L_DLON, A2L_COS, A2L_SIN = 0, 1, 2, 3
+R_ON_ROUTE, R_REACH, R_SHARES, R_XSECT, R_ORDER = 0, 1, 2, 3, 4
+AG_DX, AG_DY, AG_COS, AG_SIN, AG_SPEED, AG_HLEN, AG_HWID, AG_ISVEH = 0, 1, 2, 3, 4, 5, 6, 7
+EGO_SPEED, EGO_COS, EGO_SIN = r0_ego.EGO_SPEED, r0_ego.EGO_COS, r0_ego.EGO_SIN
+
+M, P, A, K, T = 128, 10, 48, 8, 12
+N_SEG = P - 1                                     # the P-th dx_seg/dy_seg slot is ZERO PADDING
+N_LANE_CH, N_LF, N_RR, N_A2L, N_AG = 4, 2, 5, 4, 8
+# section 19.1 Z4: agent channel names (KEYS.md order) for --drop-agent-channels, and the
+# collision-only B2D panel for --target collision (transfer/zs/build_zs_targets.py)
+AG_NAMES = ['dx', 'dy', 'cos', 'sin', 'speed', 'hlen', 'hwid', 'isveh']
+ZS_COLLISION_MAT = f'{RG}/transfer/zs/b2d_e2e16_collision_matrix.csv'
+ANCHOR_T = 3                                      # ego-anchor frame, anchor = t 3
+NIN = r0_ego.NIN
+DT = r0_ego.DT
+
+# message-passing relations: the 4 stored types + PREDECESSOR as the SUCCESSOR transpose
+REL_SUCC, REL_PRED, REL_LEFT, REL_RIGHT, REL_OPP = 0, 1, 2, 3, 4
+N_REL = 5
+EA = 768                                          # augmented edge slots; asserted below
+
+PSI_SCALE = 5.0                                   # metres per unit heading-chord, see docstring
+A2L_ALT_RADIUS = 15.0                             # S-a2l locality bound, m; see docstring
+A2L_RADIUS = 5.0                                  # the extractor's own candidate radius (KEYS.md)
+
+
+# ── data ─────────────────────────────────────────────────────────────────────
+class G:
+    """Frozen tensors, on GPU, fp16. Nothing here is ever written back to disk."""
+    pass
+
+
+def build_aug_edges(src, dst, typ, em):
+    """LEFT/RIGHT are stored in BOTH directions already (verified: every LEFT edge has its
+    reverse RIGHT edge), so they are used as stored. SUCCESSOR is one-way, so PREDECESSOR is
+    its transpose (KEYS.md). OPPOSITE is only partly symmetric in the files, so it is
+    symmetrised as a deduplicated undirected relation."""
+    N = len(src)
+    os_ = np.full((N, EA), -1, np.int16)
+    od = np.full((N, EA), -1, np.int16)
+    orl = np.full((N, EA), -1, np.int8)
+    om = np.zeros((N, EA), bool)
+    worst = 0
+    for n in range(N):
+        e = em[n]
+        s = src[n][e].astype(np.int64); t = dst[n][e].astype(np.int64); ty = typ[n][e]
+        S, D, R = [], [], []
+        m0 = ty == L2L_SUCC
+        S += [s[m0], t[m0]]; D += [t[m0], s[m0]]
+        R += [np.full(m0.sum(), REL_SUCC), np.full(m0.sum(), REL_PRED)]
+        for tt, rr in ((L2L_LEFT, REL_LEFT), (L2L_RIGHT, REL_RIGHT)):
+            mm = ty == tt
+            S.append(s[mm]); D.append(t[mm]); R.append(np.full(mm.sum(), rr))
+        m3 = ty == L2L_OPP
+        a, b = s[m3], t[m3]
+        key = np.unique(np.minimum(a, b) * M + np.maximum(a, b))
+        lo, hi = key // M, key % M
+        S.append(np.r_[lo, hi]); D.append(np.r_[hi, lo])
+        R.append(np.full(2 * len(key), REL_OPP))
+        S = np.concatenate(S); D = np.concatenate(D); R = np.concatenate(R)
+        worst = max(worst, len(S))
+        assert len(S) <= EA, f'augmented edge overflow {len(S)} > {EA}'
+        os_[n, :len(S)] = S; od[n, :len(S)] = D; orl[n, :len(S)] = R; om[n, :len(S)] = True
+    return os_, od, orl, om, worst
+
+
+def window_ego_feats(ego, cmd):
+    """VERBATIM the per-step ego features r0_ego.build_navsim builds, applied window-locally.
+    [speed, acc, yawrate, |acc|, |yawrate|, cmd(4)]"""
+    sp = ego[:, :, EGO_SPEED]
+    psi = np.arctan2(ego[:, :, EGO_SIN], ego[:, :, EGO_COS])
+    acc = np.gradient(sp, DT, axis=1)
+    yr = np.concatenate([np.zeros((len(sp), 1), np.float32),
+                         r0_ego.wrap(np.diff(psi, axis=1)) / DT], 1)
+    return np.concatenate([sp[..., None], acc[..., None], yr[..., None],
+                           np.abs(acc)[..., None], np.abs(yr)[..., None],
+                           np.repeat(cmd[:, None, :], T, 1)], -1).astype(np.float32)
+
+
+# ══ S-route ══════════════════════════════════════════════════════════════════
+def shuffle_route(route_rel, route_valid, lane_mask, lane_feat, seed):
+    """PROTOCOL_R section 2, S-route.  Permute route_rel ROWS across lanes, within a window,
+    within the junction / non-junction class.  The whole 5-channel row moves as one unit.
+    route_rel_valid = False windows are skipped (no route to destroy; their rows are all zero).
+
+    Returns (new_route_rel, came_from) where came_from[n, l] is the lane index whose row now
+    sits at slot l (itself where nothing moved).  Nothing else in the file is read or written."""
+    rng = np.random.default_rng(seed)
+    out = route_rel.copy()                          # fp16 -> fp16, bit-exact row moves
+    junc = np.asarray(lane_feat[:, :, LF_JUNCTION], np.float32) > 0.5
+    came = np.broadcast_to(np.arange(route_rel.shape[1]), route_rel.shape[:2]).copy()
+    for n in range(len(route_rel)):
+        if not route_valid[n]:
+            continue
+        for cls in (False, True):
+            ids = np.where(lane_mask[n] & (junc[n] == cls))[0]
+            if len(ids) > 1:
+                src = rng.permutation(ids)
+                out[n, ids] = route_rel[n, src]
+                came[n, ids] = src
+    return out, came
+
+
+def verify_route_shuffle(old, new, came, route_valid, lane_mask, lane_feat, tag):
+    """A control whose route feature DISTRIBUTION shifted is not a correspondence control."""
+    print(f'--- S-route invariants [{tag}] ---', flush=True)
+    junc = np.asarray(lane_feat[:, :, LF_JUNCTION], np.float32) > 0.5
+    o = np.asarray(old, np.float32); nw = np.asarray(new, np.float32)
+    lm = lane_mask
+    rv = route_valid.astype(bool)
+    v = lm & rv[:, None]                              # lanes the control can touch
+    moved = came != np.arange(old.shape[1])[None, :]
+
+    same_invalid = np.array_equal(old[~rv], new[~rv])
+    print(f'  route_rel_valid=False windows untouched (bitwise)     : {same_invalid}  '
+          f'({int((~rv).sum())} windows)', flush=True)
+    pad_ok = np.array_equal(old[~lm], new[~lm])
+    print(f'  padding lane slots untouched (bitwise)                : {pad_ok}', flush=True)
+
+    # the permutation is a bijection within (window, class): the row multiset must be identical
+    bad = sum(int(not np.array_equal(np.sort(o[n, ids], 0), np.sort(nw[n, ids], 0)))
+              for n in np.where(rv)[0]
+              for ids in (np.where(lm[n] & (junc[n] == c))[0] for c in (False, True))
+              if len(ids))
+    print(f'  per-(window,class) row multiset preserved exactly     : {bad == 0}  '
+          f'({bad} violations)', flush=True)
+    jsrc = np.take_along_axis(junc, came, 1)
+    nviol_j = int((jsrc[v] != junc[v]).sum())
+    print(f'  every row stays inside its junction class             : {nviol_j == 0}  '
+          f'({nviol_j} violations)', flush=True)
+    print(f'  destination is always a VALID lane                    : '
+          f'{int((v & ~np.take_along_axis(lm, came, 1)).sum())} violations', flush=True)
+
+    names = ['on_route_corridor', 'route_reachable_3hop', 'shares_downstream',
+             'polyline_intersects_route', 'route_order_norm']
+    print('  channel marginals over touchable lanes    old -> new', flush=True)
+    for c, nm in enumerate(names):
+        print(f'    {nm:26s} mean {o[:, :, c][v].mean():+.6f} -> {nw[:, :, c][v].mean():+.6f}   '
+              f'sd {o[:, :, c][v].std():.6f} -> {nw[:, :, c][v].std():.6f}', flush=True)
+
+    # PROOF the correspondence actually changed
+    onr_o = o[:, :, R_ON_ROUTE] > 0.5
+    onr_n = nw[:, :, R_ON_ROUTE] > 0.5
+    n_onr = int(onr_o[v].sum())
+    kept = int((onr_o & onr_n)[v].sum())
+    # expected retention under a UNIFORM permutation within each (window, class) group: each of
+    # the group's n_onr on-route lanes draws its new row uniformly from the group's n rows.  The
+    # right null is this, NOT the global on_route rate -- the permutation is deliberately
+    # confined to the group, and on-route lanes are concentrated inside one class of one window.
+    exp = sum((int((onr_o[n] & g).sum()) ** 2) / max(int(g.sum()), 1)
+              for n in np.where(rv)[0]
+              for g in (lm[n] & (junc[n] == c) for c in (False, True)) if g.any())
+    print(f'  lanes whose route_rel row came from another lane      : '
+          f'{float(moved[v].mean()):.4f}  ({int(moved[v].sum())} of {int(v.sum())})', flush=True)
+    print(f'  on_route_corridor lanes still on_route after          : '
+          f'{kept}/{n_onr} = {kept / max(n_onr, 1):.4f}   vs {exp / max(n_onr, 1):.4f} expected '
+          f'under a uniform within-(window,class) permutation, vs {float(onr_o[v].mean()):.4f} '
+          f'the global on_route rate', flush=True)
+    row_same = np.all(np.isclose(o, nw), -1)
+    print(f'  lanes whose 5-channel row VALUE is unchanged          : '
+          f'{float(row_same[v].mean()):.4f}   (high is EXPECTED and harmless: most lanes carry '
+          f'the identical all-zero off-route row, so permuting identical rows is invisible; the '
+          f'row that carries the signal is the on_route one above)', flush=True)
+    assert same_invalid and pad_ok and bad == 0 and nviol_j == 0
+    print('  A2L / lanes / lane_feat / L2L untouched               : True (never written)',
+          flush=True)
+
+
+# ══ S-a2l ════════════════════════════════════════════════════════════════════
+def window_rel(lanes_n, lmask_n, apt, apsi, sgn_lat, sgn_psi):
+    """Recompute the A2L relation of every live agent against EVERY valid lane of one window,
+    from the stored polyline alone — no map API.  Exactly the extractor's definition:
+
+      segments are lanes[..., :P-1, :]  (the P-th dx_seg/dy_seg slot is zero padding)
+      the agent's ANCHOR position is projected onto the segments; the nearest one is used
+      d_lat  signed perpendicular offset from that segment (left positive)
+      d_lon  arclength along the lane MINUS s*, the arclength of the lane point closest to the
+             ego anchor — the same origin KEYS.md mandates for route_order_norm, so d_lon > 0
+             means the agent is further along that lane than the ego is
+      dpsi   agent BODY yaw - lane tangent yaw, stored as (cos, sin)
+
+    sgn_lat / sgn_psi are the per-domain handedness calibration measured in calibrate_signs().
+
+    -> rel (n_a, M, 4), dist (n_a, M) point distance to the polyline; invalid lanes get inf."""
+    lp = np.asarray(lanes_n, np.float64)
+    m_ = len(lp)
+    segA = lp[:, :N_SEG, LN_X:LN_Y + 1]                       # (M, S, 2)
+    seg = lp[:, :N_SEG, LN_DX:LN_DY + 1]                      # (M, S, 2)
+    seg_len = np.hypot(seg[..., 0], seg[..., 1])              # (M, S)
+    seg_th = np.arctan2(seg[..., 1], seg[..., 0])
+    seg_s0 = np.concatenate([np.zeros((m_, 1)), np.cumsum(seg_len, 1)[:, :-1]], 1)
+    L2 = np.maximum((seg * seg).sum(-1), 1e-12)
+    ar = np.arange(m_)
+
+    # s* : the point of each lane closest to the EGO anchor, which is the origin of this frame
+    t0 = np.clip((-segA * seg).sum(-1) / L2, 0.0, 1.0)        # (M, S)
+    p0 = segA + t0[..., None] * seg
+    k0 = np.hypot(p0[..., 0], p0[..., 1]).argmin(1)
+    s_star = seg_s0[ar, k0] + t0[ar, k0] * seg_len[ar, k0]    # (M,)
+
+    w = apt[:, None, None, :] - segA[None]                    # (n_a, M, S, 2)
+    t = np.clip((w * seg[None]).sum(-1) / L2[None], 0.0, 1.0)
+    dv = w - t[..., None] * seg[None]                         # agent - projection
+    dd = np.hypot(dv[..., 0], dv[..., 1])                     # (n_a, M, S)
+    k = dd.argmin(2)                                          # (n_a, M)
+
+    ia = np.arange(len(apt))[:, None]
+    im = ar[None, :]
+    th = seg_th[im, k]
+    dvk = dv[ia, im, k]
+    dlat = sgn_lat * (-np.sin(th) * dvk[..., 0] + np.cos(th) * dvk[..., 1])
+    dlon = seg_s0[im, k] + t[ia, im, k] * seg_len[im, k] - s_star[None, :]
+    dpsi = sgn_psi * r0_ego.wrap(apsi[:, None] - th)
+    rel = np.stack([dlat, dlon, np.cos(dpsi), np.sin(dpsi)], -1)
+    dist = dd[ia, im, k]
+    bad = ~np.asarray(lmask_n, bool)[None, :]
+    rel = np.where(bad[..., None], 0.0, rel)
+    dist = np.where(bad, np.inf, dist)
+    return rel, dist
+
+
+def rel_dist(r, r0):
+    """D of the docstring: metres, with the heading chord scaled by PSI_SCALE m per unit."""
+    d = r - r0
+    return np.sqrt(d[..., A2L_DLAT] ** 2 + d[..., A2L_DLON] ** 2
+                   + PSI_SCALE ** 2 * (d[..., A2L_COS] ** 2 + d[..., A2L_SIN] ** 2))
+
+
+def agent_anchor(ag, n, live):
+    apt = np.asarray(ag[n, live, ANCHOR_T, LN_X:LN_Y + 1], np.float64)
+    apsi = np.arctan2(np.asarray(ag[n, live, ANCHOR_T, AG_SIN], np.float64),
+                      np.asarray(ag[n, live, ANCHOR_T, AG_COS], np.float64))
+    return apt, apsi
+
+
+def _recompute_err(d, rows, sgn_lat, sgn_psi):
+    """|recomputed r(a, l_true) - STORED a2l_rel| over a sample of windows."""
+    lanes, lmask = d['lanes'], d['lane_mask']
+    ai, ar_, amk = d['a2l_idx'], d['a2l_rel'], d['a2l_mask']
+    e = []
+    for n in rows:
+        live = np.nonzero(amk[n].any(1))[0]
+        if not len(live):
+            continue
+        apt, apsi = agent_anchor(d['agents'], n, live)
+        rel, _ = window_rel(lanes[n], lmask[n], apt, apsi, sgn_lat, sgn_psi)
+        for j, a in enumerate(live):
+            ks = np.nonzero(amk[n, a])[0]
+            lt = ai[n, a, ks].astype(np.int64)
+            e.append(np.abs(rel[j, lt] - np.asarray(ar_[n, a, ks], np.float64)))
+    e = np.concatenate(e) if e else np.zeros((1, N_A2L))
+    return float(e.max()), np.median(e, 0), np.percentile(e, 99, 0), len(e)
+
+
+def calibrate_signs(d, rows):
+    """The frozen B2D window tensor lives in CARLA's LEFT-handed world and is mirrored in y
+    relative to the NavSim tensor (that clash is recorded in both extractors, never patched).
+    A mirror flips the sign of BOTH d_lat and dpsi.  Rather than assume which side of it a given
+    file sits on, MEASURE it: recompute r(a, l_true) under each convention and keep the one that
+    reproduces the STORED a2l_rel.  The residual under the winning convention is the noise floor
+    of the whole control — the replacement relations are only as trustworthy as the recomputation
+    of the true ones, so it is printed next to the displacements the control actually makes."""
+    out = {}
+    best = None
+    for sl in (+1.0, -1.0):
+        for sp in (+1.0, -1.0):
+            err = _recompute_err(d, rows, sl, sp)
+            out[(sl, sp)] = err
+            if best is None or err[0] < out[best][0]:
+                best = (sl, sp)
+    return best, out
+
+
+def shuffle_a2l(d, seed, tag):
+    """PROTOCOL_R section 2, S-a2l.  Reassign every candidate to a geometry-matched DIFFERENT
+    lane and RECOMPUTE the relation vector for it.  -> (new_a2l_idx, new_a2l_rel, diag)."""
+    rng = np.random.default_rng(seed)
+    lanes, lmask, lfeat = d['lanes'], d['lane_mask'], d['lane_feat']
+    ag, amk = d['agents'], d['a2l_mask']
+    a2l_idx, a2l_rel = d['a2l_idx'], d['a2l_rel']
+    N = len(lanes)
+    junc_all = np.asarray(lfeat[:, :, LF_JUNCTION], np.float32) > 0.5
+
+    probe = np.unique(np.linspace(0, N - 1, min(N, 400)).astype(int))
+    (sgn_lat, sgn_psi), errs = calibrate_signs(d, probe)
+    print(f'--- S-a2l relation recomputation [{tag}] ---', flush=True)
+    print(f'  handedness calibration, MEASURED not assumed, on {len(probe)} probe windows:',
+          flush=True)
+    for (sl, sp), (mx, med, p99, ne) in sorted(errs.items(), key=lambda kv: kv[1][0]):
+        mark = ' <- used' if (sl, sp) == (sgn_lat, sgn_psi) else ''
+        print(f'    d_lat sign {sl:+.0f}  dpsi sign {sp:+.0f}   max |err| {mx:9.4f}   '
+              f'median/channel [{med[0]:.4f} {med[1]:.4f} {med[2]:.4f} {med[3]:.4f}]{mark}',
+              flush=True)
+    mx, med, p99, ne = errs[(sgn_lat, sgn_psi)]
+    print(f'  recomputed r(a, l_true) vs STORED a2l_rel over {ne} real candidates:', flush=True)
+    for c, nm in enumerate(['d_lat  (m) ', 'd_lon  (m) ', 'cos dpsi   ', 'sin dpsi   ']):
+        print(f'    {nm} median |err| {med[c]:.5f}   p99 {p99[c]:.5f}', flush=True)
+    print(f'  max |err| over all channels {mx:.5f}   <- fp16 storage of lanes / agents / a2l_rel '
+          f'is the floor here; the control below moves candidates by METRES', flush=True)
+
+    new_idx = a2l_idx.copy()
+    new_rel = a2l_rel.copy()
+    repl = np.zeros(a2l_idx.shape, bool)              # slots that actually got a new lane
+    n_slot = n_ok = n_same = n_nopool = 0
+    dchg, d_old, d_new = [], [], []
+    for n in range(N):
+        live = np.nonzero(amk[n].any(1))[0]
+        if not len(live):
+            continue
+        apt, apsi = agent_anchor(ag, n, live)
+        rel, dist = window_rel(lanes[n], lmask[n], apt, apsi, sgn_lat, sgn_psi)
+        valid = np.asarray(lmask[n], bool)
+        junc = junc_all[n]
+        pos = {int(a): j for j, a in enumerate(live)}
+        # seeded processing order: WHICH agent claims a contended lane first is the only place a
+        # shuffle seed can enter an assignment that is otherwise a deterministic argmin
+        for a in rng.permutation(live):
+            j = pos[int(a)]
+            ks = np.nonzero(amk[n, a])[0]
+            banned = np.zeros(M, bool)
+            banned[a2l_idx[n, a, ks].astype(np.int64)] = True   # the agent's WHOLE true set
+            near = valid & (dist[j] <= A2L_ALT_RADIUS)          # the locality bound
+            for k in rng.permutation(ks):
+                n_slot += 1
+                lt = int(a2l_idx[n, a, k])
+                r0 = rel[j, lt]
+                d_old.append(dist[j, lt])
+                ok = near & (junc == junc[lt]) & ~banned
+                if not ok.any():
+                    n_nopool += 1                     # no local same-class lane: slot KEPT
+                    d_new.append(dist[j, lt])
+                    continue
+                lp = int(np.where(ok, rel_dist(rel[j], r0[None, :]), np.inf).argmin())
+                banned[lp] = True
+                n_ok += 1
+                n_same += int(lp == lt)
+                repl[n, a, k] = True
+                new_idx[n, a, k] = lp
+                new_rel[n, a, k] = rel[j, lp].astype(new_rel.dtype)
+                dchg.append(np.abs(rel[j, lp] - r0))
+                d_new.append(dist[j, lp])
+    dchg = np.stack(dchg) if dchg else np.zeros((1, N_A2L))
+    return new_idx, new_rel, dict(n_slot=n_slot, n_ok=n_ok, n_same=n_same, n_nopool=n_nopool,
+                                  dchg=dchg, repl=repl, sgn=(sgn_lat, sgn_psi),
+                                  d_old=np.array(d_old), d_new=np.array(d_new),
+                                  rec_err=errs[(sgn_lat, sgn_psi)])
+
+
+def verify_a2l_shuffle(d, new_idx, new_rel, diag, tag):
+    """Print every invariant PROTOCOL_R section 2 names for S-a2l, and assert the ones whose
+    failure would make the control uninterpretable."""
+    print(f'--- S-a2l invariants [{tag}] ---', flush=True)
+    old, oldr = d['a2l_idx'], d['a2l_rel']
+    v = d['a2l_mask']
+    lmask, lfeat, lanes = d['lane_mask'], d['lane_feat'], d['lanes']
+    junc = np.asarray(lfeat[:, :, LF_JUNCTION], np.float32) > 0.5
+    N = len(old)
+    rows = np.arange(N)[:, None, None]
+    q = [50, 90, 99, 100]
+
+    ok_deg = np.array_equal(old >= 0, new_idx >= 0)
+    print(f'  candidate degree preserved elementwise                : {ok_deg}', flush=True)
+    co = np.bincount(v.sum(-1).ravel(), minlength=K + 1)
+    cn = np.bincount((new_idx >= 0).sum(-1).ravel(), minlength=K + 1)
+    print(f'  global candidate-count histogram old == new           : {np.array_equal(co, cn)}'
+          f'   {co.tolist()}', flush=True)
+
+    jo = junc[rows, np.clip(old, 0, None).astype(np.int64)]
+    jn = junc[rows, np.clip(new_idx, 0, None).astype(np.int64)]
+    nviol_j = int((jo[v] != jn[v]).sum())
+    print(f'  junction class of each candidate preserved            : '
+          f'{float((jo[v] == jn[v]).mean()):.6f}  ({nviol_j} violations)', flush=True)
+    lv = lmask[rows, np.clip(new_idx, 0, None).astype(np.int64)]
+    nviol_v = int((v & ~lv).sum())
+    print(f'  new index is always a VALID lane                      : {nviol_v} violations',
+          flush=True)
+
+    rp = diag['repl']
+    dup = inown = 0
+    for n in range(N):
+        for i in range(A):
+            if not v[n, i].any():
+                continue
+            w = new_idx[n, i][v[n, i]]
+            dup += int(len(np.unique(w)) != len(w))
+            ts = set(old[n, i][v[n, i]].tolist())
+            inown += sum(int(x) in ts for x in new_idx[n, i][rp[n, i]])
+    print(f'  duplicate lane inside an agent candidate set          : {dup}', flush=True)
+    print(f'  REPLACED candidate landing in the agent\'s OWN true set: {inown}  '
+          f'(excluded by construction; the KEPT slots below of course still hold their own '
+          f'original lane)', flush=True)
+
+    print(f'  replacement success rate                              : '
+          f'{diag["n_ok"] / max(diag["n_slot"], 1):.6f}   '
+          f'({diag["n_ok"]} of {diag["n_slot"]} slots.  The other {diag["n_nopool"]} had no lane '
+          f'within {A2L_ALT_RADIUS:g} m of the agent that was of the same junction class and '
+          f'outside the agent\'s own candidate set, and KEPT their original candidate)', flush=True)
+    print(f'  same-lane replacement rate  (must be 0)               : '
+          f'{diag["n_same"] / max(diag["n_ok"], 1):.6f}   ({diag["n_same"]})', flush=True)
+    print(f'  candidates whose lane index actually changed          : '
+          f'{float((old[v] != new_idx[v]).mean()):.6f}', flush=True)
+
+    dc = diag['dchg']
+    print(f'  |change| in the relation vector  p50/p90/p99/max', flush=True)
+    for c, nm in enumerate(['d_lat  (m) ', 'd_lon  (m) ', 'cos dpsi   ', 'sin dpsi   ']):
+        print(f'    {nm} {np.percentile(dc[:, c], q).round(4).tolist()}', flush=True)
+    dpsi_deg = np.degrees(2 * np.arcsin(np.clip(
+        np.hypot(dc[:, A2L_COS], dc[:, A2L_SIN]) / 2, 0, 1)))
+    print(f'    dpsi   (deg) {np.percentile(dpsi_deg, q).round(2).tolist()}', flush=True)
+
+    print(f'  relation MARGINALS over all candidates   before -> after', flush=True)
+    for c, nm in enumerate(['d_lat', 'd_lon', 'cos dpsi', 'sin dpsi']):
+        a_ = np.asarray(oldr, np.float32)[..., c][v]
+        b_ = np.asarray(new_rel, np.float32)[..., c][v]
+        print(f'    {nm:9s} mean {a_.mean():+.4f} -> {b_.mean():+.4f}   '
+              f'sd {a_.std():.4f} -> {b_.std():.4f}   '
+              f'p50 {np.median(a_):+.4f} -> {np.median(b_):+.4f}', flush=True)
+
+    ino = np.zeros((N, M), np.int32); inn = np.zeros((N, M), np.int32)
+    rr = np.broadcast_to(np.arange(N)[:, None, None], old.shape)[v]
+    np.add.at(ino, (rr, old[v].astype(np.int64)), 1)
+    np.add.at(inn, (rr, new_idx[v].astype(np.int64)), 1)
+    lm = lmask
+    print(f'  lane IN-degree over valid lanes   mean {ino[lm].mean():.4f} -> {inn[lm].mean():.4f}'
+          f'   sd {ino[lm].std():.4f} -> {inn[lm].std():.4f}   '
+          f'max {int(ino[lm].max())} -> {int(inn[lm].max())}', flush=True)
+    print(f'    in-degree histogram 0..7  old {np.bincount(ino[lm], minlength=8)[:8].tolist()}',
+          flush=True)
+    print(f'    in-degree histogram 0..7  new {np.bincount(inn[lm], minlength=8)[:8].tolist()}',
+          flush=True)
+
+    # THE check that decides whether this is still the same experiment.  Distance is measured
+    # to the nearest point of the SEGMENTS (the extractor's own measure), not to the stored
+    # polyline vertices, which would over-report by up to half a segment.
+    do, dn = diag['d_old'], diag['d_new']
+    print(f'  agent -> assigned-lane distance  ORIGINAL p50/p90/p99/max '
+          f'{np.percentile(do, q).round(2).tolist()} m   '
+          f'(extractor candidate radius {A2L_RADIUS:g} m)', flush=True)
+    print(f'  agent -> assigned-lane distance  REPLACED p50/p90/p99/max '
+          f'{np.percentile(dn, q).round(2).tolist()} m   '
+          f'(locality bound {A2L_ALT_RADIUS:g} m)', flush=True)
+    over = float((dn > A2L_ALT_RADIUS + 1e-6).mean())
+    print(f'  candidates further than the {A2L_ALT_RADIUS:g} m locality bound  : {over:.6f}  '
+          f'(0 expected: kept slots are within {A2L_RADIUS:g} m, replaced ones are bounded)',
+          flush=True)
+    assert ok_deg and np.array_equal(co, cn) and nviol_j == 0 and nviol_v == 0 and dup == 0
+    assert diag['n_same'] == 0, 'same-lane replacement is not a control'
+    assert inown == 0, 'a replacement landed inside the agent own true candidate set'
+    assert over == 0.0, 'a candidate escaped the locality bound'
+    print('  lanes / lane_feat / L2L / route_rel untouched         : True (never written)',
+          flush=True)
+
+
+# ── loader ───────────────────────────────────────────────────────────────────
+def load_graph(domain, torch, dev, shuffle=None, shuffle_seed=None, ablate_route=False,
+               nuplan_ego='logged'):
+    """Read the frozen tensors, apply AT MOST ONE control, and put the graph on the GPU.
+    The .npz is NEVER written back.  The path is read off r0_ego at call time so a test harness
+    can point this loader at a subset file.
+    domain 'nuplan' (section 20.2): the S1 tensor's own ego is the routed/synthetic-future ego
+    (S0 caveat), so ego_w/command come from the ego tensor selected by nuplan_ego (row order
+    asserted equal); everything else is the S1 tensor as written."""
+    npz = {'b2d': r0_ego.B2D_NPZ, 'navsim': r0_ego.NAVSIM_NPZ,
+           'nuplan': r0_ego.NUPLAN_NPZ}[domain]
+    d = np.load(npz, allow_pickle=True)
+    ids = np.array([str(x) for x in d['item_id']])
+    a2l_idx, a2l_rel = d['a2l_idx'], d['a2l_rel']
+    route_rel = d['route_rel']
+    rv = d['route_rel_valid'].astype(np.float32)
+
+    # every candidate belongs to an agent that is live at the anchor step — the assumption the
+    # A2L definition and therefore the recomputation both rest on
+    assert not (d['a2l_mask'] & ~d['agent_mask'][:, :, ANCHOR_T][..., None]).any(), \
+        'a candidate belongs to an agent that is not live at the anchor step'
+
+    if shuffle == 'route':
+        assert shuffle_seed is not None
+        route_rel, came = shuffle_route(route_rel, d['route_rel_valid'], d['lane_mask'],
+                                        d['lane_feat'], shuffle_seed)
+        verify_route_shuffle(d['route_rel'], route_rel, came, d['route_rel_valid'],
+                             d['lane_mask'], d['lane_feat'],
+                             f'{domain} shuffle-seed {shuffle_seed}')
+    elif shuffle == 'a2l':
+        assert shuffle_seed is not None
+        a2l_idx, a2l_rel, diag = shuffle_a2l(d, shuffle_seed,
+                                             f'{domain} shuffle-seed {shuffle_seed}')
+        verify_a2l_shuffle(d, a2l_idx, a2l_rel, diag, f'{domain} shuffle-seed {shuffle_seed}')
+    elif shuffle is not None:
+        raise ValueError(shuffle)
+
+    es, ed, er, em, worst = build_aug_edges(d['l2l_src'].astype(np.int32),
+                                            d['l2l_dst'].astype(np.int32),
+                                            d['l2l_type'].astype(np.int32), d['l2l_mask'])
+    print(f'[{domain}] augmented L2L edges: max {worst} / {EA} slots '
+          f'(SUCC + PRED(transpose) + LEFT + RIGHT + OPPOSITE symmetrised)', flush=True)
+    g = G()
+    t = lambda x: torch.tensor(x, device=dev)
+    g.lanes = t(d['lanes'])                       # (N,M,P,4) fp16
+    g.lane_feat = t(d['lane_feat'])
+    g.lane_mask = t(d['lane_mask'])
+    g.route_rel = t(route_rel)
+    if ablate_route:
+        rv = np.zeros_like(rv)                    # R2-noRoute: the route stream is OFF everywhere
+    g.route_valid = t(rv)                         # a MASK only — never an input feature
+    g.e_src = t(es.astype(np.int64)); g.e_dst = t(ed.astype(np.int64))
+    g.e_rel = t(er.astype(np.int64)); g.e_mask = t(em)
+    g.a2l_idx = t(a2l_idx.astype(np.int64)); g.a2l_rel = t(a2l_rel); g.a2l_mask = t(d['a2l_mask'])
+    g.agents = t(d['agents']); g.agent_mask = t(d['agent_mask'])
+    if domain == 'nuplan':
+        e = np.load(r0_ego.NUPLAN_EGO[nuplan_ego], allow_pickle=True)
+        gid = np.array([f'{str(tk)}_{int(w)}' for tk, w in zip(e['token'], e['widx'])])
+        assert np.array_equal(ids, gid), 'nuplan ego-tensor rows must be the graph rows'
+        ego_np, cmd_np = e['ego'].astype(np.float32), e['cmd'].astype(np.float32)
+        # the logged rebuild re-derives cmd from the LOGGED future, so it can differ from the
+        # graph tensor's (routed-tensor) cmd; ego and cmd must stay a consistent pair
+        ndiff = int((np.abs(cmd_np - d['command'].astype(np.float32)).max(1) > 1e-6).sum())
+        print(f'[nuplan] ego_w/command from the {nuplan_ego!r} ego tensor '
+              f'(the S1 tensor ego future is synthetic, S0 caveat); cmd differs from the '
+              f'graph tensor on {ndiff}/{len(ids)} windows', flush=True)
+    else:
+        ego_np, cmd_np = d['ego'].astype(np.float32), d['command'].astype(np.float32)
+    g.ego_w = t(window_ego_feats(ego_np, cmd_np))
+    g.command = t(cmd_np)
+    g.N = len(ids)
+    return g, ids
+
+
+def graph_stats(g, rows, torch, dev):
+    """Train-split standardisation, exactly as r0_ego standardises X per draw/fold."""
+    acc = {k: [0.0, None, None] for k in ('lane', 'lf', 'rr', 'a2l', 'ag')}
+
+    def add(k, x):                                  # x (n, C) float32
+        c, s, q = acc[k]
+        acc[k] = [c + len(x), (0 if s is None else s) + x.sum(0),
+                  (0 if q is None else q) + (x * x).sum(0)]
+
+    for i0 in range(0, len(rows), 1024):
+        r = torch.tensor(rows[i0:i0 + 1024], device=dev)
+        lm = g.lane_mask[r]
+        add('lane', g.lanes[r][:, :, :N_SEG, :].float()[lm].reshape(-1, N_LANE_CH))
+        add('lf', g.lane_feat[r].float()[lm])
+        rvm = lm & (g.route_valid[r][:, None] > 0.5)          # stats over VALID route rows only
+        if rvm.any():
+            add('rr', g.route_rel[r].float()[rvm])
+        am = g.a2l_mask[r]
+        add('a2l', g.a2l_rel[r].float()[am])
+        gm = g.agent_mask[r]
+        add('ag', g.agents[r].float()[gm])
+    dim = dict(lane=N_LANE_CH, lf=N_LF, rr=N_RR, a2l=N_A2L, ag=N_AG)
+    out = {}
+    for k, (c, s, q) in acc.items():
+        if c == 0:
+            # R2-noRoute gates every route row off, so no route statistic exists to take. The
+            # route stream is multiplied by route_valid = 0 there, so mu/sd are never read; a
+            # neutral (0, 1) keeps the arm from dividing by an empty accumulator.
+            out[k] = (torch.zeros(dim[k], device=dev), torch.ones(dim[k], device=dev))
+            continue
+        mu = s / c
+        out[k] = (mu, (q / c - mu * mu).clamp(min=0).sqrt() + 1e-6)
+    return out
+
+
+# ── model ────────────────────────────────────────────────────────────────────
+def dist_pool(torch, z, mask, tau, eps=0.0):
+    """VERBATIM r0_ego.SeqNet.forward's [mean, max, softmin, std] pooling. eps>0 only for the
+    per-route WINDOW pool, where a 1-window route makes var exactly 0 and sqrt'(0) = inf."""
+    m = mask[..., None].float()
+    n = m.sum(1).clamp(min=1)
+    mean = (z * m).sum(1) / n
+    mx = z.masked_fill(~mask[..., None], -1e9).max(1).values
+    neg = torch.where(mask[..., None], -z / tau, torch.full_like(z, -float('inf')))
+    smin = -tau * torch.logsumexp(neg, 1)
+    var = ((z - mean[:, None]) ** 2 * m).sum(1) / n
+    return torch.cat([mean, mx, smin, (var + eps).sqrt()], -1)
+
+
+def build_r2(torch, nn, d=64, tau=0.5, heads=4, ag_keep=None):
+    F = nn.functional
+    dh = d // heads
+    n_ag = N_AG if ag_keep is None else len(ag_keep)      # section 19.1 Z4: dropped channels
+
+    def mlp(i, o):
+        return nn.Sequential(nn.Linear(i, d), nn.SiLU(), nn.Linear(d, o))
+
+    class L2L(nn.Module):
+        """R-GCN layer: per-relation mean of transformed neighbours, summed over relations."""
+        def __init__(self):
+            super().__init__()
+            self.W = nn.ModuleList([nn.Linear(d, d, bias=False) for _ in range(N_REL)])
+            self.self_w = nn.Linear(d, d)
+            self.ln = nn.LayerNorm(d)
+
+        def forward(self, hl, es, ed, er, em):
+            n = hl.shape[0]
+            flat = hl.reshape(n * M, d)
+            off = (torch.arange(n, device=hl.device) * M)[:, None]
+            s = (es + off).clamp(min=0); t = (ed + off).clamp(min=0)
+            out = torch.zeros_like(flat)
+            one = torch.ones(1, 1, device=hl.device)
+            for r in range(N_REL):
+                sel = em & (er == r)
+                if not bool(sel.any()):
+                    continue
+                si, ti = s[sel], t[sel]
+                cnt = torch.zeros(n * M, 1, device=hl.device)
+                cnt.index_add_(0, ti, one.expand(len(ti), 1))
+                out.index_add_(0, ti, self.W[r](flat[si]) / cnt[ti].clamp(min=1))
+            u = self.self_w(hl) + out.reshape(n, M, d)
+            return self.ln(hl + F.silu(u))
+
+    class R2Net(nn.Module):
+        def __init__(self):
+            super().__init__()
+            # ego branch — r0_ego's own module, verbatim
+            self.phi = r0_ego.build(torch, nn, d, tau).phi
+            self.tau = tau
+            # window-local ego query (same architecture, own weights) — query only, no value path
+            self.qphi = r0_ego.build(torch, nn, d, tau).phi
+            self.q_mlp = mlp(2 * d + 4, d)
+            # lanes
+            self.seg = mlp(N_LANE_CH, d)
+            self.lane = mlp(2 * d + N_LF, d)
+            self.route = mlp(N_RR, d)
+            # agents
+            self.astep = mlp(n_ag, d)
+            self.aout = nn.Linear(2 * d, d)
+            # L2L
+            self.mp1, self.mp2 = L2L(), L2L()
+            # A2L / L2A
+            self.edge = mlp(N_A2L, d)
+            self.Wq, self.Wk, self.Wke = nn.Linear(d, d), nn.Linear(d, d), nn.Linear(d, d)
+            self.Wv, self.Wve = nn.Linear(d, d), nn.Linear(d, d)
+            self.Wo = nn.Linear(d, d); self.ln_a = nn.LayerNorm(d)
+            self.Wv2, self.Wve2, self.Wo2 = nn.Linear(d, d), nn.Linear(d, d), nn.Linear(d, d)
+            self.ln_l = nn.LayerNorm(d)
+            # command-conditioned readout over the fused set
+            self.typ = nn.Parameter(torch.zeros(2, d))
+            self.Wk2, self.Wv3 = nn.Linear(d, d), nn.Linear(d, d)
+            self.zout = mlp(2 * d, d)
+            # head: r0_ego's head shape, widened for [ego 4d | graph 4d]
+            self.head = nn.Sequential(nn.LayerNorm(d * 8), nn.Linear(d * 8, d), nn.SiLU(),
+                                      nn.Linear(d, 1))
+
+        def encode(self, g, rows, st):
+            """One window -> one d-vector.  The lane axis and the agent axis are both SETS: no
+            positional encoding on either, ever (PROTOCOL_R 5b, verified numerically)."""
+            n = len(rows)
+            LM = g.lane_mask[rows]
+            LS = ((g.lanes[rows][:, :, :N_SEG, :].float() - st['lane'][0]) / st['lane'][1])
+            LF = (g.lane_feat[rows].float() - st['lf'][0]) / st['lf'][1]
+            s = self.seg(LS)
+            hl = self.lane(torch.cat([s.mean(2), s.max(2).values, LF], -1))
+            RV = g.route_valid[rows]
+            RR = (g.route_rel[rows].float() - st['rr'][0]) / st['rr'][1]
+            hl = hl + self.route(RR) * RV[:, None, None]
+            hl = hl * LM[..., None]
+
+            AGM = g.agent_mask[rows]
+            AG = (g.agents[rows].float() - st['ag'][0]) / st['ag'][1]
+            if ag_keep is not None:                       # section 19.1 Z4 (default: no-op)
+                AG = AG[..., ag_keep]
+            a = self.astep(AG) * AGM[..., None]
+            mt = AGM[..., None].float()
+            amean = (a * mt).sum(2) / mt.sum(2).clamp(min=1)
+            amax = a.masked_fill(~AGM[..., None], -1e9).max(2).values
+            av = AGM.any(2)
+            amax = torch.where(av[..., None], amax, torch.zeros_like(amax))
+            ha = self.aout(torch.cat([amean, amax], -1)) * av[..., None]
+
+            es, ed, er, em = g.e_src[rows], g.e_dst[rows], g.e_rel[rows], g.e_mask[rows]
+            hl = self.mp1(hl, es, ed, er, em) * LM[..., None]
+
+            J = g.a2l_idx[rows].clamp(min=0)
+            AM = g.a2l_mask[rows]
+            AR = (g.a2l_rel[rows].float() - st['a2l'][0]) / st['a2l'][1]
+            e = self.edge(AR)
+            hlj = torch.gather(hl, 1, J.reshape(n, A * K, 1).expand(-1, -1, d)).reshape(n, A, K, d)
+            q = self.Wq(ha).reshape(n, A, 1, heads, dh)
+            kk = (self.Wk(hlj) + self.Wke(e)).reshape(n, A, K, heads, dh)
+            vv = (self.Wv(hlj) + self.Wve(e)).reshape(n, A, K, heads, dh)
+            lg = (q * kk).sum(-1) / math.sqrt(dh)
+            lg = lg.masked_fill(~AM[..., None], -1e9)
+            al = torch.softmax(lg, 2)
+            ctx = (al[..., None] * vv).sum(2).reshape(n, A, d)
+            has = AM.any(2)
+            ha = self.ln_a(ha + self.Wo(ctx) * has[..., None]) * av[..., None]
+
+            off = (torch.arange(n, device=hl.device) * M)[:, None, None]
+            gi = (J + off).reshape(-1)
+            sel = (AM & av[..., None]).reshape(-1)
+            msg = (self.Wv2(ha)[:, :, None, :].expand(-1, -1, K, -1) + self.Wve2(e)).reshape(-1, d)
+            buf = torch.zeros(n * M, d, device=hl.device)
+            cnt = torch.zeros(n * M, 1, device=hl.device)
+            gi_s = gi[sel]
+            buf.index_add_(0, gi_s, msg[sel])
+            cnt.index_add_(0, gi_s, torch.ones(len(gi_s), 1, device=hl.device))
+            hl = self.ln_l(hl + self.Wo2((buf / cnt.clamp(min=1)).reshape(n, M, d))) * LM[..., None]
+
+            hl = self.mp2(hl, es, ed, er, em) * LM[..., None]
+
+            EW = g.ego_w[rows]
+            ze = self.qphi(EW)
+            qv = self.q_mlp(torch.cat([ze.mean(1), ze.max(1).values, g.command[rows].float()], -1))
+
+            nodes = torch.cat([hl + self.typ[0], ha + self.typ[1]], 1)
+            nmask = torch.cat([LM, av], 1)
+            kk2 = self.Wk2(nodes).reshape(n, M + A, heads, dh)
+            vv2 = self.Wv3(nodes).reshape(n, M + A, heads, dh)
+            q2 = qv.reshape(n, 1, heads, dh)
+            lg2 = (q2 * kk2).sum(-1) / math.sqrt(dh)
+            lg2 = lg2.masked_fill(~nmask[..., None], -1e9)
+            at = torch.softmax(lg2, 1)
+            rd = (at[..., None] * vv2).sum(1).reshape(n, d)
+            nm = nmask[..., None].float()
+            sm = (nodes * nm).sum(1) / nm.sum(1).clamp(min=1)
+            return self.zout(torch.cat([rd, sm], -1))
+
+        def forward(self, x, xmask, g, rows, wb, ww, nW, st):
+            """x/xmask: r0's ego sequence for this batch. rows: the batch's window rows.
+            wb/ww: which (batch item, window slot) each row lands in."""
+            zego = dist_pool(torch, self.phi(x), xmask, self.tau)
+            zw = self.encode(g, rows, st)
+            B = x.shape[0]
+            buf = torch.zeros(B, nW, zw.shape[-1], device=zw.device, dtype=zw.dtype)
+            bm = torch.zeros(B, nW, dtype=torch.bool, device=zw.device)
+            buf[wb, ww] = zw
+            bm[wb, ww] = True
+            zg = dist_pool(torch, buf, bm, self.tau, eps=1e-12)
+            return self.head(torch.cat([zego, zg], -1)).squeeze(-1)
+
+    return R2Net()
+
+
+# ── B2D ──────────────────────────────────────────────────────────────────────
+def route_windows(ids, routes):
+    """Same route ordering and same within-route ordering as r0_ego.build_b2d."""
+    mm = [re.match(r'route_(\d+)_(\d+)$', s) for s in ids]
+    rid = np.array([m.group(1) for m in mm]); widx = np.array([int(m.group(2)) for m in mm])
+    out = []
+    for r in routes:
+        sel = np.where(rid == r)[0]
+        out.append(sel[np.argsort(widx[sel])])
+    return out
+
+
+def run_b2d(a, tag):
+    import torch, torch.nn as nn
+    from numpy.polynomial.hermite_e import hermegauss
+    from scipy.stats import spearmanr
+    from scirt.encoder import rasch
+    from b2d_splits import unified_split, R_DRAWS
+
+    dev = 'cuda'
+    X, MK, routes, types, Y, static = r0_ego.build_b2d()
+    g, ids = load_graph('b2d', torch, dev, a.shuffle, a.shuffle_seed, a.ablate_route)
+    if a.verify_only:
+        return
+    W = route_windows(ids, routes)
+    nW = max(len(w) for w in W)
+    print(f'[b2d] {len(routes)} routes -> {sum(len(w) for w in W)} window graphs, '
+          f'windows/route p50 {int(np.median([len(w) for w in W]))} max {nW}', flush=True)
+    R, J = len(routes), Y.shape[0]
+    fail = np.nanmean(Y, 0)
+    _, b_ref = rasch(Y, it=800)
+    print(f'[b2d] rho(observed failure rate, full-panel Rasch b) '
+          f'{spearmanr(fail, b_ref).correlation:+.4f}', flush=True)
+
+    gxn, gwn = hermegauss(15); gwn = gwn / gwn.sum()
+    gx = torch.tensor(gxn, dtype=torch.float32, device=dev)
+    lgw = torch.log(torch.tensor(gwn, dtype=torch.float32, device=dev))
+    utypes = sorted(set(types))
+    pred = np.full((R_DRAWS, R), np.nan)
+    per_draw = []
+    led = es.Ledger(R_DRAWS, a.epochs, a.early_stop)           # sigma / e* / curve / leak counts
+
+    for draw in range(min(a.draws, R_DRAWS)):
+        hp, ht = unified_split(draw, utypes, J)
+        keepJ = np.array([j for j in range(J) if j not in hp])
+        te = np.isin(types, list(ht)); tr = ~te
+        plan = es.TwoStage(draw, types, tr, a.epochs, a.early_stop)
+        guard = es.HeldOutGuard(np.where(te)[0],
+                                np.concatenate([W[i] for i in np.where(te)[0]]), hp, keepJ)
+        guard.selftest()
+        # ONE guard for BOTH stages: opened here, closed only after stage 2's last epoch.
+        for stg in plan.stages():
+            trn = stg.train                     # stage 1: A_train.  stage 2: the FULL A block.
+            torch.manual_seed(a.seed); np.random.seed(a.seed)  # same seed -> same fresh init
+            th_f, _ = rasch(Y[keepJ][:, trn])   # stage 1 theta_inner / stage 2 theta_outer
+            if a.proper_init:
+                torch.manual_seed(a.seed)       # re-seed AFTER rasch: rasch reseeds the torch RNG
+                                                # internally, so without this every seed builds the
+                                                # SAME initial weights.  Stage 1 and stage 2 still
+                                                # start from identical weights within a run.
+            plan.note_theta(stg, th_f)
+            mu = X[trn][MK[trn]].mean(0); sd = X[trn][MK[trn]].std(0) + 1e-6
+            Xn = ((X - mu) / sd) * MK[..., None]
+            # graph_stats follows the stage's training rows, exactly as theta and mu/sd do
+            st = graph_stats(g, guard.rows(np.concatenate([W[i] for i in np.where(trn)[0]]),
+                                           'graph_stats'), torch, dev)
+            m = build_r2(torch, nn, a.d).to(dev)
+            if draw == 0:
+                print(f'  [init] draw 0 s{stg.no} seed {a.seed} '
+                      f'proper_init={a.proper_init} weight-hash {es.init_hash(m)}',
+                      flush=True)
+            if draw == 0 and stg.no == 1:
+                print(f'[b2d] {tag} params {sum(p.numel() for p in m.parameters()):,}',
+                      flush=True)
+            ls = torch.tensor(-0.5, device=dev, requires_grad=True)
+            opt = torch.optim.AdamW(list(m.parameters()) + [ls], lr=1e-3, weight_decay=0.1)
+            THE = torch.tensor(th_f, dtype=torch.float32, device=dev)
+            Yk = es.erase_heldout(Y[keepJ], te) if a.early_stop else Y[keepJ]
+            Yd = torch.tensor(np.nan_to_num(Yk), dtype=torch.float32, device=dev)
+            Md = torch.tensor((~np.isnan(Yk)).astype(np.float32), device=dev)
+            Xd = torch.tensor(Xn, device=dev); Md_ = torch.tensor(MK, device=dev)
+            idx = guard.routes(np.where(trn)[0], f'{stg.name} train columns')
+            iv_c = guard.routes(np.where(stg.iv)[0], f'{stg.name} inner-val columns')
+            if a.early_stop:
+                es.assert_masked(torch, Yd, Md, te, dev)
+            print(plan.head(stg), flush=True)
+
+            def fwd(sel):
+                s = torch.tensor(sel, device=dev)
+                rows = np.concatenate([W[i] for i in sel])
+                wb = torch.tensor(np.concatenate([np.full(len(W[i]), b)
+                                                  for b, i in enumerate(sel)]), device=dev)
+                ww = torch.tensor(np.concatenate([np.arange(len(W[i])) for i in sel]), device=dev)
+                return m(Xd[s], Md_[s], g, torch.tensor(rows, device=dev), wb, ww, nW, st)
+
+            for ep in range(stg.epochs):
+                m.train(); np.random.shuffle(idx); tl = nb = 0
+                for i0 in range(0, len(idx), a.bs):
+                    sel = guard.routes(idx[i0:i0 + a.bs], f'{stg.name} train batch')
+                    bt = fwd(sel); sg = torch.exp(ls)
+                    z = (bt[None, :, None] + sg * gx[None, None, :]) - THE[:, None, None]
+                    p = torch.sigmoid(z)
+                    s = torch.tensor(sel, device=dev)
+                    yy = Yd[:, s]; mm = Md[:, s]
+                    llc = (yy[:, :, None] * torch.log(p + 1e-7)
+                           + (1 - yy[:, :, None]) * torch.log(1 - p + 1e-7)) * mm[:, :, None]
+                    loss = -torch.logsumexp(llc.sum(0) + lgw[None, :], 1).sum() / mm.sum() \
+                        + 0.05 * ls.pow(2)
+                    opt.zero_grad(); loss.backward()
+                    nn.utils.clip_grad_norm_(m.parameters(), 1.0); opt.step()
+                    tl += float(loss); nb += 1
+                if stg.select:
+                    m.eval(); sg = torch.exp(ls).detach()
+                    with torch.no_grad():
+                        bv = torch.cat([fwd(guard.routes(iv_c[i:i + 32], 'inner-val forward'))
+                                        for i in range(0, len(iv_c), 32)])
+                    nll = es.cell_nll(torch, bv, guard.routes(iv_c, 'inner-val likelihood'),
+                                      Yd, Md, THE, gx, lgw, sg)
+                    plan.update(stg, ep, tl / max(nb, 1), nll, float(sg))
+                    print(f'  [b2d draw {draw}] s{stg.no} ep {ep:2d} loss {tl/max(nb,1):.4f} '
+                          f'innerval nll {nll:.4f} sigma {float(sg):.3f}', flush=True)
+                elif ep in (0, 4, stg.epochs - 1):
+                    print(f'  [b2d draw {draw}] s{stg.no} ep {ep} loss {tl/max(nb,1):.4f} '
+                          f'sigma {float(torch.exp(ls)):.3f}', flush=True)
+            plan.end_stage(stg, float(torch.exp(ls)))
+        if a.early_stop:
+            print(plan.line(int(te.sum())), flush=True)
+        guard.end_training()                     # held-out readable HERE, after STAGE 2 only
+        m.eval()
+        with torch.no_grad():
+            # ONE pass over the held-out block; the chunking below is that single pass, so
+            # guard.heldout() is called once with the whole index set, not once per chunk.
+            ii = guard.heldout(np.where(te)[0])
+            pr = np.concatenate([fwd(ii[i:i + 32]).cpu().numpy() for i in range(0, len(ii), 32)])
+            pred[draw, ii] = pr
+        led.record(draw, plan, guard)
+        print(guard.leak_line(draw), flush=True)
+        per_draw.append(spearmanr(pr, fail[te]).correlation)
+        print(f'  [b2d draw {draw}] held-out {te.sum()} routes  '
+              f'rho_scene {per_draw[-1]:+.4f}', flush=True)
+
+    out = es.out_path(RG, f'{tag}_b2d_s{a.seed}.npz', a.early_stop, a.proper_init)
+    per_draw = np.array(per_draw)
+    np.savez(out, pred=pred, routes=routes, item_id=routes, types=types, Y=Y, fail=fail,
+             b_ref=b_ref, static=static, per_draw=per_draw, **led.fields())
+    Pl, Fl, Bl, Sl = [], [], [], []
+    for dd in range(R_DRAWS):
+        k = np.isfinite(pred[dd])
+        Pl.append(pred[dd][k]); Fl.append(fail[k]); Bl.append(b_ref[k]); Sl.append(static[k])
+    Pp, Ff, Bb, Ss = map(np.concatenate, (Pl, Fl, Bl, Sl))
+    print(f'{tag.upper()}_B2D seed={a.seed}  rho_scene {spearmanr(Pp, Ff).correlation:+.4f}  '
+          f'rho_ref {spearmanr(Pp, Bb).correlation:+.4f}  '
+          f'static {spearmanr(Pp[Ss], Ff[Ss]).correlation:+.4f}  '
+          f'non-static {spearmanr(Pp[~Ss], Ff[~Ss]).correlation:+.4f}  '
+          f'(pooled {len(Pp)} held-out cells)  '
+          f'per-draw mean {per_draw.mean():+.4f} +/- {per_draw.std(ddof=1):.4f}', flush=True)
+    print(f'WROTE {out}', flush=True)
+
+
+# ── NavSim ───────────────────────────────────────────────────────────────────
+def run_navsim(a, tag):
+    import torch, torch.nn as nn
+    from scipy.stats import spearmanr
+    from scirt.encoder import rasch
+
+    dev = 'cuda'
+    X, MK, toks, logs, Y = r0_ego.build_navsim()
+    g, ids = load_graph('navsim', torch, dev, a.shuffle, a.shuffle_seed, a.ablate_route)
+    if a.verify_only:
+        return
+    assert list(ids) == list(toks), 'graph rows must be r0 rows'
+    N = len(toks)
+    nW = 1
+    fail = np.nanmean(Y, 0)
+    _, b_ref = rasch(Y, it=800)
+    print(f'[navsim] rho(observed failure rate, full-panel Rasch b) '
+          f'{spearmanr(fail, b_ref).correlation:+.4f}', flush=True)
+
+    ulogs = np.array(sorted(set(logs)))
+    chunks = np.array_split(np.random.default_rng(0).permutation(len(ulogs)), a.nfolds)
+    pred = np.full(N, np.nan)
+    per_fold = []
+    Yd = torch.tensor(np.nan_to_num(Y), device=dev)
+    Md = torch.tensor((~np.isnan(Y)).astype(np.float32), device=dev)
+
+    for fold in range(a.nfolds):
+        te_logs = set(ulogs[chunks[fold]])
+        rest = [l for l in ulogs if l not in te_logs]
+        iv_logs = set(np.random.default_rng(100 + fold).choice(rest, 15, replace=False))
+        te = np.array([l in te_logs for l in logs])
+        iv = np.array([l in iv_logs for l in logs])
+        tr = ~te & ~iv
+        torch.manual_seed(a.seed + 1000); np.random.seed(a.seed)
+        th_tr, _ = rasch(Y[:, tr])
+        THE = torch.tensor(th_tr, dtype=torch.float32, device=dev)
+        mu = X[tr][MK[tr]].mean(0); sd = X[tr][MK[tr]].std(0) + 1e-6
+        Xd = torch.tensor(((X - mu) / sd) * MK[..., None], device=dev)
+        Mk = torch.tensor(MK, device=dev)
+        st = graph_stats(g, np.where(tr)[0], torch, dev)
+        m = build_r2(torch, nn, a.d).to(dev)
+        if fold == 0:
+            print(f'[navsim] {tag} params {sum(p.numel() for p in m.parameters()):,}', flush=True)
+        opt = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.05)
+        idx_tr = np.where(tr)[0]
+        steps = a.epochs * max(len(idx_tr) // a.bs, 1)
+        sch = torch.optim.lr_scheduler.LambdaLR(
+            opt, lambda s: min(s / 200 + 1e-2, 0.5 * (1 + math.cos(math.pi * s / max(steps, 1)))))
+        shuf = np.random.default_rng(a.seed)
+
+        def fwd(sel):
+            s = torch.tensor(sel, device=dev)
+            z = torch.arange(len(sel), device=dev)
+            return m(Xd[s], Mk[s], g, s, z, torch.zeros_like(z), nW, st)
+
+        def pred_on(mask):
+            ii = np.where(mask)[0]
+            with torch.no_grad():
+                return np.concatenate([fwd(ii[i:i + 512]).cpu().numpy()
+                                       for i in range(0, len(ii), 512)])
+
+        def nll_of(bv, mask):
+            ii = torch.tensor(np.where(mask)[0], device=dev)
+            p = torch.sigmoid(torch.tensor(bv, dtype=torch.float32, device=dev)[None, :]
+                              - THE[:, None])
+            yy = Yd[:, ii]; mm = Md[:, ii]
+            return float((-(yy * torch.log(p + 1e-7)
+                            + (1 - yy) * torch.log(1 - p + 1e-7)) * mm).sum() / mm.sum())
+
+        best = (9e9, None, -1)
+        for ep in range(a.epochs):
+            m.train(); shuf.shuffle(idx_tr); tl = nb = 0
+            for i0 in range(0, len(idx_tr) - a.bs + 1, a.bs):
+                sel = idx_tr[i0:i0 + a.bs]
+                s = torch.tensor(sel, device=dev)
+                p = torch.sigmoid(fwd(sel)[None, :] - THE[:, None])
+                yy = Yd[:, s]; mm = Md[:, s]
+                loss = (-(yy * torch.log(p + 1e-7)
+                          + (1 - yy) * torch.log(1 - p + 1e-7)) * mm).sum() / mm.sum()
+                opt.zero_grad(); loss.backward()
+                nn.utils.clip_grad_norm_(m.parameters(), 1.0)
+                opt.step(); sch.step(); tl += float(loss); nb += 1
+            m.eval()
+            nll = nll_of(pred_on(iv), iv)
+            if nll < best[0]:
+                best = (nll, pred_on(te), ep)
+            if ep in (0, 4, a.epochs - 1):
+                print(f'  [navsim fold {fold}] ep {ep} train nll {tl/max(nb,1):.4f} '
+                      f'innerval nll {nll:.4f}', flush=True)
+        pred[te] = best[1]
+        per_fold.append(spearmanr(best[1], fail[te]).correlation)
+        print(f'  [navsim fold {fold}] train {tr.sum()} innerval {iv.sum()} test {te.sum()} '
+              f'| best ep {best[2]} nll {best[0]:.4f} | rho_scene '
+              f'{spearmanr(best[1], fail[te]).correlation:+.4f} '
+              f'rho_ref {spearmanr(best[1], b_ref[te]).correlation:+.4f}', flush=True)
+
+    out = f'{RG}/{tag}_navsim_s{a.seed}.npz'
+    per_fold = np.array(per_fold)
+    np.savez(out, pred=pred, tokens=toks, item_id=toks, logs=logs, fail=fail, b_ref=b_ref, Y=Y,
+             per_fold=per_fold)
+    k = np.isfinite(pred)
+    print(f'{tag.upper()}_NAVSIM seed={a.seed}  '
+          f'rho_scene {spearmanr(pred[k], fail[k]).correlation:+.4f}  '
+          f'rho_ref {spearmanr(pred[k], b_ref[k]).correlation:+.4f}  '
+          f'(out-of-fold {k.sum()}/{N})  '
+          f'per-fold mean {per_fold.mean():+.4f} +/- {per_fold.std(ddof=1):.4f}', flush=True)
+    print(f'WROTE {out}', flush=True)
+
+
+# ── nuPlan val14 same-domain OOF (section 20.2 S3) ───────────────────────────
+def run_nuplan(a, tag):
+    """S3 R2: run_navsim verbatim on nuPlan val14 windows (item = window, 2 per scenario),
+    folds log-disjoint over the 218 logs; graph = the frozen S1 tensor, ego branch from the
+    selected ego tensor (default logged).  Writes ONLY to transfer/nuplan/."""
+    import torch, torch.nn as nn
+    from scipy.stats import spearmanr
+    from scirt.encoder import rasch
+
+    assert tag == 'r2', 'controls are not defined for the nuplan S3 OOF'
+    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+    X, MK, ids, toks, widx, logs, types, Y = r0_ego.build_nuplan(a.nuplan_ego)
+    g, gids = load_graph('nuplan', torch, dev, a.shuffle, a.shuffle_seed, a.ablate_route,
+                         nuplan_ego=a.nuplan_ego)
+    if a.verify_only:
+        return
+    assert list(gids) == list(ids), 'graph rows must be the ego rows'
+    N = len(ids)
+    nW = 1
+    fail = np.nanmean(Y, 0)
+    _, b_ref = rasch(Y, it=800)
+    print(f'[nuplan] rho(observed failure rate, full-panel Rasch b) '
+          f'{spearmanr(fail, b_ref).correlation:+.4f}', flush=True)
+    b_by_tok = {t: b for t, b in zip(toks, b_ref)}
+
+    ulogs = np.array(sorted(set(logs)))
+    chunks = np.array_split(np.random.default_rng(0).permutation(len(ulogs)), a.nfolds)
+    pred = np.full(N, np.nan)
+    fold_of = np.full(N, -1, np.int64)
+    per_fold = []
+    Yd = torch.tensor(np.nan_to_num(Y), device=dev)
+    Md = torch.tensor((~np.isnan(Y)).astype(np.float32), device=dev)
+
+    for fold in range(a.nfolds):
+        te_logs = set(ulogs[chunks[fold]])
+        rest = [l for l in ulogs if l not in te_logs]
+        iv_logs = set(np.random.default_rng(100 + fold).choice(rest, 15, replace=False))
+        te = np.array([l in te_logs for l in logs])
+        iv = np.array([l in iv_logs for l in logs])
+        tr = ~te & ~iv
+        torch.manual_seed(a.seed + 1000); np.random.seed(a.seed)
+        th_tr, _ = rasch(Y[:, tr])
+        THE = torch.tensor(th_tr, dtype=torch.float32, device=dev)
+        mu = X[tr][MK[tr]].mean(0); sd = X[tr][MK[tr]].std(0) + 1e-6
+        Xd = torch.tensor(((X - mu) / sd) * MK[..., None], device=dev)
+        Mk = torch.tensor(MK, device=dev)
+        st = graph_stats(g, np.where(tr)[0], torch, dev)
+        m = build_r2(torch, nn, a.d).to(dev)
+        if fold == 0:
+            print(f'[nuplan] {tag} params {sum(p.numel() for p in m.parameters()):,}', flush=True)
+        opt = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.05)
+        idx_tr = np.where(tr)[0]
+        steps = a.epochs * max(len(idx_tr) // a.bs, 1)
+        sch = torch.optim.lr_scheduler.LambdaLR(
+            opt, lambda s: min(s / 200 + 1e-2, 0.5 * (1 + math.cos(math.pi * s / max(steps, 1)))))
+        shuf = np.random.default_rng(a.seed)
+
+        def fwd(sel):
+            s = torch.tensor(sel, device=dev)
+            z = torch.arange(len(sel), device=dev)
+            return m(Xd[s], Mk[s], g, s, z, torch.zeros_like(z), nW, st)
+
+        def pred_on(mask):
+            ii = np.where(mask)[0]
+            with torch.no_grad():
+                return np.concatenate([fwd(ii[i:i + 512]).cpu().numpy()
+                                       for i in range(0, len(ii), 512)])
+
+        def nll_of(bv, mask):
+            ii = torch.tensor(np.where(mask)[0], device=dev)
+            p = torch.sigmoid(torch.tensor(bv, dtype=torch.float32, device=dev)[None, :]
+                              - THE[:, None])
+            yy = Yd[:, ii]; mm = Md[:, ii]
+            return float((-(yy * torch.log(p + 1e-7)
+                            + (1 - yy) * torch.log(1 - p + 1e-7)) * mm).sum() / mm.sum())
+
+        best = (9e9, None, -1)
+        for ep in range(a.epochs):
+            m.train(); shuf.shuffle(idx_tr); tl = nb = 0
+            for i0 in range(0, len(idx_tr) - a.bs + 1, a.bs):
+                sel = idx_tr[i0:i0 + a.bs]
+                s = torch.tensor(sel, device=dev)
+                p = torch.sigmoid(fwd(sel)[None, :] - THE[:, None])
+                yy = Yd[:, s]; mm = Md[:, s]
+                loss = (-(yy * torch.log(p + 1e-7)
+                          + (1 - yy) * torch.log(1 - p + 1e-7)) * mm).sum() / mm.sum()
+                opt.zero_grad(); loss.backward()
+                nn.utils.clip_grad_norm_(m.parameters(), 1.0)
+                opt.step(); sch.step(); tl += float(loss); nb += 1
+            m.eval()
+            nll = nll_of(pred_on(iv), iv)
+            if nll < best[0]:
+                best = (nll, pred_on(te), ep)
+            if ep in (0, 4, a.epochs - 1):
+                print(f'  [nuplan fold {fold}] ep {ep} train nll {tl/max(nb,1):.4f} '
+                      f'innerval nll {nll:.4f}', flush=True)
+        pred[te] = best[1]
+        fold_of[te] = fold
+        scn, ro = r0_ego.nuplan_scn_readout(pred, toks, widx, te)
+        bt = np.array([b_by_tok[t] for t in scn])
+        per_fold.append(float(spearmanr(ro[0], bt).correlation))
+        print(f'  [nuplan fold {fold}] train {tr.sum()} innerval {iv.sum()} test {te.sum()} '
+              f'| best ep {best[2]} nll {best[0]:.4f} | rho_scene(w0) {per_fold[-1]:+.4f} '
+              f'rho_win {spearmanr(best[1], b_ref[te]).correlation:+.4f}', flush=True)
+
+    os.makedirs(r0_ego.NUPLAN_OOF_DIR, exist_ok=True)
+    out = f'{r0_ego.NUPLAN_OOF_DIR}/r2_nuplan_oof_s{a.seed}.npz'
+    np.savez(out, pred=pred, item_id=ids, tokens=toks, widx=widx, logs=logs, types=types,
+             fold=fold_of, fail=fail, b_ref=b_ref, Y=Y, per_fold=np.array(per_fold),
+             nuplan_ego=a.nuplan_ego)
+    scn, ro = r0_ego.nuplan_scn_readout(pred, toks, widx)
+    bt = np.array([b_by_tok[t] for t in scn])
+    print(f'R2_NUPLAN seed={a.seed} ego={a.nuplan_ego}  pooled rho_scene w0 '
+          f'{spearmanr(ro[0], bt).correlation:+.4f}  mean {spearmanr(ro[2], bt).correlation:+.4f}  '
+          f'w1 {spearmanr(ro[1], bt).correlation:+.4f}  per-fold(w0) {np.mean(per_fold):+.4f} '
+          f'+/- {np.std(per_fold, ddof=1):.4f}', flush=True)
+    print(f'WROTE {out}', flush=True)
+
+
+# ── section 18: ONE model on ALL source items, forwarded on the other domain ──────────────
+def collision_panel(routes):
+    """section 19.1 Z1/Z4: the collision-only B2D panel (fail=1, NaN missing) in `routes` order,
+    read exactly as r0_ego.build_b2d reads the full-fail panel."""
+    import csv
+    rows = list(csv.reader(open(ZS_COLLISION_MAT)))
+    rids_m = rows[0][1:]
+    body = [r for r in rows[1:] if r[0] != 'PDM-Lite']
+    Yf = np.full((len(body), len(rids_m)), np.nan)
+    for pi, row in enumerate(body):
+        for j in range(len(rids_m)):
+            if row[1 + j] != '':
+                Yf[pi, j] = 1.0 - float(row[1 + j])
+    col = {r: j for j, r in enumerate(rids_m)}
+    assert all(r in col for r in routes)
+    Y = Yf[:, [col[r] for r in routes]]
+    print(f'[b2d] section 19.1 target matrix {ZS_COLLISION_MAT}: {Y.shape[0]} planners x '
+          f'{Y.shape[1]} routes, missing cells {int(np.isnan(Y).sum())}, overall fail '
+          f'{np.nanmean(Y):.4f}', flush=True)
+    return Y
+
+
+def run_full(a):
+    """--full-train --transfer-to DOM [--subsample-logs N].  Additive: run_b2d / run_navsim are
+    untouched.  Schedule, e* selection and recipe come from transfer_common (es.TwoStage
+    underneath); this function supplies R2's graph, ego tensors and forward only.  The target
+    graph is loaded AFTER training; target responses are never read or saved."""
+    import torch, torch.nn as nn
+    from scipy.stats import spearmanr
+    from scirt.encoder import rasch
+    import transfer_common as tc
+
+    assert a.shuffle is None and not a.ablate_route, 'section 18 arms are R0 / R2 / H-rel only'
+    dev, devname = tc.device(torch)
+    src, tgt = a.domain, a.transfer_to
+    tag = f'r2 {tc.src_tag(a)}->{tgt} s{a.seed}'
+    sub_logs = np.array([])
+    g, ids = load_graph(src, torch, dev)
+    # section 19.1 Z4 flags (default-inert)
+    drop = getattr(a, 'drop_agent_channels', None) or []
+    ag_keep = [i for i, n in enumerate(AG_NAMES) if n not in drop] if drop else None
+    b2d_target = getattr(a, 'target', 'full')
+    if drop or b2d_target != 'full':
+        print(f'[zs] section 19.1 Z4: agent channels kept '
+              f'{[AG_NAMES[i] for i in (ag_keep or range(N_AG))]} (dropped {sorted(drop)}) | '
+              f'b2d target {b2d_target}', flush=True)
+    if src == 'b2d':
+        X, MK, items, grp, Y, _ = r0_ego.build_b2d()
+        if b2d_target == 'collision':
+            Y = collision_panel(items)
+        W = route_windows(ids, items); nW = max(len(w) for w in W)
+    else:
+        X, MK, items, grp, Y = r0_ego.build_navsim()
+        assert list(ids) == list(items), 'graph rows must be r0 rows'
+        rows_all = np.arange(len(ids))
+        if a.subsample_logs:
+            keep, sub_logs = tc.subsample_logs(grp, a.subsample_logs)
+            X, MK, items, grp, Y = X[keep], MK[keep], items[keep], grp[keep], Y[:, keep]
+            rows_all = np.where(keep)[0]          # graph rows of the kept windows; g stays whole
+        W = [np.array([r]) for r in rows_all]; nW = 1
+    N = len(items)
+    fail = np.nanmean(Y, 0)
+    _, b_src = rasch(Y, it=800)                   # SOURCE full-panel reference, sanity rho only
+    itr, iv = tc.inner_split(src, grp)
+    plan = tc.FullTrainPlan(grp, itr, iv, a.epochs)
+    Yd = torch.tensor(np.nan_to_num(Y), dtype=torch.float32, device=dev)
+    Md = torch.tensor((~np.isnan(Y)).astype(np.float32), device=dev)
+    chunk = 32 if src == 'b2d' else 512
+
+    def make_fwd(m, Xd, Mk, g_, W_, nW_, st_):
+        def fwd(sel):
+            s = torch.tensor(sel, device=dev)
+            rows = np.concatenate([W_[i] for i in sel])
+            wb = torch.tensor(np.concatenate([np.full(len(W_[i]), b) for b, i in enumerate(sel)]),
+                              device=dev)
+            ww = torch.tensor(np.concatenate([np.arange(len(W_[i])) for i in sel]), device=dev)
+            return m(Xd[s], Mk[s], g_, torch.tensor(rows, device=dev), wb, ww, nW_, st_)
+        return fwd
+
+    Mk = torch.tensor(MK, device=dev)
+    for stg in plan.stages():
+        trn = stg.train                           # stage 1: inner-train.  stage 2: ALL items.
+        torch.manual_seed(a.seed); np.random.seed(a.seed)
+        th_f, _ = rasch(Y[:, trn])                # theta on this stage's SOURCE columns
+        torch.manual_seed(a.seed)                 # proper-init (section 12): re-seed AFTER rasch
+        plan.note_theta(stg, th_f)
+        mu = X[trn][MK[trn]].mean(0); sd = X[trn][MK[trn]].std(0) + 1e-6
+        Xd = torch.tensor(((X - mu) / sd) * MK[..., None], device=dev)
+        st = graph_stats(g, np.concatenate([W[i] for i in np.where(trn)[0]]), torch, dev)
+        m = build_r2(torch, nn, a.d, ag_keep=ag_keep).to(dev)
+        print(f'  [init] s{stg.no} seed {a.seed} proper_init=True weight-hash {es.init_hash(m)}',
+              flush=True)
+        THE = torch.tensor(th_f, dtype=torch.float32, device=dev)
+        print(plan.head(stg), flush=True)
+        fwd = make_fwd(m, Xd, Mk, g, W, nW, st)
+        tc.fit_stage(src, torch, nn, m, fwd, stg, plan, Yd, Md, THE, a.bs, a.seed, dev, tag,
+                     chunk=chunk)
+    print(plan.line(0), flush=True)
+    pred_src = tc.predict(torch, m, fwd, N, chunk)
+    rho_src = float(spearmanr(pred_src, b_src).correlation)
+    print(f'  [{tag}] e* {plan.best_ep}, stage 2 {plan.stage2_epochs} epochs on {N} items | '
+          f'source in-sample rho_ref {rho_src:+.4f} rho_fail '
+          f'{spearmanr(pred_src, fail).correlation:+.4f}', flush=True)
+
+    # ── target: loaded only now; ego mu/sd and graph_stats are the SOURCE stage-2 statistics ──
+    out = dict(arm='r2', src=tc.src_tag(a), tgt=tgt, seed=a.seed, device=devname, bs=a.bs,
+               epochs=a.epochs, pred_src=pred_src, src_item_id=items, src_groups=grp,
+               src_b_ref=b_src, rho_src_insample=rho_src, x_mu=mu, x_sd=sd, sub_logs=sub_logs,
+               **{f'gs_{k}_{n}': v.cpu().numpy() for k, (mu_, sd_) in st.items()
+                  for n, v in (('mu', mu_), ('sd', sd_))},
+               **tc.plan_fields(plan))
+    if drop or b2d_target != 'full':    # section 19.1 bookkeeping; absent under the defaults
+        out.update(agent_channels=np.array([AG_NAMES[i] for i in (ag_keep or range(N_AG))]),
+                   dropped_agent_channels=np.array(sorted(drop)), b2d_target=b2d_target,
+                   b2d_target_mat=ZS_COLLISION_MAT if b2d_target == 'collision' else r0_ego.B2D_MAT)
+    g_t, ids_t = load_graph(tgt, torch, dev, nuplan_ego='routed')
+
+    def fwd_t(Xt, MKt, W_, nW_, ch):
+        Xd_t = torch.tensor(((Xt - mu) / sd) * MKt[..., None], device=dev)
+        Mk_t = torch.tensor(MKt, device=dev)
+        return tc.predict(torch, m, make_fwd(m, Xd_t, Mk_t, g_t, W_, nW_, st), len(Xt), ch)
+    Xw = g_t.ego_w.cpu().numpy()                  # window-local ego features, NavSim-style rows
+    ones = [np.array([r]) for r in range(len(ids_t))]
+    pred_w = fwd_t(Xw, np.ones(Xw.shape[:2], bool), ones, 1, 512)
+    if tgt == 'navsim':
+        _, _, toks, logs, _ = r0_ego.build_navsim()   # its Y is discarded, never saved
+        assert list(ids_t) == list(toks)
+        out.update(pred=pred_w, item_id=ids_t, tgt_groups=logs)
+    elif tgt == 'nuplan':
+        # section 20.2 S2: pred_w above used the ROUTED ego tensor (= the S1 tensor's own ego,
+        # synthetic future); forward again with the LOGGED ego tensor swapped into both the ego
+        # sequence input and g.ego_w.  No nuPlan response is read here.
+        wtok = np.array([s.rsplit('_', 1)[0] for s in ids_t])
+        wdx = np.array([int(s.rsplit('_', 1)[1]) for s in ids_t])
+        e = np.load(r0_ego.NUPLAN_EGO['logged'], allow_pickle=True)
+        gid = np.array([f'{str(tk)}_{int(w)}' for tk, w in zip(e['token'], e['widx'])])
+        assert np.array_equal(np.array(list(ids_t)), gid)
+        Xw_l = window_ego_feats(e['ego'].astype(np.float32), e['cmd'].astype(np.float32))
+        g_t.ego_w = torch.tensor(Xw_l, device=dev)
+        pred_w_l = fwd_t(Xw_l, np.ones(Xw_l.shape[:2], bool), ones, 1, 512)
+        out.update(pred_routed=pred_w, pred_logged=pred_w_l, item_id=ids_t,
+                   tgt_groups=wtok, widx=wdx, pred=pred_w)
+    else:
+        Xr, MKr, routes, types, _, _ = r0_ego.build_b2d()   # R2's OWN B2D item: stitched ego
+        W_b = route_windows(ids_t, routes)                  # sequence + window set pooled
+        out.update(pred=pred_w, item_id=ids_t,              # inside the model
+                   pred_route=fwd_t(Xr, MKr, W_b, max(len(w) for w in W_b), 32),
+                   pred_route_winmean=tc.route_mean(pred_w, W_b, len(routes)),
+                   routes=routes, tgt_groups=types)
+    print(f'  [{tag}] target {tgt}: {len(out["pred"])} window preds'
+          + (f', {len(out["pred_route"])} route preds' if 'pred_route' in out else ''), flush=True)
+    tc.save(tc.out_path('r2', a), **out)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--domain', required=True, choices=['b2d', 'navsim', 'nuplan'])
+    ap.add_argument('--gpu', default='2')
+    ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--nuplan-ego', default='logged', choices=['routed', 'logged'],
+                    help='section 20.2 S3, --domain nuplan (same-domain OOF) only: which val14 '
+                         'ego tensor feeds the ego branch and g.ego_w. Default logged (the '
+                         'shipped/routed ego future is synthetic, S0 caveat).')
+    ap.add_argument('--d', type=int, default=64)
+    ap.add_argument('--epochs', type=int, default=None)
+    ap.add_argument('--bs', type=int, default=None)
+    ap.add_argument('--nfolds', type=int, default=5)
+    ap.add_argument('--draws', type=int, default=99)
+    ap.add_argument('--shuffle', default=None, choices=['route', 'a2l'],
+                    help='S-route / S-a2l correspondence control (PROTOCOL_R section 2, amended)')
+    ap.add_argument('--shuffle-seed', type=int, default=None, help='shuffle seed 0, 1 or 2')
+    ap.add_argument('--ablate-route', action='store_true',
+                    help='R2-noRoute: keep Agent<->Lane, mask route_rel entirely.')
+    ap.add_argument('--verify-only', action='store_true',
+                    help='build the graph, print the control invariants, and stop')
+    ap.add_argument('--early-stop', action='store_true',
+                    help='B2D only: two-stage nested CHECKPOINT SELECTION BY INNER-VALIDATION '
+                         'NLL. Stage 1 carves an inner-val split of whole scenario types out of '
+                         'the training block, fits theta on the A_train responses, runs all 30 '
+                         'epochs and takes e* = argmin inner-val NLL. Stage 2 refits theta on '
+                         'the FULL outer-training responses, re-initialises the model with the '
+                         'same seed and trains on the FULL outer-training block for exactly e*+1 '
+                         'epochs. The held-out block is forwarded once, after stage 2. So the '
+                         'only difference from the frozen arm is 30 -> e*+1 epochs. Nothing is '
+                         'stopped early; all 30 epochs are always run. Writes to RG/es/, never '
+                         'over frozen30. NAVSIM already selects on inner-val and is not run.')
+    ap.add_argument('--proper-init', action='store_true',
+                    help='B2D two-stage only: re-seed the torch RNG AFTER the rasch call so '
+                         'the model initialisation actually varies with --seed. Without this '
+                         'flag scirt.encoder.rasch reseeds torch internally and every seed '
+                         'gets the identical initial weights, so the seeds differ only in '
+                         'minibatch order. Writes to RG/es_pinit/, never over RG/es/. '
+                         'Off by default: the existing es/ results stay bit-reproducible.')
+    ap.add_argument('--full-train', action='store_true',
+                    help='PROTOCOL_R section 18: ONE model per seed on ALL source items. Stage 1 '
+                         'selects e* by inner-val NLL on a grouped inner split (B2D: 8 of 44 '
+                         'types; NavSim: 1/5 of the logs), stage 2 refits on every source item '
+                         'for e*+1 epochs with theta refitted on every source column (the '
+                         'section-12 nested rule). Re-seeds after rasch (proper-init) always. '
+                         'Writes only under RG/transfer/. Requires --transfer-to.')
+    ap.add_argument('--transfer-to', default=None, choices=['b2d', 'navsim', 'nuplan'],
+                    help='after --full-train, forward the OTHER domain tensor under the SOURCE '
+                         'normalisation statistics and save window-level (and, for a B2D '
+                         'target, route-level) predictions plus the source in-sample prediction. '
+                         'nuplan (section 20.2 S2): both ego tensors are forwarded, keys '
+                         'pred_routed / pred_logged; no nuPlan response is read.')
+    ap.add_argument('--subsample-logs', type=int, default=None,
+                    help='NavSim source only: keep whole logs (fixed seed) until ~N windows '
+                         '(section 18.2 T3, N=2656). The kept logs are recorded in the output.')
+    ap.add_argument('--target', default='full', choices=['full', 'collision'],
+                    help='section 19.1 Z1/Z4, B2D source --full-train only: train on the '
+                         'collision-only panel transfer/zs/b2d_e2e16_collision_matrix.csv. '
+                         'Default full = e2e16 full-fail panel. Output gets _tcol, under transfer/zs/.')
+    ap.add_argument('--drop-agent-channels', default=None,
+                    help='section 19.1 Z4, --full-train only: comma list of agent channels to '
+                         'remove from the agent stream (names: ' + ','.join(AG_NAMES) + '), e.g. '
+                         'hlen,hwid,isveh. Stats are still computed on all 8 channels; the kept '
+                         'channels are sliced after standardisation. Output gets _dag<names>.')
+    a = ap.parse_args()
+    a.drop_agent_channels = sorted(set(a.drop_agent_channels.split(','))) \
+        if a.drop_agent_channels else None
+    a.zs_suffix = ((f'_tcol' if a.target == 'collision' else '')
+                   + (f'_dag{"".join(a.drop_agent_channels)}' if a.drop_agent_channels else ''))
+    if a.zs_suffix:
+        assert a.full_train and a.transfer_to, 'section-19.1 flags are --full-train/--transfer-to only'
+        assert a.target == 'full' or a.domain == 'b2d', '--target collision is a B2D-source lever'
+        assert not a.drop_agent_channels or set(a.drop_agent_channels) <= set(AG_NAMES), \
+            f'unknown agent channel; names are {AG_NAMES}'
+        print(f'[zs] section 19.1 Z4 flags: target={a.target} '
+              f'drop_agent_channels={a.drop_agent_channels} suffix={a.zs_suffix}', flush=True)
+    os.environ['CUDA_VISIBLE_DEVICES'] = a.gpu
+    if a.domain == 'nuplan':                       # section 20.2 S3: same-domain OOF only
+        assert not (a.full_train or a.transfer_to or a.subsample_logs or a.early_stop
+                    or a.proper_init or a.shuffle or a.ablate_route or a.zs_suffix), \
+            '--domain nuplan is the S3 same-domain OOF only'
+        a.epochs = a.epochs or 40; a.bs = a.bs or 256   # frozen NavSim-style recipe
+        run_nuplan(a, 'r2')
+        return
+    if a.transfer_to == 'nuplan':
+        a.nuplan_ego = 'routed'   # both ego variants land in ONE output file; no _logged suffix
+    if a.full_train or a.transfer_to or a.subsample_logs:
+        import transfer_common as tc
+        tc.check_args(a)
+        assert not a.early_stop, '--full-train carries its own nested selection; drop --early-stop'
+        a.epochs = a.epochs or (30 if a.domain == 'b2d' else 40)
+        a.bs = a.bs or (64 if a.domain == 'b2d' else 256)
+        run_full(a)
+        return
+    assert not (a.early_stop and a.domain == 'navsim'), \
+        'NAVSIM already selects the best-inner-val checkpoint; --early-stop is B2D only'
+    assert not (a.proper_init and not a.early_stop), \
+        '--proper-init is only defined for the two-stage --early-stop protocol'
+    assert not (a.shuffle is not None and a.ablate_route), 'one control at a time'
+    assert (a.shuffle is None) == (a.shuffle_seed is None), \
+        '--shuffle and --shuffle-seed go together'
+    tag = 'r2'
+    if a.shuffle == 'route':
+        tag = f'sroute{a.shuffle_seed}'
+    elif a.shuffle == 'a2l':
+        tag = f'sa2l{a.shuffle_seed}'
+    if a.ablate_route:
+        tag = 'r2noroute'
+    if a.domain == 'b2d':
+        a.epochs = a.epochs or 30; a.bs = a.bs or 64
+        run_b2d(a, tag)
+    else:
+        a.epochs = a.epochs or 40; a.bs = a.bs or 256
+        run_navsim(a, tag)
+
+
+if __name__ == '__main__':
+    main()

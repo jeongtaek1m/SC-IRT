@@ -71,7 +71,8 @@ SEED = 0
 #   planner-only null            AUROC .699 / MAE .214
 #   Kinematics (cmdkin, 25d)     AUROC .752 / MAE .180 (+15.6%) / rho +.497
 #   Hand-crafted risk (73d)      AUROC .758 / MAE .175 (+18.0%) / rho +.533
-#   RelGraph R2 (3 runs)         AUROC .751 / MAE .192 / rho +.490
+#   RelGraph R2-noLane (3 runs)  AUROC .761 / MAE .181 (+15.3%) / rho +.545   <- encoder of record
+#   RelGraph R2, lanes kept      AUROC .751 / MAE .192 / rho +.490   (Table 3A(b) control)
 SCORES = {
   'shipped row (old in-house replication, 12d, epoch-0 checkpoint)':
       {'auroc': 0.696, 'mae': 0.217, 'mae_gain': '-1.5%', 'rho': +0.001},

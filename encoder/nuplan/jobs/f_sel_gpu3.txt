@@ -1,0 +1,33 @@
+A2e_full_s0|--arch r2 --drop speed --drop-egow --seed 0 --phase full --tag A2e
+A2e_full_s1|--arch r2 --drop speed --drop-egow --seed 1 --phase full --tag A2e
+A2e_full_s2|--arch r2 --drop speed --drop-egow --seed 2 --phase full --tag A2e
+C4r2e_p0_full_s0|--perm 0 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p0
+C4r2e_p0_full_s1|--perm 0 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p0
+C4r2e_p0_full_s2|--perm 0 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p0
+C4r2e_p1_full_s0|--perm 1 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p1
+C4r2e_p1_full_s1|--perm 1 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p1
+C4r2e_p1_full_s2|--perm 1 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p1
+C4r2e_p2_full_s0|--perm 2 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p2
+C4r2e_p2_full_s1|--perm 2 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p2
+C4r2e_p2_full_s2|--perm 2 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p2
+C4r2e_p3_full_s0|--perm 3 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p3
+C4r2e_p3_full_s1|--perm 3 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p3
+C4r2e_p3_full_s2|--perm 3 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p3
+C4r2e_p4_full_s0|--perm 4 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p4
+C4r2e_p4_full_s1|--perm 4 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p4
+C4r2e_p4_full_s2|--perm 4 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p4
+C4r2e_p5_full_s0|--perm 5 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p5
+C4r2e_p5_full_s1|--perm 5 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p5
+C4r2e_p5_full_s2|--perm 5 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p5
+C4r2e_p6_full_s0|--perm 6 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p6
+C4r2e_p6_full_s1|--perm 6 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p6
+C4r2e_p6_full_s2|--perm 6 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p6
+C4r2e_p7_full_s0|--perm 7 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p7
+C4r2e_p7_full_s1|--perm 7 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p7
+C4r2e_p7_full_s2|--perm 7 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p7
+C4r2e_p8_full_s0|--perm 8 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p8
+C4r2e_p8_full_s1|--perm 8 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p8
+C4r2e_p8_full_s2|--perm 8 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p8
+C4r2e_p9_full_s0|--perm 9 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4r2e_p9
+C4r2e_p9_full_s1|--perm 9 --arch r2 --drop speed --drop-egow --label-shuffle --seed 1 --phase full --tag C4r2e_p9
+C4r2e_p9_full_s2|--perm 9 --arch r2 --drop speed --drop-egow --label-shuffle --seed 2 --phase full --tag C4r2e_p9

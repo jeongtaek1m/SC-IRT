@@ -47,13 +47,13 @@ the benchmark). Each method uses its native readout.
 | Random (IRT-free) | .0623* | .0397 | .0245 | .0144* | .0623* | .0397 | .0245* | .0144* | .0623* | .0397* | .0245* | .0144* | .0352 |
 | Random + IRT | .0536 | .0368 | .0232 | .0138 | .0536 | .0362 | .0232 | .0133* | .0534 | .0362* | .0227* | .0132* | .0316 |
 | Random-strat + IRT | .0594* | .0353 | .0210 | .0122 | .0568 | .0331 | .0194 | .0113* | .0565 | .0332* | .0195 | .0112 | .0307 |
-| DISCO-sel + IRT | .0614* | .0374 | .0299 | .0140 | .0538 | .0423 | .0264* | .0134* | .0594 | .0417* | .0263* | .0110* | .0348 |
-| AnchorPoints | .1290* | .1290* | .1290* | .1290* | .0552 | .0485* | .0397* | .0397* | .0583 | .0445* | .0286* | .0167* | .0706 |
-| Total-Fisher | .0604* | .0450* | .0306* | .0209* | .0620* | .0401 | .0215 | .0117 | .0585 | .0431* | .0225* | .0136* | .0358 |
-| Marginal-Fisher | .0560 | .0473* | .0328* | .0207* | .0625 | .0407 | .0240 | .0108 | .0583 | .0390* | .0237* | .0133* | .0358 |
-| tinyBenchmarks-lite | .0755* | .0621* | .0334* | .0184* | .0472 | .0378 | .0168 | .0139* | .0508 | .0334* | .0235* | .0112 | .0353 |
-| metabench-lite | .0615 | .0430* | .0250 | .0157* | .0497 | .0433 | .0266 | .0142* | .0643 | .0427* | .0221 | .0130* | .0351 |
-| Fluid-style | .0653* | .0385 | .0312* | .0166* | .0499 | .0364 | .0210 | .0105 | .0404 | .0281 | .0243* | .0119* | .0312 |
+| DISCO-sel + IRT | .0566 | .0376 | .0264 | .0137* | .0536 | .0473* | .0271* | .0135* | .0593 | .0423* | .0254* | .0114* | .0345 |
+| AnchorPoints | .1290* | .1290* | .1290* | .1290* | .0556 | .0499* | .0392* | .0397* | .0601 | .0449* | .0281* | .0176* | .0709 |
+| Total-Fisher | .0512 | .0459* | .0306* | .0198* | .0646* | .0393 | .0221 | .0117 | .0581 | .0430* | .0222 | .0136* | .0352 |
+| Marginal-Fisher | .0580 | .0497* | .0309* | .0211* | .0596 | .0413 | .0244 | .0109 | .0576 | .0392* | .0236* | .0133* | .0358 |
+| tinyBenchmarks-lite | .0660* | .0488* | .0243 | .0154* | .0516 | .0369 | .0212 | .0122* | .0451 | .0331* | .0204 | .0121 | .0323 |
+| metabench-lite | .0728* | .0452* | .0308* | .0204* | .0501 | .0420 | .0276* | .0152* | .0629 | .0388* | .0247* | .0154* | .0372 |
+| Fluid-style | .0541 | .0387 | .0312* | .0165* | .0499 | .0364 | .0210 | .0105 | .0404 | .0281 | .0243* | .0119* | .0303 |
 | **ATDrive** | **.0450** | **.0332** | .0223 | **.0116** | **.0448** | .0337 | .0202 | **.0082** | .0477 | **.0231** | **.0160** | **.0081** | **.0262** |
 
 The three random-policy rows are the expected error over five independent
@@ -63,13 +63,13 @@ route patterns, the correlation distance collapses and the same anchor
 estimate comes out at every budget.
 
 Reading. ATDrive has the lowest error in 8 of 12 cells and the lowest macro
-average by a clear margin (.0262 against .0307 for type-stratified Random,
-.0312 for Fluid-style and .0316 for Random + IRT). The four cells it does
+average by a clear margin (.0262 against .0303 for Fluid-style, .0307 for
+type-stratified Random and .0316 for Random + IRT). The four cells it does
 not win are ties inside the intervals: K4 B110 and K8 B55/B110, where the
-type-stratified order or tinyBenchmarks is lower by .001-.003, and K12 B30,
-where Fluid is lower by .007. The margin grows with the budget and with the
+type-stratified order is lower by .001-.002, and K12 B30, where Fluid is
+lower by .007. The margin grows with the budget and with the
 calibration panel — at K_cal = 12 ATDrive is .0231 / .0160 / .0081 at
-B = 55 / 110 / 165 while the best baseline sits at .0281 / .0195 / .0110 —
+B = 55 / 110 / 165 while the best baseline sits at .0281 / .0195 / .0112 —
 because a better-calibrated bank makes the Delta-R1 score sharper.
 
 **What each budget buys** (`run_adaptive.py --merge`). SR-MAE is an average;
@@ -132,10 +132,10 @@ against ATDrive: tinyBenchmarks +.0092, catR +.0080, Fluid +.0151, ATLAS +.0334,
 AnchorPoints +.0464, DISCO +.0980, metabench +.1035.
 
 Reading. Two facts matter more than the ordering. First, **our re-implementations
-were not strawmen — they were, if anything, generous**: metabench .0351 -> .1297,
-DISCO .0347 -> .1242, Fluid .0312 -> .0412, AnchorPoints .0706 -> .0725 when the
-methods run their own code; only catR improves (.0358 -> .0342) and tinyBenchmarks
-is unchanged (.0353). Second, the native readouts of metabench and DISCO collapse
+were not strawmen — they were, if anything, generous**: metabench .0372 -> .1297,
+DISCO .0345 -> .1242, Fluid .0303 -> .0412, AnchorPoints .0709 -> .0725 and
+tinyBenchmarks .0323 -> .0353 when the methods run their own code; only catR
+improves on our Total-Fisher (.0352 -> .0342). Second, the native readouts of metabench and DISCO collapse
 here for a reason that is about our setting, not their code: metabench's readout is
 a GAM fitted on the calibration respondents and DISCO's headline estimator is a
 random forest over model signatures, and neither is estimable from 4-12 respondents
@@ -189,11 +189,11 @@ AUROC on each order's own unobserved routes (`*` = paired planner-cluster
 
 | order | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| ATDrive | .7316 | .7470 | .7549 | .7105 | .7706 | .7887 | .8021 | .7976 | .7842 | .8011 | .8050 | .8281 | .7768 |
-| Fluid | .7224* | .7292* | .7392 | .7402 | .7556* | .7631* | .7860 | .8010 | .7730* | .7826* | .7986 | .8155 | .7672 |
-| metabench | .7288 | .7297* | .7409 | .7236 | .7502* | .7591* | .7591* | .7704 | .7621* | .7638* | .7663* | .7436* | .7498 |
-| Random | .7247 | .7375 | .7593 | .7680 | .7570* | .7687* | .7856 | .8009 | .7695* | .7805* | .7957 | .8110 | .7715 |
-| Random-strat | .7221* | .7439 | .7690 | .7750* | .7559* | .7752 | .7964 | .8086 | .7674* | .7844* | .8040 | .8181 | .7767 |
+| ATDrive | .7319 | .7467 | .7541 | .7105 | .7707 | .7886 | .8021 | .7976 | .7842 | .8011 | .8049 | .8281 | .7767 |
+| Fluid | .7226* | .7299* | .7389 | .7414 | .7555* | .7630* | .7860 | .8009 | .7730* | .7826* | .7986 | .8156 | .7673 |
+| metabench | .7215* | .7301* | .7329 | .7419 | .7565* | .7678* | .7702 | .7875 | .7646* | .7670* | .7787 | .8015 | .7600 |
+| Random | .7241 | .7376 | .7596 | .7673 | .7571* | .7686* | .7856 | .8008 | .7695* | .7805* | .7957 | .8110 | .7715 |
+| Random-strat | .7219* | .7437 | .7692 | .7746* | .7560* | .7752 | .7964 | .8086 | .7674* | .7844* | .8040 | .8181 | .7766 |
 
 Macro over the 12 cells, with the two controls that decide how to read it.
 The zero-rollout row scores the same residual sets with the posterior
@@ -202,20 +202,20 @@ data), so it cannot differ between orders through posterior quality:
 
 | statistic | ATDrive | Fluid | metabench | Random | Random-strat |
 |---|---|---|---|---|---|
-| AUROC, own residual set | .7768 | .7672 | .7498 | .7715 | .7767 |
-| Brier, own residual set | .1341 | .1453 | .1805 | .1717 | .1687 |
-| Brier, zero-rollout predictor, same residual sets | .1815 | .1864 | .2297 | .2241 | .2238 |
-| AUROC, zero-rollout predictor, same residual sets | .7473 | .7339 | .7113 | .7321 | .7345 |
-| SR-MAE, common readout (Table 2 machine) | .0262 | .0284 | .0335 | .0334 | .0288 |
-| SD of predicted p on the residual set | 0.1784 | 0.1575 | 0.1676 | 0.1821 | 0.1830 |
+| AUROC, own residual set | .7767 | .7673 | .7600 | .7715 | .7766 |
+| Brier, own residual set | .1341 | .1452 | .1791 | .1717 | .1687 |
+| Brier, zero-rollout predictor, same residual sets | .1815 | .1861 | .2258 | .2241 | .2238 |
+| AUROC, zero-rollout predictor, same residual sets | .7471 | .7336 | .7201 | .7319 | .7342 |
+| SR-MAE, common readout (Table 2 machine) | .0262 | .0284 | .0334 | .0334 | .0288 |
+| SD of predicted p on the residual set | 0.1784 | 0.1575 | 0.1692 | 0.1821 | 0.1830 |
 
 | control | result |
 |---|---|
-| ATDrive - Random-strat AUROC, pooled over the 751 paired evaluations | +.0009, 95% CI [-.0189, +.0192]; ATDrive ahead in 9 of 12 cells; the .0001 macro gap comes from one cell, K4 B165 (Random-strat - ATDrive +.0675 [+.0068, +.1391] on 59 records), without which the macro is .7828 vs .7768; on the records where all five orders have an AUROC the macro is .7773 vs .7764 |
-| Zero-rollout predictor vs SR-MAE | macro Brier order identical to the SR-MAE order (rho +1.00) with a larger between-order spread (.0482 vs .0464 for the real posteriors); AUROC macro rho +0.90 (real posteriors +0.70) |
-| Skill over the zero-rollout predictor, Random-strat - ATDrive | Brier skill +.0076 [+.0020, +.0146]; AUROC gain +.0118 [+.0006, +.0232] (Random - ATDrive: +.0049 [-.0012, +.0118] and +.0096 [-.0012, +.0204]; Fluid - ATDrive: -.0063 [-.0080, -.0050] and +.0017 [-.0036, +.0084]) |
-| Common evaluation set (routes no order administered; B = 30 and 55 only, 112.1 and 60.8 routes, both classes present in 100% / 99.5% of evaluations) | AUROC ATDrive .7658, Fluid .7586, metabench .7586, Random .7638, Random-strat .7645; Random-strat - ATDrive -.0013 [-.0072, +.0055], Random -.0020 [-.0088, +.0050], Fluid -.0072 [-.0106, -.0036], metabench -.0073 [-.0127, -.0013]; Brier .1596 / .1617 / .1635 / .1617 / .1615, spread across orders .0175 -> .0039; per-cell Spearman with SR-MAE falls from +0.52 to +0.10 (AUROC) and +0.88 to +0.67 (Brier) |
-| Rank agreement with SR-MAE, own residual sets | mean per-cell Spearman: AUROC +0.53 (common readout) / +0.64 (native Table 1); Brier +0.70 / +0.59. Same cell winner: AUROC 7 of 12, Brier 6 of 12. Identical 5-way order: AUROC 0 of 12, Brier 1 of 12. Brier's macro order matches SR-MAE only by placing Random (.0334) below metabench (.0335), a .0001 gap this document reads as a tie |
+| ATDrive - Random-strat AUROC, pooled over the 751 paired evaluations | +.0009, 95% CI [-.0189, +.0194]; ATDrive ahead in 9 of 12 cells; the .0001 macro gap comes from one cell, K4 B165 (Random-strat - ATDrive +.0670 [+.0058, +.1392] on 59 records), without which the macro is .7827 vs .7768; on the records where all five orders have an AUROC the macro is .7772 vs .7763 |
+| Zero-rollout predictor vs SR-MAE | macro Brier order identical to the SR-MAE order (rho +1.00) with a between-order spread as wide as the real posteriors' (.0443 vs .0450); AUROC macro rho +0.90 (real posteriors +0.70) |
+| Skill over the zero-rollout predictor, Random-strat - ATDrive | Brier skill +.0076 [+.0020, +.0146]; AUROC gain +.0119 [+.0009, +.0232] (Random - ATDrive: +.0049 [-.0012, +.0118] and +.0096 [-.0012, +.0204]; Fluid - ATDrive: -.0065 [-.0081, -.0051] and +.0017 [-.0037, +.0083]) |
+| Common evaluation set (routes no order administered; B = 30 and 55 only, 112.3 and 60.9 routes, both classes present in 100% / 99.5% of evaluations) | AUROC ATDrive .7666, Fluid .7591, metabench .7597, Random .7647, Random-strat .7651; Random-strat - ATDrive -.0014 [-.0074, +.0056], Random -.0018 [-.0086, +.0051], Fluid -.0075 [-.0109, -.0038], metabench -.0069 [-.0119, -.0016]; Brier .1600 / .1620 / .1644 / .1619 / .1617, spread across orders .0182 -> .0044; per-cell Spearman with SR-MAE falls from +0.55 to +0.12 (AUROC) and +0.92 to +0.65 (Brier) |
+| Rank agreement with SR-MAE, own residual sets | mean per-cell Spearman: AUROC +0.57 (common readout) / +0.72 (native Table 1); Brier +0.76 / +0.73. Same cell winner (common readout): AUROC 7 of 12, Brier 6 of 12. Identical 5-way order: AUROC 1 of 12, Brier 2 of 12. Brier's macro order matches SR-MAE only by placing Random (.0334) below metabench (.0334), a gap below the fourth decimal this document reads as a tie |
 
 Reading. AUROC and SR-MAE agree on the extremes (ATDrive best, metabench
 worst) and correlate positively but loosely. Route-level AUROC cannot
@@ -229,7 +229,7 @@ Both route-level scores are dominated by which routes an order leaves
 behind; with the evaluation set held fixed at B = 30 and 55 the five orders
 barely separate. The residual-flatness explanation is a correlation only
 and fails where it was invoked: at K4 B165 Fluid's residual set is flatter
-than ATDrive's (SD .1178 vs .1336) yet its AUROC is higher (.7402 vs .7105).
+than ATDrive's (SD .1178 vs .1336) yet its AUROC is higher (.7414 vs .7105).
 Neither route-level score should be read as a method comparison without
 the common-set or skill-corrected version beside it.
 
@@ -251,47 +251,48 @@ conservative), and the paired delta of the SR-MAE vs ATDrive.
 
 | K_cal | eps | method | rollouts | of 220 | SR-MAE | gap | d vs ATDrive |
 |---|---|---|---|---|---|---|---|
-| 4 | .05 | **ATDrive** | **83.5** | **38%** | .0272 | -.023 | — |
-| | | Fluid | 99.1 | 45% | .0282 | -.021 | +.0011 |
-| | | metabench | 108.8 | 49% | .0265 | -.023 | -.0007 |
+| 4 | .05 | **ATDrive** | **83.5** | **38%** | .0272 | -.022 | — |
+| | | Fluid | 98.7 | 45% | .0285 | -.021 | +.0013 |
+| | | metabench | 109.7 | 50% | .0300 | -.020 | +.0028 |
 | | | Random | 98.7 | 45% | .0267 | -.023 | -.0005 |
 | | | Random-strat | 87.9 | 40% | .0219 | -.028 | -.0053 |
 | 4 | .03 | **ATDrive** | **128.9** | **59%** | .0164 | -.013 | — |
-| | | Fluid | 142.3 | 65% | .0194 | -.010 | +.0031 |
-| | | metabench | 160.1 | 73% | .0138 | -.016 | -.0026 |
+| | | Fluid | 141.9 | 65% | .0194 | -.010 | +.0030 |
+| | | metabench | 158.2 | 72% | .0156 | -.014 | -.0008 |
 | | | Random | 150.5 | 68% | .0154 | -.014 | -.0009 |
 | | | Random-strat | 139.9 | 64% | .0130 | -.017 | -.0033 |
 | 8 | .05 | **ATDrive** | **79.0** | **36%** | .0281 | -.022 | — |
 | | | Fluid | 98.8 | 45% | .0216 | -.028 | -.0065 |
-| | | metabench | 118.5 | 54% | .0212 | -.029 | -.0069 |
+| | | metabench | 117.6 | 53% | .0184 | -.031 | -.0097* |
 | | | Random | 93.3 | 42% | .0260 | -.024 | -.0021 |
 | | | Random-strat | 87.7 | 40% | .0208 | -.029 | -.0073 |
 | 8 | .03 | **ATDrive** | **124.9** | **57%** | .0174 | -.013 | — |
 | | | Fluid | 142.0 | 65% | .0172 | -.013 | -.0002 |
-| | | metabench | 167.4 | 76% | .0141 | -.016 | -.0033 |
+| | | metabench | 165.6 | 75% | .0127 | -.017 | -.0046 |
 | | | Random | 146.2 | 66% | .0165 | -.013 | -.0008 |
 | | | Random-strat | 140.3 | 64% | .0122 | -.018 | -.0051* |
 | 12 | .05 | **ATDrive** | **70.3** | **32%** | **.0207** | -.029 | — |
 | | | Fluid | 88.4 | 40% | .0283 | -.021 | +.0076* |
-| | | metabench | 107.6 | 49% | .0229 | -.027 | +.0022 |
+| | | metabench | 110.0 | 50% | .0207 | -.029 | +.0001 |
 | | | Random | 91.2 | 41% | .0294 | -.020 | +.0087* |
 | | | Random-strat | 87.4 | 40% | .0221 | -.028 | +.0015 |
 | 12 | .03 | **ATDrive** | **114.8** | **52%** | .0138 | -.016 | — |
 | | | Fluid | 132.0 | 60% | .0190 | -.011 | +.0052* |
-| | | metabench | 159.7 | 73% | .0136 | -.016 | -.0002 |
+| | | metabench | 159.5 | 73% | .0147 | -.015 | +.0009 |
 | | | Random | 144.1 | 65% | .0177 | -.012 | +.0039 |
 | | | Random-strat | 140.8 | 64% | .0112 | -.019 | -.0026 |
 
 Reading. For an error target of .05, ATDrive stops after 70-84 of the 220
 routes (32-38% of the benchmark); the same target costs
 Fluid 88-99, Random 91-99, the type-stratified order 87-88 and metabench
-108-119 routes. For .03 it needs 115-129 routes (52-59%) against 132-167 for
+110-118 routes. For .03 it needs 115-129 routes (52-59%) against 132-166 for
 the others. The saving is the acquisition, not the scale: every order
 carries its own leave-one-planner-out c, and the orders that keep going
 arrive at a similar error. Only at K_cal = 12 does the error difference
-reach significance, and there ATDrive is the *better* one (-.009 vs Random,
--.008 vs Fluid at eps = .05); at K_cal = 8 the type-stratified order reaches
-eps = .03 with a lower error (-.005*) for 15 more routes. The negative gaps
+reach significance in ATDrive's favour (-.009 vs Random, -.008 vs Fluid at
+eps = .05, -.005 vs Fluid at eps = .03); at K_cal = 8 two orders that keep
+going arrive lower — the type-stratified order at eps = .03 (-.005*) for 15
+more routes and metabench at eps = .05 (-.010*) for 39 more routes. The negative gaps
 say the scaled risk over-states the realised error at the stop, as a 90th-percentile scale (about
 twice the median ratio) must; c at K_cal = 4 rests on four LOO trajectories per draw and ranges
 1.25-3.42 across draws (medians 1.97 / 2.12 / 1.95). The raw R1 tracks the
@@ -307,7 +308,7 @@ a tau sweep, ATDrive's adaptive stop matches its own fixed-budget curve at
 the same mean cost within .005 in every cell (K_cal = 12, tau = .040: 37.5
 rollouts, .0344 adaptive vs .0391 fixed), so the stopping rule spends the
 budget as well as a fixed budget of the same mean length: at matched mean cost the adaptive stop's
-error equals the fixed-budget error (paired deltas -.0013 to +.0025; the stop is a budget-selection
+error equals the fixed-budget error (paired deltas -.0047 to +.0034; the stop is a budget-selection
 device that converts an SR-unit error target into a stopping time, not an accuracy gain).
 
 ## Adaptive policies under one IRT (`run_cat_objective.py`, `run_policy_matrix.py`)
@@ -411,29 +412,29 @@ uniform random order read at 55 routes with each system's own readout.
 | K_cal | row | rollouts | of 220 | SR-MAE | IES | d vs ATDrive eps = .05 |
 |---|---|---|---|---|---|---|
 | 4 | ATLAS tau = 0.1 | 217.4 | 99% | .0000 | 0.00 | -.0272* |
-| | ATLAS tau = 0.2 | 77.7 | 35% | .0370 | 1.33 | +.0098* |
-| | ATLAS tau = 0.3 | 32.5 | 15% | .0514 | 0.77 | +.0242* |
-| | Fluid fixed B = 100 | 100.0 | 45% | .0305 | 1.41 | +.0034 |
-| | Fluid fixed B = match * | 82.9 | 38% | .0318 | 1.21 | +.0047 |
-| | Fluid SE <= delta* * | 3.2 | 1% | .1406 | 0.21 | +.1135* |
-| | **ATDrive eps = .05** | **83.5** | 38% | .0272 | 1.02 | — |
-| | ATDrive eps = .03 | 128.9 | 59% | .0164 | 0.95 | -.0108* |
+|  | ATLAS tau = 0.2 | 77.7 | 35% | .0370 | 1.33 | +.0098* |
+|  | ATLAS tau = 0.3 | 32.5 | 15% | .0514 | 0.77 | +.0242* |
+|  | Fluid fixed B = 100 | 100.0 | 45% | .0303 | 1.40 | +.0031 |
+|  | Fluid fixed B = match * | 82.9 | 38% | .0317 | 1.21 | +.0045 |
+|  | Fluid SE <= delta* * | 3.2 | 1% | .1406 | 0.21 | +.1134* |
+|  | **ATDrive eps = .05** | **83.5** | 38% | .0272 | 1.02 | — |
+|  | ATDrive eps = .03 | 128.9 | 59% | .0164 | 0.95 | -.0108* |
 | 8 | ATLAS tau = 0.1 | 217.4 | 99% | .0000 | 0.00 | -.0281* |
-| | ATLAS tau = 0.2 | 66.4 | 30% | .0311 | 1.02 | +.0030 |
-| | ATLAS tau = 0.3 | 30.0 | 14% | .0424 | 0.63 | +.0143* |
-| | Fluid fixed B = 100 | 100.0 | 45% | .0230 | 1.13 | -.0051 |
-| | Fluid fixed B = match * | 80.0 | 36% | .0273 | 1.07 | -.0008 |
-| | Fluid SE <= delta* * | 8.8 | 4% | .0857 | 0.37 | +.0576* |
-| | **ATDrive eps = .05** | **79.0** | 36% | .0281 | 1.05 | — |
-| | ATDrive eps = .03 | 124.9 | 57% | .0174 | 1.02 | -.0107* |
+|  | ATLAS tau = 0.2 | 66.4 | 30% | .0311 | 1.02 | +.0030 |
+|  | ATLAS tau = 0.3 | 30.0 | 14% | .0424 | 0.63 | +.0143* |
+|  | Fluid fixed B = 100 | 100.0 | 45% | .0229 | 1.13 | -.0052 |
+|  | Fluid fixed B = match * | 80.0 | 36% | .0273 | 1.07 | -.0008 |
+|  | Fluid SE <= delta* * | 8.8 | 4% | .0852 | 0.37 | +.0571* |
+|  | **ATDrive eps = .05** | **79.0** | 36% | .0281 | 1.05 | — |
+|  | ATDrive eps = .03 | 124.9 | 57% | .0174 | 1.02 | -.0107* |
 | 12 | ATLAS tau = 0.1 | 217.4 | 99% | .0000 | 0.00 | -.0207* |
-| | ATLAS tau = 0.2 | 56.9 | 26% | .0314 | 0.85 | +.0107 |
-| | ATLAS tau = 0.3 | 30.0 | 14% | .0437 | 0.62 | +.0230* |
-| | Fluid fixed B = 100 | 100.0 | 45% | .0255 | 1.19 | +.0048 |
-| | Fluid fixed B = match * | 69.7 | 32% | .0264 | 0.86 | +.0058 |
-| | Fluid SE <= delta* * | 19.0 | 9% | .0545 | 0.48 | +.0338* |
-| | **ATDrive eps = .05** | **70.3** | 32% | .0207 | 0.67 | — |
-| | ATDrive eps = .03 | 114.8 | 52% | .0138 | 0.74 | -.0069* |
+|  | ATLAS tau = 0.2 | 56.9 | 26% | .0314 | 0.85 | +.0107 |
+|  | ATLAS tau = 0.3 | 30.0 | 14% | .0437 | 0.62 | +.0230* |
+|  | Fluid fixed B = 100 | 100.0 | 45% | .0258 | 1.21 | +.0051 |
+|  | Fluid fixed B = match * | 69.7 | 32% | .0267 | 0.87 | +.0060 |
+|  | Fluid SE <= delta* * | 19.0 | 9% | .0543 | 0.48 | +.0337* |
+|  | **ATDrive eps = .05** | **70.3** | 32% | .0207 | 0.67 | — |
+|  | ATDrive eps = .03 | 114.8 | 52% | .0138 | 0.74 | -.0069* |
 
 Reading. This is not an equal-budget comparison: every system stops where
 its own rule stops, so most rows differ from ATDrive in cost as well as in
@@ -448,6 +449,42 @@ prices the cost in but rewards an early stop with a large error (ATLAS
 tau = 0.3 and Fluid's precision stop have the lowest IES of the genuine
 stops because they halt at 3-33 routes), so it is read with the SR-MAE
 column beside it.
+
+**The same two systems through their own code** (`ATDRIVE_OFFICIAL_ORDERS=1
+... --merge`, `results/syscmp_official_table.json`): the ATLAS-style and
+Fluid-style rows above are our re-implementations. Read from the per-cell
+records of `results/up_official.json` — their fit, their selection, their
+stopping rule and their p-IRT readout on the same protocol cells, paired to the
+same ATDrive evaluations — the published systems behave differently, and worse:
+
+| K_cal | row (official code) | rollouts | of 220 | SR-MAE | d vs ATDrive eps = .05 |
+|---|---|---|---|---|---|
+| 4 | ATLAS tau = 0.1 | 36.4 | 17% | .1026 | +.0760* |
+| | ATLAS tau = 0.2 | 34.1 | 15% | .1093 | +.0827* |
+| | ATLAS tau = 0.3 | 31.3 | 14% | .1109 | +.0842* |
+| | Fluid fixed B = 55 | 55.0 | 25% | .0622 | +.0350* |
+| | Fluid fixed B = 110 | 110.0 | 50% | .0448 | +.0176* |
+| 8 | ATLAS tau = 0.1 | 47.9 | 22% | .0759 | +.0478* |
+| | ATLAS tau = 0.2 | 34.0 | 15% | .0856 | +.0575* |
+| | ATLAS tau = 0.3 | 31.4 | 14% | .0874 | +.0593* |
+| | Fluid fixed B = 55 | 55.0 | 25% | .0432 | +.0151* |
+| | Fluid fixed B = 110 | 110.0 | 50% | .0254 | -.0027 |
+| 12 | ATLAS tau = 0.1 | 61.4 | 28% | .0680 | +.0473* |
+| | ATLAS tau = 0.2 | 38.7 | 18% | .0744 | +.0537* |
+| | ATLAS tau = 0.3 | 32.2 | 15% | .0769 | +.0563* |
+| | Fluid fixed B = 55 | 55.0 | 25% | .0375 | +.0169* |
+| | Fluid fixed B = 110 | 110.0 | 50% | .0261 | +.0054 |
+
+The official ATLAS stopping rule never exhausts the bank (its SE <= tau
+criterion is met after 31-61 routes at every tau, where our re-implementation
+at tau = 0.1 runs to route 217) and its p-IRT readout leaves an error of
+.068-.111, four to five times ATDrive's at its eps = .05 stop; two K_cal = 4
+cells failed in the official code (EAP ability undefined, n = 62 of 64). Fluid
+publishes no stopping rule, so its own system is a fixed budget: at 110 routes
+its official code ties ATDrive's 70-84-route stop at K_cal >= 8 (-.0027 /
++.0054, intervals containing zero) and is behind at K_cal = 4 and at 55 routes.
+No IES is given for these rows because the official runs have no random
+reference read with their own readout.
 
 ### Ranking quality of the complete-system trajectories (`run_ranking_quality.py`)
 
@@ -464,12 +501,12 @@ the same rows (e.g. K4 B30: 95.8% insertion vs 91.7% pairwise).
 
 | row | routes K4 / K8 / K12 | SR-MAE (macro) | insertion accuracy (macro) | \|Delta rank\| (macro) | pairwise rank correct K4 / K8 / K12 |
 |---|---|---|---|---|---|
-| ATLAS tau = 0.1 (exhausts the bank; not a ranking result) | 217.4 | .0000 | 1.0000 | .000 | 100.0 / 100.0 / 100.0 |
+| ATLAS tau = 0.1 (exhausts the bank; not a ranking result) | 217.4 | .0000 | .0000 | .000 | 100.0 / 100.0 / 100.0 |
 | ATLAS tau = 0.2 | 77.7 / 66.4 / 56.9 | .0331 | .9640 | .432 | 93.8 / 93.8 / 92.7 |
-| ATLAS tau = 0.3 | 32.5 / 30.0 / 30.0 | .0458 | .9484 | .620 | 88.5 / 93.8 / 91.7 |
-| Fluid fixed B = 100 | 100 | .0263 | .9709 | .349 | 91.7 / 95.8 / 95.8 |
-| Fluid fixed B = match | 82.9 / 80.0 / 69.7 | .0285 | .9666 | .401 | 90.6 / 96.9 / 96.9 |
-| Fluid SE <= delta* | 3.2 / 8.8 / 19.0 | .0936 | .8841 | 1.391 | 66.1 / 84.4 / 90.1 |
+| ATLAS tau = 0.3 | 32.5 / 30.0 / 30 | .0458 | .9484 | .620 | 88.5 / 93.8 / 91.7 |
+| Fluid fixed B = 100 | 100 | .0264 | .9709 | .349 | 92.7 / 95.8 / 95.8 |
+| Fluid fixed B = match | 82.9 / 80.0 / 69.7 | .0286 | .9666 | .401 | 91.7 / 95.8 / 96.9 |
+| Fluid SE <= delta* | 3.2 / 8.8 / 19 | .0934 | .8859 | 1.370 | 66.1 / 84.4 / 90.1 |
 | **ATDrive eps = .05** | 83.5 / 79.0 / 70.3 | .0253 | .9718 | .339 | 92.7 / 91.7 / 95.8 |
 | ATDrive eps = .03 | 128.9 / 124.9 / 114.8 | .0158 | .9848 | .182 | 94.8 / 96.9 / 97.9 |
 | ATDrive B = 30 | 30 | .0458 | .9562 | .526 | 91.7 / 93.8 / 89.6 |
@@ -480,7 +517,7 @@ the same rows (e.g. K4 B30: 95.8% insertion vs 91.7% pairwise).
 At its published eps = .05 stop ATDrive places the new planner at exactly
 the right rung in 70 / 64 / 75% of evaluations (macro 69.8%) and within one
 rung in 96.9 / 95.3 / 98.4% (macro 96.9%). Fluid's SE <= delta* stop is off
-by 2.20 rungs at K_cal = 4 (3.2 rollouts) and 1.39 on macro (10.3 rollouts).
+by 2.20 rungs at K_cal = 4 (3.2 rollouts) and 1.37 on macro (10.3 rollouts).
 
 Does ranking separate anything SR-MAE does not? 33 paired comparisons
 against ATDrive eps = .05, cluster bootstrap over the 16 planner ids:
@@ -489,7 +526,7 @@ against ATDrive eps = .05, cluster bootstrap over the 16 planner ids:
 |---|---|---|---|---|
 | insertion (12 published SRs) | 18 | 5-6 | 0 | 9-10 |
 | co-estimated, all four held-out planners at their own estimates on the 16-planner board | 15 | 8 | 2 (K8 Fluid B = 100 +.0156 [+.0020, +.0304]; K12 ATDrive B = 110 +.0104 [+.0023, +.0187]) | 8 |
-| pairwise rank correct (Table 1 definition, within draw) | 15 | 8 | 3 (K8 Fluid B = 100 +.0417 [+.0051, +.0773]; K8 Fluid B = match +.0521 [+.0222, +.0808]; K12 ATDrive B = 110 +.0208 [+.0050, +.0398]) | 7 |
+| pairwise rank correct (Table 1 definition, within draw) | 15 | 8 | 3 (K8 Fluid B = 100 +.0417 [+.0051, +.0773]; K8 Fluid B = match +.0417 [+.0051, +.0773]; K12 ATDrive B = 110 +.0208 [+.0050, +.0398]) | 7 |
 
 Reading. Under insertion scoring the answer is no, and that answer is
 designed in: with the incumbents entered at their exact published SRs,
@@ -501,15 +538,15 @@ bootstrap draw (K12 ATLAS tau = 0.2 sits on the boundary, +.0107
 [-.0001, +.0217]). With both sides estimated the identity no longer holds
 and 2-3 cells separate that SR-MAE ties; the cells at K_cal = 8 go against
 ATDrive's eps = .05 stop, and one of them is cost-matched (Fluid B = match,
-80.0 routes vs 79.0; pairwise rank correct 96.9% vs 91.7%). Under seed
+80.0 routes vs 79.0; pairwise rank correct 95.8% vs 91.7%). Under seed
 clustering those intervals narrow to touching zero, so the defensible
 statement is "not established as ties", not "Fluid ranks better". On this
 panel the rank metric is a worse test statistic than SR-MAE for
 single-planner placement: the 12-rung leaderboard has a median adjacent-SR
 gap of .0318 against an estimator error of .02-.03, so the rank is exact in
-1,417 of 2,112 evaluations (excluding the bank-exhausting ATLAS tau = 0.1
-row) and moves only when the error is large (mean |err| .0203 where the
-rank is exact vs .0618 where it moves). What it adds is the failure rate
+1,419 of 2,112 evaluations (excluding the bank-exhausting ATLAS tau = 0.1
+row) and moves only when the error is large (mean |err| .0202 where the
+rank is exact vs .0619 where it moves). What it adds is the failure rate
 above, which the SR scale hides.
 
 ## Full-system ablation (`run_system_ablation.py`)
@@ -611,10 +648,17 @@ it uses is the benchmark's own scenario-type annotation, entered only as
 Predict scene difficulty (and per-cell outcomes) for the 8 evaluation
 scenario types from the scene alone; pooled over 16 draws (640 route
 evaluations). Descriptor rows are scored through a two-stage Ridge plug-in
-fitted on the calibration types; the encoder row is the RelGraph R2
-out-of-fold prediction (trained per draw on the 36 calibration types of
-the 12 calibration planners). Planner-only null: AUROC .699 / scene-MAE
-.214.
+fitted on the calibration types; the encoder row is the out-of-fold
+prediction of the encoder of record (trained per draw on the 36 calibration
+types of the 12 calibration planners). Planner-only null: AUROC .699 /
+scene-MAE .214.
+
+THE ENCODER OF RECORD HAS NO LANE GRAPH. It is RelGraph R2-noLane: the same
+R2Net with the whole map side of the graph removed before any tensor is built
+— no lane tokens, no lane geometry or lane_feat, no lane-lane edges, no
+agent-lane candidates and no ego-route relation — leaving ego, command and
+agents. The lane-carrying R2 that earlier releases shipped as canonical is now
+a control and heads the control block below.
 
 | difficulty source | AUROC | scene-MAE | rho(b_tilde, fail rate) |
 |---|---|---|---|
@@ -626,17 +670,20 @@ the 12 calibration planners). Planner-only null: AUROC .699 / scene-MAE
 | Agent-JEPA | .696 | .217 (-1.5%) | +.001 |
 | Kinematics (cmdkin, 25d) | .752 | .180 (+15.6%) | +.497 |
 | Hand-crafted risk (cmdkin+gtrisk, 73d) | .758 | .175 (+18.0%) | +.533 |
-| **ATDrive: RelGraph R2 scene encoder (3 runs)** | **.751 +- .003** | **.192 +- .003** | **+.490 +- .016** |
+| **ATDrive: RelGraph R2-noLane scene encoder (3 runs)** | **.761 +- .006** | **.181 +- .007** | **+.545 +- .024** |
 | Oracle (response-calibrated) | .870 | .037 | +.995 |
 
-Reading. The learned relational encoder and the two hand-crafted stacks
-clear every single-descriptor baseline by +.03-.07 AUROC (16-18 points of
-scene-MAE for the hand-crafted stacks, 10 for the encoder); between them
-the encoder is tied on AUROC and behind on scene-MAE and rank correlation
-(RelGraph minus hand-crafted risk: Delta rho -.043 +- .016 across runs,
-i.e. about three run-SDs). The encoder buys no difficulty signal beyond
-well-chosen rollout descriptors on this bank; what it offers is the same
-signal from the raw scene graph without feature engineering. The oracle
+Reading. The learned encoder and the two hand-crafted stacks clear every
+single-descriptor baseline by +.04-.07 AUROC (16-18 points of scene-MAE for
+the hand-crafted stacks, 15 for the encoder); between them the lane-free
+encoder is slightly ahead on AUROC (.761 vs .758) and on rank correlation
+(R2-noLane minus hand-crafted risk: Delta rho +.012 +- .024 across runs, i.e.
+inside its own run-to-run noise) and still behind on scene-MAE (.181 vs .175).
+The encoder buys no difficulty signal beyond well-chosen rollout descriptors on
+this bank; what it offers is the same signal from the raw scene graph without
+feature engineering. Note the direction of the earlier record: the
+lane-carrying encoder was BEHIND the hand-crafted stack on rank correlation
+(Delta rho -.043 +- .016); dropping the lane graph closed that gap. The oracle
 (.870) is the ceiling of any scene-only predictor: roughly half the
 difficulty variance is not visible from the scene. (Earlier versions
 reported a descriptor stack that included the scenario-definition
@@ -645,30 +692,63 @@ construction parameters, not observable scene content.)
 
 ### Table 3A(b) — structural controls of the encoder (`run_us.py`)
 
-Same architecture, recipe, seeds and calibration; only the graph tensors
-differ for the three structural controls, and only the ego channels for
-the fourth (three runs each, Delta rho paired by seed against the R2 runs):
+Same architecture, recipe, seeds and calibration as the encoder of record;
+the first row keeps the whole lane graph, the next three keep it and damage
+one relation, the fifth keeps it and removes an ego channel instead, and the
+last removes that channel from the encoder of record itself (three runs each,
+Delta rho paired by seed against the lane-free R2-noLane runs):
 
-| variant | AUROC | scene-MAE | rho | Delta rho vs R2 |
+| variant | AUROC | scene-MAE | rho | Delta rho vs R2-noLane |
 |---|---|---|---|---|
-| RelGraph R2 (shipped) | .751 +- .003 | .192 +- .003 | +.490 +- .016 | — |
-| R2 without the ego-route relation | .756 +- .002 | .184 +- .005 | +.520 +- .014 | +.030 +- .019 |
-| R2, route correspondence shuffled | .754 +- .007 | .189 +- .009 | +.512 +- .024 | +.022 +- .015 |
-| R2, agent-lane correspondence shuffled | .753 +- .006 | .191 +- .007 | +.501 +- .035 | +.011 +- .019 |
-| R2, ego-speed channel removed (channel control) | .753 +- .005 | .191 +- .005 | +.500 +- .020 | +.010 +- .004 |
+| R2, lane graph kept (canonical in earlier releases) | .751 +- .003 | .192 +- .003 | +.490 +- .016 | -.055 +- .031 |
+| R2 without the ego-route relation | .756 +- .002 | .184 +- .005 | +.520 +- .014 | -.025 +- .012 |
+| R2, route correspondence shuffled | .754 +- .007 | .189 +- .009 | +.512 +- .024 | -.033 +- .024 |
+| R2, agent-lane correspondence shuffled | .753 +- .006 | .191 +- .007 | +.501 +- .035 | -.044 +- .043 |
+| R2, ego-speed channel removed (channel control) | .753 +- .005 | .191 +- .005 | +.500 +- .020 | -.045 +- .033 |
+| R2-noLane, ego-speed channel removed (channel control of the record) | .762 +- .006 | .181 +- .006 | +.547 +- .026 | +.003 +- .013 |
 
-Reading. The relational machinery is inert on this bank: removing the
-ego-route relation helps in all three runs (+.030 rho), shuffling the
-route correspondence helps in all three as well (+.022), and shuffling the
-agent-lane correspondence changes nothing beyond seed noise. What the
-encoder learns is carried by the ego and agent tracks, not by the
-lane-graph relations. Removing the ego-speed channel changes nothing on
-this bank either (+.010 rho, within seed noise); that arm matters only on
-nuPlan, where it is the one that clears its label-shuffle null at the
-top-5% drop (next section). R2 stays the shipped encoder because it was fixed before these
-controls were scored; the paper's claim for the encoder is the
-learned-from-raw-tracks difficulty prior and its transport to UPS, not the
-graph structure.
+Reading. The lane side of the graph is not inert, it is harmful, and the
+controls order themselves by how much of it survives: keeping it whole costs
+-.055 rho against the lane-free encoder, dropping the ego-route relation
+recovers half of that (-.025), and shuffling the route or agent-lane
+correspondence sits between (-.033 / -.044, both within their own seed
+spread). Deleting the map side outright beats every one of these variants on
+all three metrics, and beats the lane-carrying model itself in all three runs
+on all three metrics, which is why the lane-free model is the encoder of
+record: a strictly simpler model with the better numbers. What the
+encoder learns is carried by the ego and agent tracks, and not by the ego
+speed: removing the ego-speed channel changes nothing on this bank, from the
+lane-carrying model (-.045 vs the lane-free encoder, i.e. the lane graph's own
+cost, and +.010 against the model it ablates) and from the encoder of record
+itself (+.003 +- .013, every metric within .002 of the record). The speed
+channel matters only on nuPlan (next section). The paper's claim for the encoder is the learned-from-raw-tracks
+difficulty prior and its transport to UPS, not the graph structure — and the
+one place the lane graph does pay is the UPS per-cell NLL (Table 3B).
+
+### Recipe control — two-stage training of the encoder of record
+
+The encoder of record is trained single-stage: 30 epochs on the calibration
+block, no selection. The two-stage recipe the training code also offers
+(`--early-stop`: stage 1 holds 30 routes / 6 types of the calibration block
+out as an inner validation set and picks the epoch e* of lowest inner-val
+NLL; stage 2 refits from the same initial weights on the whole calibration
+block for e* + 1 epochs) was run on the same lane-free graph, same seeds,
+same draws (`relgraph_e16sel/es/r2nolane_b2d_s{0,1,2}.npz`, scored with
+`eval_us_predictions.py` after `build_data.export_relgraph`):
+
+| recipe | AUROC | scene-MAE | rho | paired delta vs single-stage (3 runs) |
+|---|---|---|---|---|
+| single-stage, 30 epochs (record) | .761 +- .006 | .181 +- .007 | +.545 +- .024 | — |
+| two-stage, inner-val e* then refit | .747 +- .002 | .190 +- .002 | +.464 +- .023 | AUROC -.015 +- .004, MAE +.010 +- .008, rho -.081 +- .010 |
+
+The two-stage recipe is worse on all three metrics in every run. The selected
+epoch is unstable across draws (e* median 12, range 1-29 over the 48
+draw x run pairs; 17% of them stop at e* <= 5), because the inner validation
+set is 30 routes of 6 types: its NLL curve is too noisy to select on, and the
+refit then under-trains where e* was small. The single-stage recipe stays
+the recipe of record. The `--proper-init` variant (re-seed the weights after
+the Rasch fit) is bit-identical to `--early-stop` in the current code — the
+Rasch fit no longer consumes the torch RNG — so it is not a separate arm.
 
 ## nuPlan val14 zero-shot retrieval (`run_nuplan_zeroshot.py`)
 
@@ -679,11 +759,14 @@ the predicted-hard top-q%, Delta M_CLS = M(all 584) - M(top-q%), on the
 not binary, so M_CLS is the primary metric; M_CLS(full) = .7808, base
 failure rate 17.85% with failure = CLS < .5, which reproduces the stored
 binary matrix cell for cell). Enrichment of the failure rate is reported
-beside it. Two encoder arms (C0e: the canonical encoder; A2e: speed removed
-from both ego paths), three training seeds each, are trained on the
-16-planner panel of record (`b2d_e2e16sel`) and each tested against
-label-shuffled encoders trained under the same ablation. The difficulty
-target is the repo calibration (`atdrive.calibration.calibrate_dense`, as
+beside it. Three encoder arms — NLe, the encoder of record, which has no lane
+graph (the ablation is applied to the Bench2Drive source graph and to the
+nuPlan target graph alike); C0e, the lane-carrying encoder earlier releases
+shipped; and A2e, lane-carrying with the ego speed removed from both ego paths
+— three training seeds each, are trained on the 16-planner panel of record
+(`b2d_e2e16sel`) and each tested against label-shuffled encoders trained under
+the same ablation, so the NLe-vs-C0e comparison is what the lane graph cost on
+transfer. The difficulty target is the repo calibration (`atdrive.calibration.calibrate_dense`, as
 for the shipped in-domain encoders), not the frozen driver's own MAP fit
 (torch, 400 iterations, fixed L2 penalties) — a second difference from the
 driver's native §21 arms, recorded here because they are not directly
@@ -706,45 +789,56 @@ difficulty b_ref (in sample) and random q% subsets give the floor.
 |---|---|---|---|---|---|---|---|---|---|---|
 | 5% | oracle b_ref | +.4486 | — | — | — | — | 3.619 | — | — | ceiling |
 | 5% | random 5% (3,000 draws) | +.0005 | — | — | — | — | 1.003 | — | — | floor |
-| 5% | A2e, -speed | +.2275 | +.0885 | +.1972 | .048 (0/20) | +1.73 (.042) | 2.202 | 2.057 | .048 | clears |
-| 5% | C0e, speed kept | +.1914 | +.0791 | +.2052 | .143 (2/20) | +1.40 (.081) | 1.998 | 2.102 | .143 | does not clear |
+| 5% | **NLe, lane-free (record)** | **+.2351** | +.0842 | +.1871 | **.048 (0/20)** | +1.64 (.050) | **2.278** | 1.969 | .048 | **clears** |
+| 5% | A2e, lane kept, -speed | +.2275 | +.0885 | +.1972 | .048 (0/20) | +1.73 (.042) | 2.202 | 2.057 | .048 | clears |
+| 5% | C0e, lane kept, speed kept | +.1914 | +.0791 | +.2052 | .143 (2/20) | +1.40 (.081) | 1.998 | 2.102 | .143 | does not clear |
 | 10% | oracle b_ref | +.3631 | — | — | — | — | 3.057 | — | — | ceiling |
 | 10% | random 10% | -.0001 | — | — | — | — | 1.000 | — | — | floor |
-| 10% | A2e, -speed | +.1590 | +.0680 | +.1598 | .095 (1/20) | +1.28 (.101) | 1.842 | 1.836 | .095 | marginal |
-| 10% | C0e, speed kept | +.1376 | +.0638 | +.1515 | .190 (3/20) | +1.07 (.141) | 1.728 | 1.800 | .190 | does not clear |
+| 10% | **NLe, lane-free (record)** | **+.1973** | +.0674 | +.1582 | **.048 (0/20)** | +1.60 (.055) | **2.023** | 1.786 | .048 | **clears** |
+| 10% | A2e, lane kept, -speed | +.1590 | +.0680 | +.1598 | .095 (1/20) | +1.28 (.101) | 1.842 | 1.836 | .095 | marginal |
+| 10% | C0e, lane kept, speed kept | +.1376 | +.0638 | +.1515 | .190 (3/20) | +1.07 (.141) | 1.728 | 1.800 | .190 | does not clear |
 
-Variance components of the null at q = 5%: SD_perm .067 / .068 and SD_train
-.076 / .073 for the speed-kept / -speed families — under one shuffled
-labeling the three training seeds spread as much as the labelings do. The
-arms' own training-seed SD is .059 (C0e) and .001 (A2e). The single-run
-95th percentile of the 60 shuffles is +.2205 at q = 5% for both families;
-A2e's three seeds all exceed it, C0e's one of three; at q = 10% none of
-either arm's seeds exceeds it (+.1807 / +.1868). The arms recover
-50.7% / 43.8% (A2e) and 42.7% / 37.9% (C0e) of the oracle ceiling at
-q = 5% / 10%; the label-shuffled encoders already recover 18-20%.
+Variance components of the null at q = 5%: SD_perm .082 / .067 / .068 and
+SD_train .071 / .076 / .073 for the lane-free / speed-kept / -speed families —
+under one shuffled labeling the three training seeds spread as much as the
+labelings do. The arms' own training-seed SD is .011 (NLe), .059 (C0e) and
+.001 (A2e). At q = 5% the single-run 95th percentile of the 60 shuffles is
++.2171 for the lane-free family and +.2205 for both lane-carrying ones; all
+three NLe seeds and all three A2e seeds exceed their own, C0e one of three. At
+q = 10% all three NLe seeds still exceed theirs (+.1846) while neither
+lane-carrying arm has a single seed above its own (+.1807 / +.1868). The arms
+recover 52.4% / 54.3% (NLe), 50.7% / 43.8% (A2e) and 42.7% / 37.9% (C0e) of the
+oracle ceiling at q = 5% / 10%; the label-shuffled encoders already recover
+18-20%.
 
 Threshold-free description (scene sampling only). Paired cluster bootstrap
 over the 218 logs of the arm-minus-shuffle contrast (top-q re-selected
-inside each resample): A2e - shuffles +.1390 [+.0757, +.2045] at q = 5% and
-+.0910 [+.0385, +.1414] at q = 10%; C0e - shuffles +.1123 [+.0434, +.1857]
-and +.0738 [+.0280, +.1154]. This covers the scene-sampling uncertainty
+inside each resample): NLe - shuffles +.1509 [+.0874, +.2239] at q = 5% and
++.1299 [+.0910, +.1739] at q = 10%; A2e - shuffles +.1390 [+.0757, +.2045]
+and +.0910 [+.0385, +.1414]; C0e - shuffles +.1123 [+.0434, +.1857] and
++.0738 [+.0280, +.1154]. This covers the scene-sampling uncertainty
 of a fixed set of encoders, not the labeling / training-seed variation,
 which is the matched null's job.
 
 Whole-panel Spearman of predicted difficulty with the observed failure
-rate: A2e +.302 (seeds SD .036) and C0e +.249 (.043) against per-labeling
-null means of +.007 and +.001 (SD_perm .167 / .126, SD_train .123 / .148);
-one labeling of 20 reaches each arm (p .095; z +1.62 / +1.63, Gaussian
-p .052) — marginal for both.
+rate: NLe +.425 (seeds SD .009), A2e +.302 (.036) and C0e +.249 (.043)
+against per-labeling null means of +.076, +.007 and +.001 (SD_perm .193 /
+.167 / .126, SD_train .143 / .123 / .148); one labeling of 20 reaches each
+arm (p .095; z +1.66 / +1.62 / +1.63, Gaussian p .048 / .052 / .052) —
+marginal for all three, the lane-free arm included.
 
 Reading. On the panel of record, against a null that carries the arm's
-own variance structure, the -speed encoder retrieves genuinely harder
-scenes at q = 5% (no shuffled labeling of 20 reaches its drop, p .048,
-z 1.7; each of its three seeds exceeds the single-run 95th percentile of
-the 60 shuffles) and is marginal at q = 10% (one labeling of 20 reaches
-it, p .095). The canonical speed-kept encoder does not clear at either q
-(p .14 / .19), and the whole-panel rank correlation is marginal for both
-arms (p .095). Two corrections against the previous record: (i) the
+own variance structure, the lane-free encoder of record retrieves genuinely
+harder scenes at BOTH budgets: no shuffled labeling of 20 reaches its drop at
+q = 5% or at q = 10% (p .048 both, z 1.6), and all three of its seeds exceed
+the single-run 95th percentile of its own 60 shuffles at both q. Among the
+lane-carrying controls the -speed arm clears only at q = 5% (p .048) and is
+marginal at q = 10% (p .095), and the speed-kept arm does not clear at either
+(p .14 / .19) — dropping the lane graph buys more on transfer than dropping
+the speed channel did, and buys it at both budgets. The whole-panel rank
+correlation stays marginal for all three arms (p .095), the lane-free arm's
++.425 included: the null's per-labeling spread (SD_perm .19) is wide enough
+that 20 labelings cannot resolve it. Two corrections against the previous record: (i) the
 earlier arms and nulls were trained on the pre-selection e2e16 matrix
 (MindDrive, SimLingo-IVL35-1B and UniAD-Base in place of Drive-pi0-Base,
 Hydra-NeXt and PGS), whose calibrated difficulty correlates .943 with the
@@ -762,32 +856,29 @@ drops span -.16 to +.24 — and 20 labelings floor the achievable p at .048.
 
 Predict an unseen planner's behaviour on unseen scenario types with zero
 rollouts on the target block: probe the planner on B calibration-type
-routes, transport the ability posterior through the RelGraph difficulty
-prior N(b_tilde_s, sigma^2) with the testlet prior on the (unobserved)
-evaluation types. The MAE scores the posterior median of the block-D
-success rate, the NLL scores the per-cell posterior predictive. 64
-evaluations, RelGraph run s0 (the across-run SD of every MAE cell is
-.002-.005). The canonical probe rule is Delta-R1 on the block-D success
+routes, transport the ability posterior through the difficulty prior
+N(b_tilde_s, sigma^2) of the encoder of record — RelGraph R2-noLane, which
+has no lane graph — with the testlet prior on the (unobserved) evaluation
+types. The MAE scores the posterior median of the block-D success rate, the
+NLL scores the per-cell posterior predictive. 64 evaluations, encoder run s0
+(across the three encoder runs the SD of every MAE cell is .001-.003). The canonical probe rule is Delta-R1 on the block-D success
 rate — the UP acquisition with its risk evaluated on the target block;
-theta-EIG and the 2PL Fisher rule are ablations. naive = the planner's
-success rate on the probed routes, used as-is for block D.
+theta-EIG is ATDrive's own ablation of it (posterior-variance acquisition on the
+ability). No published method is run here: none of the Table 1 baselines has a
+transport step, so UPS reports ATDrive, its ablation and the two floors only.
+naive = the planner's success rate on the probed routes, used as-is for block D.
 
 | probe policy | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
 |---|---|---|---|---|---|---|
 | naive (no IRT) | .1007 | .6414 | .0900 | .6262 | .0865 | .6203 |
-| Random | .1129 | .6021 | .1057 | .5932 | .0985 | .5872 |
-| theta-EIG (abl.) | .0966 | .5868 | .0949 | .5852 | .0953 | .5865 |
-| 2PL Fisher (abl.) | .0997 | .5889 | .0986 | .5876 | .0953 | .5873 |
-| **ATDrive (Delta-R1 on D)** | **.0950** | **.5857** | .0936 | **.5848** | .0950 | **.5863** |
-
-The scene prior's contribution to the transported block is isolated in the full-220 UPS section
-below (calC + priorT(marg) vs calC + sceneT: B55 full-benchmark .0330 vs .0319, target block .0914 vs
-.0936; per-cell AUROC on target cells .760-.764 scene vs .706-.710 scene-free, NLL .585 vs .62-.64).
+| Random | .1140 | .6136 | .1052 | .6056 | .0961 | .5993 |
+| theta-EIG (abl.) | .0919 | .5978 | .0943 | .5973 | .0924 | .5983 |
+| **ATDrive (Delta-R1 on D)** | .0922 | **.5974** | **.0920** | **.5963** | .0926 | .5985 |
 
 Reading. The transport is a per-cell result, not a block-SR result: it
-lowers the predictive NLL of the unseen cells from .62-.64 to .585-.587
-at every budget, but its block-SR error sits on a floor of about .095
-from B = 30 on — the floor of the scene prior (rho about .5), which more
+lowers the predictive NLL of the unseen cells from .62-.64 to .596-.599
+at every budget, but its block-SR error sits on a floor of about .092
+from B = 30 on — the floor of the scene prior (rho about .55), which more
 probes cannot lower — while the planner's own success rate on the probed
 calibration routes reaches .090 / .087 at B = 55 / 110. The naive error
 is the calibration-vs-evaluation gap itself: |SR_A - SR_D| averages .085
@@ -795,26 +886,48 @@ over the 64 evaluations of this panel, and the transported estimate's
 floor is not below that gap here. The
 block-SR claim for UPS is therefore withdrawn on this panel; what the
 transport delivers is the per-cell predictive. Among probe rules the
-target-aligned Delta-R1 is ahead of Random by .018* / .012* / .004 and of
-the ablations by .000-.005 (ns); the probe placement matters at low
-budgets, and only through the prior.
+target-aligned Delta-R1 is ahead of Random by .022* / .013* / .004 and
+indistinguishable from its ablation (theta-EIG -.000 / +.002* / -.000); the
+probe placement matters at low budgets, and only through the prior.
 
-**With the speed-ablated prior** (`results/ups_nospeed.json`, the fourth
-control of Table 3A(b) driving both the transport and the Delta-R1 probe
-rule; the shipped R2 prior stays canonical):
+**Control prior 1 — the lane graph kept** (`results/ups_lane.json`: the
+encoder earlier releases shipped as canonical, driving both the transport and
+the Delta-R1 probe rule):
 
 | probe policy | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
 |---|---|---|---|---|---|---|
 | naive (no IRT) | .1007 | .6414 | .0900 | .6262 | .0865 | .6203 |
-| Random | .1087 | .6022 | .1028 | .5953 | .0925 | .5881 |
-| theta-EIG (abl.) | .0922 | .5878 | .0936 | .5879 | .0936 | .5877 |
-| 2PL Fisher (abl.) | .0973 | .5911 | .0985 | .5895 | .0934 | .5875 |
-| ATDrive (Delta-R1 on D) | .0926 | .5881 | .0926 | .5879 | .0936 | .5878 |
+| Random | .1129 | .6021 | .1057 | .5932 | .0985 | .5872 |
+| theta-EIG (abl.) | .0966 | .5868 | .0949 | .5852 | .0953 | .5865 |
+| ATDrive (Delta-R1 on D) | .0950 | .5857 | .0936 | .5848 | .0950 | .5863 |
 
-The paired delta of the Delta-R1 row against the shipped prior is
--.0024 [-.0144, +.0087] / -.0009 [-.0119, +.0094] / -.0014 [-.0132, +.0092]:
-the two priors are indistinguishable on the block-SR scale, and the reading
-above does not change.
+THIS IS THE ONE PLACE THE LANE-FREE ENCODER IS WORSE. Keeping the lane graph
+costs .003 / .002 / .002 of block-SR MAE (paired delta of the Delta-R1 row,
+lane kept minus lane-free: +.0029 [-.0076, +.0146] / +.0015 [-.0085, +.0121] /
++.0024 [-.0077, +.0137], all containing zero) but buys .012 / .012 / .012 of
+per-cell NLL (.5857 / .5848 / .5863 against .5974 / .5963 / .5985). The
+block-SR difference is inside the noise; the NLL difference is a consistent
+shift at every budget and under every probe rule, and it is the reason the
+lane-carrying model is kept as a control rather than dropped. US, UPS block-SR
+and the nuPlan transfer all favour the lane-free encoder; the UPS per-cell
+predictive is the exception.
+
+**Control prior 2 — the speed channel removed from the encoder of record**
+(`results/ups_nospeed.json`: R2-noLane with the ego-speed channel zeroed,
+i.e. a lane-free speed ablation, three runs; the Delta-R1 probe rule runs on
+the same prior):
+
+| probe policy | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
+|---|---|---|---|---|---|---|
+| naive (no IRT) | .1007 | .6414 | .0900 | .6262 | .0865 | .6203 |
+| Random | .1126 | .6056 | .1030 | .5974 | .0962 | .5913 |
+| theta-EIG (abl.) | .0916 | .5901 | .0906 | .5883 | .0931 | .5905 |
+| ATDrive (Delta-R1 on D) | .0889 | .5887 | .0890 | .5872 | .0930 | .5905 |
+
+The paired delta of its Delta-R1 row against the encoder of record is
+-.0033 [-.0109, +.0044] / -.0031 [-.0098, +.0038] / +.0004 [-.0076, +.0084]:
+indistinguishable on the block-SR scale, .009 / .009 / .008 better on the NLL.
+Speed is not what the transport lives on; the reading above does not change.
 
 ## UPS retargeted to the full 220-route SR (`run_ups_full.py`)
 
@@ -823,8 +936,9 @@ held-out planner's success rate on the whole benchmark, I = S_t u (C \ S_t)
 u T: the probed calibrated routes are used as observed, the remaining
 calibrated routes are inferred from their response-calibrated difficulty
 posteriors, and the 40 held-out-type routes from the scene-conditioned
-prior N(b_tilde_s, sigma^2). 64 evaluations, 36 : 8 type split, K_cal = 12,
-RelGraph run s0; per evaluation |C| = 177.9 calibrated + |T| = 39.5 target
+prior N(b_tilde_s, sigma^2) of the encoder of record — RelGraph R2-noLane,
+which has no lane graph. 64 evaluations, 36 : 8 type split, K_cal = 12,
+encoder run s0; per evaluation |C| = 177.9 calibrated + |T| = 39.5 target
 routes, so T is 18.2% of the benchmark; mean |SR_C - SR_T| = .0848. The
 readout arms differ only in the difficulty model of the unobserved routes:
 naive (the probed success rate for everything), calC + priorT(marg)
@@ -834,7 +948,11 @@ calC + sceneT (canonical), and two oracles that reveal C or T. Probe
 orders: Random, Delta-R1 on D (the canonical UPS rule, acquisition driven
 by the scene prior), Delta-R1 on D with a scene-free target bank
 (encoder-free acquisition), and Delta-R1 on the full bank. The
-target-block diagnostic reproduces Table 3B element-wise.
+target-block diagnostic reproduces Table 3B element-wise. That diagnostic
+does not by itself identify the prior — the lane-carrying and lane-free
+target cells agree to within its .003 anchor tolerance — so every record
+also carries the name and content md5 of the prior npz, and the script
+refuses to score records made with any other one.
 
 Full-benchmark SR-MAE:
 
@@ -842,68 +960,83 @@ Full-benchmark SR-MAE:
 |---|---|---|---|---|
 | Random | naive | .0698 | .0455 | .0273 |
 | Random | calC + priorT(marg) | .0603 | .0422 | .0269 |
-| Random | calC + priorT(const) | .0617 | .0424 | .0266 |
-| Random | calC + sceneT | .0627 | .0438 | .0276 |
-| Random | trueC + sceneT | .0205 | .0192 | .0179 |
+| Random | calC + priorT(const) | .0614 | .0429 | .0269 |
+| Random | calC + sceneT | .0624 | .0444 | .0277 |
+| Random | trueC + sceneT | .0207 | .0191 | .0174 |
 | Random | calC + trueT | .0483 | .0313 | .0179 |
-| Delta-R1 on D | naive | .0556 | .0609 | .0427 |
-| Delta-R1 on D | calC + priorT(marg) | .0456 | .0330 | .0200 |
-| Delta-R1 on D | calC + priorT(const) | .0467 | .0312 | .0213 |
-| **Delta-R1 on D** | **calC + sceneT (canonical)** | **.0467** | **.0319** | **.0211** |
-| Delta-R1 on D | trueC + sceneT | .0172 | .0170 | .0173 |
-| Delta-R1 on D | calC + trueT | .0387 | .0234 | .0098 |
+| Delta-R1 on D | naive | .0560 | .0594 | .0428 |
+| Delta-R1 on D | calC + priorT(marg) | .0457 | .0319 | .0208 |
+| Delta-R1 on D | calC + priorT(const) | .0444 | .0299 | .0213 |
+| **Delta-R1 on D** | **calC + sceneT (canonical)** | **.0448** | **.0300** | **.0209** |
+| Delta-R1 on D | trueC + sceneT | .0167 | .0167 | .0168 |
+| Delta-R1 on D | calC + trueT | .0384 | .0220 | .0097 |
 | Delta-R1 on D, scene-free bank | calC + priorT(marg) (encoder-free end to end) | .0454 | .0326 | .0205 |
-| Delta-R1 on D, scene-free bank | calC + sceneT | .0465 | .0315 | .0216 |
-| Delta-R1 on full I | calC + priorT(marg) | .0406 | .0243 | .0200 |
-| Delta-R1 on full I | calC + sceneT | .0393 | .0234 | .0203 |
-| Delta-R1 on full I | trueC + sceneT | .0169 | .0164 | .0172 |
-| Delta-R1 on full I | calC + trueT | .0333 | .0190 | .0104 |
+| Delta-R1 on D, scene-free bank | calC + sceneT | .0447 | .0310 | .0207 |
+| Delta-R1 on full I | calC + priorT(marg) | .0407 | .0243 | .0201 |
+| Delta-R1 on full I | calC + sceneT | .0393 | .0245 | .0197 |
+| Delta-R1 on full I | trueC + sceneT | .0160 | .0158 | .0168 |
+| Delta-R1 on full I | calC + trueT | .0333 | .0190 | .0105 |
 
 What the scene encoder buys (+ = the scene prior is worse; paired
 planner-cluster bootstrap):
 
 | probe order | contrast | B = 30 | B = 55 | B = 110 |
 |---|---|---|---|---|
-| Random | sceneT vs priorT(marg) | +.0024 [-.0009, +.0059] | +.0016 [-.0020, +.0055] | +.0007 [-.0027, +.0038] |
-| Delta-R1 on D | sceneT vs priorT(marg) | +.0011 [-.0019, +.0039] | -.0011 [-.0037, +.0019] | +.0011 [-.0015, +.0042] |
-| Delta-R1 on D | sceneT vs priorT(const) | -.0000 [-.0013, +.0013] | +.0008 [-.0009, +.0025] | -.0002 [-.0017, +.0015] |
-| Delta-R1 on full I | sceneT vs priorT(marg) | -.0013 [-.0048, +.0023] | -.0009 [-.0044, +.0027] | +.0003 [-.0028, +.0038] |
-| encoder-free acquisition + readout vs the canonical cell | | -.0013 [-.0049, +.0025] | +.0007 [-.0025, +.0038] | -.0006 [-.0039, +.0023] |
-| acquisition channel alone (scene-free vs scene-driven order, both read out scene-free) | | -.0003 [-.0020, +.0012] | -.0004 [-.0015, +.0007] | +.0006 [-.0001, +.0016] |
-| Delta-R1 on D | headroom: sceneT vs trueT | +.0080 [+.0038, +.0121] | +.0085 [+.0043, +.0127] | +.0113 [+.0088, +.0139] |
-| naive on its own Random order vs the canonical cell | | +.0231 [+.0025, +.0437] | +.0136 [+.0026, +.0239] | +.0062 [-.0012, +.0134] |
+| Random | sceneT vs priorT(marg) | +.0021 [-.0007, +.0048] | +.0022 [-.0012, +.0057] | +.0008 [-.0016, +.0032] |
+| Delta-R1 on D | sceneT vs priorT(marg) | -.0010 [-.0026, +.0007] | -.0018 [-.0039, +.0004] | +.0001 [-.0021, +.0027] |
+| Delta-R1 on D | sceneT vs priorT(const) | +.0004 [-.0009, +.0017] | +.0002 [-.0012, +.0015] | -.0004 [-.0016, +.0007] |
+| Delta-R1 on full I | sceneT vs priorT(marg) | -.0014 [-.0042, +.0015] | +.0002 [-.0028, +.0034] | -.0004 [-.0031, +.0023] |
+| encoder-free acquisition + readout vs the canonical cell | | +.0006 [-.0018, +.0029] | +.0026 [-.0004, +.0056] | -.0004 [-.0030, +.0020] |
+| acquisition channel alone (scene-free vs scene-driven order, both read out scene-free) | | -.0004 [-.0022, +.0015] | +.0008 [-.0004, +.0022] | -.0002 [-.0006, +.0001] |
+| Delta-R1 on D | headroom: sceneT vs trueT | +.0063 [+.0013, +.0114] | +.0080 [+.0043, +.0119] | +.0112 [+.0082, +.0146] |
+| naive on its own Random order vs the canonical cell | | +.0250 [+.0044, +.0460] | +.0155 [+.0044, +.0258] | +.0063 [-.0001, +.0119] |
 
 Where the error lives (posterior-mean parts, canonical order): the C-part
-error falls .0388 -> .0234 -> .0098 from B = 30 to 110 while the T-part
-error is flat at .0173 / .0170 / .0173 (Random order: .0487 / .0316 / .0180
-and .0205 / .0192 / .0179); the two parts reproduce the median-based
+error falls .0386 -> .0220 -> .0097 from B = 30 to 110 while the T-part
+error is flat at .0167 / .0167 / .0168 (Random order: .0487 / .0316 / .0180
+and .0206 / .0191 / .0174); the two parts reproduce the median-based
 SR-MAE to within .0007. Pooled AUROC of the per-cell predictive on the T
-cells is .760-.764 for the scene prior against .706-.710 scene-free under
-the Delta-R1 orders (.744-.760 vs .690-.702 under Random); the
-within-evaluation AUROC of .688 is the raw RelGraph out-of-fold ranking
+cells is .744-.750 for the scene prior against .705-.712 scene-free under
+the Delta-R1 orders (.727-.745 vs .690-.702 under Random); the
+within-evaluation AUROC of .666 is the raw RelGraph out-of-fold ranking
 (predicted p is a monotone function of -b_tilde_s within an evaluation) and
 is identical at every budget and under every probe order.
 
 Reading. With 180 of 220 routes response-calibrated, the scene encoder
 contributes nothing measurable to the full-benchmark SR: swapping the
 per-route RelGraph prior for a scene-free prior moves the SR-MAE by at most
-.0024 and all nine paired intervals contain zero, and removing the encoder
-from the acquisition as well leaves the error unchanged. That null rests on
-the planner-cluster intervals (half-width about .003) alone: Table 3B's
-across-run SD of .002-.005 is in target-block units and enters the full SR
-scaled by n_T / N = .182, i.e. .0004-.0009, so the deltas are above the
+.0022 and all nine sceneT-vs-priorT(marg) intervals contain zero, and
+removing the encoder from the acquisition as well leaves the error unchanged
+(largest move .0026, interval containing zero). Exactly one of the 24
+scene-vs-scene-free readout cells (4 probe orders x 2 scene-free arms x 3
+budgets) excludes zero, and it goes the wrong way for the encoder — Random
+order, priorT(const), B = 55: +.0015 [+.0002, +.0028], the scene prior worse
+by a thousandth and a half. That null rests on the
+planner-cluster intervals (half-width about .003) alone: Table 3B's
+across-run SD of .001-.003 is in target-block units and enters the full SR
+scaled by n_T / N = .182, i.e. .0002-.0006, so the deltas are above the
 encoder's run-to-run noise, not below it. The test is weakly powered: the
-trueT oracle headroom is .008-.011, so an encoder capturing more than about
-a quarter to a third of the available T information is excluded and a
-small real contribution is not. Against the naive baseline on its own
+scene-free-minus-scene intervals reach .0021-.0039 on the side that would
+favour the encoder against a trueT oracle headroom of .0063-.0112, so a
+contribution above roughly a fifth to a half of the available T information
+is excluded and a smaller one is not. Against the naive baseline on its own
 random probe order the model is better at B = 30 and 55 and tied at
 B = 110. The T-part error is a floor no probe budget lowers — it is the
 calibration-vs-target block gap of .0848 — and at B = 110 the 18% of routes
 the scene prior has to guess carry more of the error than the 82% the
 responses cover. Arithmetically the T channel of this error is Table 3B's
 already-withdrawn block-SR null multiplied by .182; the encoder still ranks
-unseen routes within a planner (AUROC .76 vs .71 scene-free), which is the
+unseen routes within a planner (AUROC .75 vs .71 scene-free), which is the
 per-cell result Table 3B reports.
+
+Against the superseded lane-carrying record this section barely moves. The
+canonical cell improves by .0019 / .0019 / .0002 (.0467 / .0319 / .0211 ->
+.0448 / .0300 / .0209) and the pooled T-cell AUROC falls from .760 to .744 —
+the same split verdict as Table 3B, the lane-free encoder better on the SR
+readout and the lane-carrying one on the per-cell predictive. The
+scene-prior null came out the same under either encoder, which makes it a
+property of the estimand — 180 of 220 routes are already
+response-calibrated — rather than of the encoder filling the other 18%.
 
 ## Readout drop-in (`run_readout_dropin.py`)
 
@@ -912,22 +1045,25 @@ the ATDrive readout (exact posteriors, testlet, posterior median). SR-MAE:
 
 | selector (subset) | K4 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 |
 |---|---|---|---|---|---|---|---|---|
-| Fluid | .0536 | .0359 | .0247 | .0135 | .0410 | .0290 | .0225 | .0113 |
-| Total-Fisher | .0570 | .0419 | .0254 | .0170 | .0496 | .0367 | .0209 | .0147 |
-| metabench | .0613 | .0420 | .0242 | .0136 | .0617 | .0372 | .0220 | .0119 |
-| tinyBenchmarks | .0754 | .0608 | .0275 | .0163 | .0498 | .0359 | .0222 | .0104 |
-| AnchorPoints | .0687 | .0493 | .0313 | .0166 | .0524 | .0368 | .0218 | .0101 |
+| Fluid | .0536 | .0362 | .0247 | .0135 | .0410 | .0290 | .0225 | .0113 |
+| Total-Fisher | .0489 | .0417 | .0250 | .0163 | .0494 | .0365 | .0207 | .0147 |
+| metabench | .0671 | .0428 | .0237 | .0157 | .0574 | .0308 | .0232 | .0131 |
+| tinyBenchmarks | .0698 | .0514 | .0240 | .0139 | .0463 | .0334 | .0205 | .0108 |
+| AnchorPoints | .0687 | .0493 | .0313 | .0166 | .0550 | .0396 | .0217 | .0104 |
 | Random | .0551 | .0405 | .0243 | .0134 | .0577 | .0393 | .0244 | .0134 |
 | ATDrive (own order, Table 1) | .0450 | .0332 | .0223 | .0116 | .0477 | .0231 | .0160 | .0081 |
 
 Reading. Under one readout the remaining differences are selection. At
 K_cal = 12 the ATDrive order beats every re-scored subset at B = 55 / 110 by
-.005-.016 and at B = 165 by .002-.007; at K_cal = 4 it leads the non-Fluid
-subsets by .007-.030 at B = 30 / 55 and by .002-.009 at B = 110 / 165, and
-the Fluid subset by .002-.009 at every budget. The
-readout itself is a drop-in improvement for selectors whose native readout is
-a plug-in on a scarce panel (compare the native Table 1 rows: AnchorPoints
-.1290 -> .0687 at K4 B30, tinyBenchmarks .0621 -> .0608 at K4 B55).
+.005-.017 and at B = 165 by .002-.007; at K_cal = 4 it leads the non-Fluid
+subsets by .004-.025 at B = 30 / 55 and by .001-.009 at B = 110 / 165, and
+the Fluid subset by .002-.009 at every budget. The readout itself is a
+drop-in improvement for selectors whose native readout is a plug-in on a
+scarce panel (compare the native Table 1 rows: AnchorPoints .1290 -> .0687 at
+K4 B30, metabench .0728 -> .0671 at K4 B30 and .0629 -> .0574 at K12 B30);
+the one native readout that is already better than the posterior median is
+tinyBenchmarks' anchor-weighted estimate at K4 B30 / B55 (.0660 / .0488
+native vs .0698 / .0514 re-scored).
 
 ## Model adequacy (`run_model_adequacy.py`)
 

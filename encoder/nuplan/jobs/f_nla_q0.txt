@@ -1,0 +1,11 @@
+NLAe_full_s0|--arch r2 --drop speed --drop-egow --seed 0 --phase full --tag NLAe
+C4nla_p1_full_s0|--perm 1 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p1
+C4nla_p3_full_s0|--perm 3 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p3
+C4nla_p5_full_s0|--perm 5 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p5
+C4nla_p7_full_s0|--perm 7 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p7
+C4nla_p9_full_s0|--perm 9 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p9
+C4nla_p11_full_s0|--perm 11 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p11
+C4nla_p13_full_s0|--perm 13 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p13
+C4nla_p15_full_s0|--perm 15 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p15
+C4nla_p17_full_s0|--perm 17 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p17
+C4nla_p19_full_s0|--perm 19 --arch r2 --drop speed --drop-egow --label-shuffle --seed 0 --phase full --tag C4nla_p19

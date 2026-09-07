@@ -68,9 +68,14 @@ information values (196 of 219 tied at K_cal = 4 in the self-test cell (0, 4, 0)
 122 of 215 at K_cal = 8 in (3, 8, 2), 55 of 219 at K_cal = 12 in (0, 12, 0)).
 Both orders are produced by R's order(-info, seq_along(info))
 (catr_static.R:info_order), i.e. descending information with exact ties broken by
-the LOWEST bank index -- deterministic and device-independent, unlike the argsort
-of atdrive/baselines.py:total_fisher_order / marginal_fisher_order that this
-replaces.
+the LOWEST bank index -- deterministic and device-independent.  The lite orders
+this replaces now use the same convention (atdrive/baselines.py:
+total_fisher_order / marginal_fisher_order round to TIE_DECIMALS and take the
+lowest bank index), so the two agree on the tie rule and differ in the
+calibration the information is computed from and, for the marginal row, in the
+quadrature as well (61 points on (-3, 3) with renormalised N(0, 1) weights in
+the lite version vs catR's 33 points on (-4, 4)), which can move that ranking
+independently of the calibration.
 This is a DEVIATION from catR's OWN tie convention: catR::nextItem breaks a tie
 at random (`select <- ifelse(length(keep) == 1, keep, sample(keep, 1))`, in all
 8 of its selection branches in the installed catR 3.17), so no deterministic

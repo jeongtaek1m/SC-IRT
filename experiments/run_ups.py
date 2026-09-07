@@ -8,16 +8,25 @@ those probes (12 calibration planners); its success rate on the evaluation-type 
 is (atdrive.bayes.transfer) through the scene-conditioned difficulty prior
 N(b; b_tilde_s, sigma^2) with the testlet prior on the evaluation types:
 the block-D success rate is its posterior median (MAE) and each D cell its
-posterior predictive (NLL). b_tilde_s is the RelGraph R2 out-of-fold
-prediction for that draw and sigma the per-draw shared residual SD the encoder
-learned on the calibration block (data/encoder/relgraph_r2_s*.npz; run s0
-is canonical, runs s1-s2 give the across-run SD). The whole table is repeated
-with the prior of the speed-ablated encoder (relgraph_r2_nospeed_s*.npz),
-which also drives the Delta-R1 probe rule. Probe policies: naive SR
-transfer, Random,
-Delta-R1 on the transported block-D success rate (canonical — acquire for
-the quantity that must generalise), theta-EIG under the evaluation model and
-the 2PL Fisher rule (ablations).
+posterior predictive (NLL). b_tilde_s is the out-of-fold prediction of the
+ENCODER OF RECORD — RelGraph R2-noLane, which has no lane graph at all (no
+lane tokens, lane_feat, L2L edges, A2L candidates or route_rel; ego, command
+and agents only) — for that draw, and sigma the per-draw shared residual SD it
+learned on the calibration block (data/encoder/relgraph_r2nolane_s*.npz; run
+s0 is canonical, runs s1-s2 give the across-run SD).
+
+The table is repeated with two control priors, each also driving its own
+Delta-R1 probe rule:
+  _lane      the lane-carrying R2 earlier releases shipped as canonical
+             (relgraph_r2_s*.npz) -> results/ups_lane.json
+  _nospeed   R2-noLane with the ego-speed channel removed from both ego paths
+             (relgraph_r2nolane_nospeed_s*.npz) -> results/ups_nospeed.json,
+             a clean speed ablation OF THE ENCODER OF RECORD: it differs from
+             the canonical prior in the speed channel and nothing else.
+
+Probe policies: naive SR transfer, Random, Delta-R1 on the transported block-D
+success rate (canonical — acquire for the quantity that must generalise), and
+theta-EIG under the evaluation model (our own acquisition ablation).
 
     python experiments/run_ups.py     # ~30 min, GPU
 """
@@ -36,16 +45,27 @@ from atdrive.calibration import calibrate
 from atdrive.curves import marginal_curves
 from atdrive.bayes import Bank, State, bank_from_fit, state_from, transfer
 from atdrive.acquisition import eig_pick, r1_pick_transfer
-from atdrive.baselines import fluid_order
+# (no baseline order is used here any more: the UPS table has no comparator row)
 from atdrive.metrics import paired_cluster_boot
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 BP = (30, 55, 110)
 T = max(BP)
-POL = ('Random', 'theta-EIG (abl.)', '2PL Fisher (abl.)', 'ATDrive (Delta-R1 on D)')
+# No comparator row. UPS asks for the success rate on scenario types the planner was
+# never run on; no published method estimates that, so the table is ATDrive, its own
+# acquisition ablation (theta-EIG on the same posterior), and two floors (naive SR
+# transfer and a random probe order). The 2PL-Fisher row earlier releases carried was
+# Fluid's item order borrowed into our transfer machine, i.e. a comparator in name only.
+POL = ('Random', 'theta-EIG (abl.)', 'ATDrive (Delta-R1 on D)')
 CAN = 'ATDrive (Delta-R1 on D)'
+ANCHORS = (('ATDrive (Delta-R1 on D)', 30, .0922), ('ATDrive (Delta-R1 on D)', 55, .0920),
+           ('ATDrive (Delta-R1 on D)', 110, .0926), ('Random', 30, .1140), ('theta-EIG (abl.)', 55, .0943))
+# pinned on the lane-free run of record (results/ups.json); tolerance .003 = about two across-run SDs
 RUNS = (0, 1, 2)
-ENC = {'': 'RelGraph R2 (shipped)', '_nospeed': 'R2, speed channel removed'}
+# suffix -> (row label, the shipped npz stem).  The encoder of RECORD is lane-free.
+ENC = {'': ('RelGraph R2-noLane (encoder of record)', 'relgraph_r2nolane'),
+       '_lane': ('R2 with the lane graph (control)', 'relgraph_r2'),
+       '_nospeed': ('R2-noLane, ego speed removed (control)', 'relgraph_r2nolane_nospeed')}
 
 
 def main():
@@ -53,7 +73,7 @@ def main():
     RES = {e: {p: {B: {'mae': [], 'nll': []} for B in BP} for p in ('naive',) + POL} for e in ENC}
     RES3 = {e: {run: {p: {B: [] for B in BP} for p in POL} for run in RUNS} for e in ENC}
     JS = []  # planner id per evaluation, parallel to RES[*][*][*]['mae']
-    RELG = {(e, run): np.load(DATA / 'encoder' / f'relgraph_r2{e}_s{run}.npz', allow_pickle=True)
+    RELG = {(e, run): np.load(DATA / 'encoder' / f'{ENC[e][1]}_s{run}.npz', allow_pickle=True)
             for e in ENC for run in RUNS}
     for seed in range(R_DRAWS):
         hp, ht = unified_split(seed, panel.utypes, panel.J)
@@ -95,7 +115,6 @@ def main():
                     sd_.append(r1_pick_transfer(st, bankD[e], rem))
                     st.add(sd_[-1])
                 S[CAN + e] = sd_
-            S['2PL Fisher (abl.)'] = fluid_order(f2['a'][bi], f2['b'][bi], yb, T)
             for B in BP:
                 for e in ENC:
                     for p in POL:
@@ -120,25 +139,24 @@ def main():
         for p in POL:
             print(f'  {p:18s} ' + '  '.join('B{}: {:.4f}'.format(B, np.std([np.mean(RES3[e][run][p][B]) for run in RUNS], ddof=1)) for B in BP))
         print(f'paired delta MAE vs {CAN}:')
-        for p in ('Random', 'theta-EIG (abl.)', '2PL Fisher (abl.)'):
+        for p in ('Random', 'theta-EIG (abl.)'):
             print(f'  {p:18s} ' + '  '.join('B{}: {:+.4f} [{:+.4f},{:+.4f}]'.format(
                 B, *paired_cluster_boot(RES[e][p][B]['mae'], RES[e][CAN][B]['mae'], JS)) for B in BP))
-    print('\npaired delta MAE (no-speed prior - shipped prior), same policy:')
-    for p in POL:
-        print(f'  {p:18s} ' + '  '.join('B{}: {:+.4f} [{:+.4f},{:+.4f}]'.format(
-            B, *paired_cluster_boot(RES['_nospeed'][p][B]['mae'], RES[''][p][B]['mae'], JS)) for B in BP))
+    print('\npaired delta MAE (control prior - encoder of record), same policy:')
+    for e2 in ('_lane', '_nospeed'):
+        print(f'  -- {ENC[e2][0]} --')
+        for p in POL:
+            print(f'    {p:18s} ' + '  '.join('B{}: {:+.4f} [{:+.4f},{:+.4f}]'.format(
+                B, *paired_cluster_boot(RES[e2][p][B]['mae'], RES[''][p][B]['mae'], JS)) for B in BP))
     OUT.mkdir(exist_ok=True)
     def dump(e, path):                                 # ups.json keeps the shipped-prior schema;
         json.dump({p: {str(B): {m: [float(x) for x in v] for m, v in d.items()}                # the
                        for B, d in bb.items()} for p, bb in RES[e].items()}, open(path, 'w'))  # no-
-    dump('', OUT / 'ups.json')                         # speed arm goes to its own file so nothing
-    if '_nospeed' in ENC:                              # downstream of ups.json changes shape
-        dump('_nospeed', OUT / 'ups_nospeed.json')
-    for (p, B, ref) in (('naive', 30, 0.1007), ('Random', 30, 0.1129), (CAN, 30, 0.0950), (CAN, 55, 0.0936),
-                        (CAN, 110, 0.0950), ('theta-EIG (abl.)', 30, 0.0966), ('2PL Fisher (abl.)', 110, 0.0953)):
+    dump('', OUT / 'ups.json')                         # each control goes to its own file so
+    dump('_lane', OUT / 'ups_lane.json')               # nothing downstream of ups.json changes shape
+    dump('_nospeed', OUT / 'ups_nospeed.json')
+    for (p, B, ref) in ANCHORS:                        # pinned on the lane-free encoder of record
         assert abs(np.mean(RES[''][p][B]['mae']) - ref) < .003, (p, B, np.mean(RES[''][p][B]['mae']))
-    for (B, ref) in ((30, 0.0926), (55, 0.0926), (110, 0.0936)):
-        assert abs(np.mean(RES['_nospeed'][CAN][B]['mae']) - ref) < .003, (B, np.mean(RES['_nospeed'][CAN][B]['mae']))
     print('anchors OK')
 
 

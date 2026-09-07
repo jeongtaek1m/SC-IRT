@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Score any unseen-scene difficulty predictions in Table-3A units.
 
-    python experiments/eval_us_predictions.py data/encoder/relgraph_r2_s0.npz [more.npz ...]
+    python experiments/eval_us_predictions.py data/encoder/relgraph_r2nolane_s0.npz [more.npz ...]
 
 Each npz holds draw{r}_rt (route ids of block C) and draw{r}_bt (b_tilde).
 With several files (e.g. three seeds) the per-file metrics are summarised as
 mean +- SD — single runs only; no prediction averaging.
+
+With no arguments it scores the ENCODER OF RECORD, the lane-free
+RelGraph R2-noLane (relgraph_r2nolane_s{0,1,2}.npz). The lane-carrying
+relgraph_r2_s*.npz is a control of Table 3A(b) and must be named explicitly.
 """
 import sys
 from pathlib import Path
@@ -32,4 +36,4 @@ def main(paths):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:] or sorted(str(p) for p in (Path(__file__).resolve().parents[1] / 'data/encoder').glob('relgraph_r2_s[0-9].npz')))
+    main(sys.argv[1:] or sorted(str(p) for p in (Path(__file__).resolve().parents[1] / 'data/encoder').glob('relgraph_r2nolane_s[0-9].npz')))

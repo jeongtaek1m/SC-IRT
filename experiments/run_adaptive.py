@@ -12,8 +12,17 @@ the stop. The matched-cost rule (tau_hat at target mean budgets 30 / 55,
 results/tau_hat.json) is kept as the appendix table. Nothing is selected on
 evaluation planners.
 
+ATDRIVE_OFFICIAL_ORDERS=1 swaps the two published bank orders (Fluid,
+metabench) for the ones the METHODS' OWN code selects
+(experiments/official/orders.py, cached from experiments/official/*.py); the
+readout, the risk machine, the stopping rule and the bootstrap are untouched,
+and everything is written to results/adaptive_official*.json so the numbers of
+record are not overwritten. Random and Random-strat are the protocol's own
+controls, not published methods, so they stay as they are.
+
     python experiments/run_adaptive.py --seeds 0 4     # shard (GPU)
     python experiments/run_adaptive.py --merge         # Table 2, sweeps, anchors
+    ATDRIVE_OFFICIAL_ORDERS=1 python experiments/run_adaptive.py --seeds 0 4    # official-order arm
 """
 import argparse
 import glob
@@ -34,6 +43,12 @@ from atdrive.bayes import Bank, bank_from_fit, track, stop_at
 from atdrive.acquisition import r1_traj
 from atdrive.baselines import fluid_order, metabench_order, stratified_order
 from atdrive.metrics import paired_cluster_boot, ies
+
+OFFICIAL = os.environ.get('ATDRIVE_OFFICIAL_ORDERS', '0') == '1'   # Fluid / metabench from their own code
+TAG = '_official' if OFFICIAL else ''
+if OFFICIAL:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from official.orders import order as official_order, padded, slot_of
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
@@ -63,14 +78,21 @@ def subsample(cols, seed, Kc):
 PJ = 16   # planner count, set from the panel in run()
 
 
-def orders_for(f1, f2, bi, yy, seed, js, typ):
+def orders_for(f1, f2, bi, yy, seed, js, typ, Kc):
     n = len(bi)
     bank = (Bank(marginal_curves(f1['b'][bi], np.full(n, 1e-9)), typ[bi], f1['sigma_g']) if POINT_CURVES
             else bank_from_fit(f1, bi, typ, sigma_g=0.0 if NO_TESTLET else None))
     Tn = n if T is None else min(T, n)
+    if OFFICIAL:                # the official code's own orders, padded to the bank (official.orders.padded)
+        p = slot_of(seed, js)
+        fl = padded(official_order('fluid', seed, Kc, p, n_bank=n)['order'], n)[:Tn]
+        mb = padded(official_order('metabench', seed, Kc, p, n_bank=n)['order'], n)[:Tn]
+    else:
+        fl = fluid_order(f2['a'][bi], f2['b'][bi], yy, Tn)
+        mb = [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], f2['th'], Tn, n, prefix=True)]
     return bank, {'ATDrive': r1_traj(bank, yy, Tn),
-                'Fluid': fluid_order(f2['a'][bi], f2['b'][bi], yy, Tn),
-                'metabench': [int(i) for i in metabench_order(f2['a'][bi], f2['b'][bi], Tn, n)],
+                'Fluid': fl,
+                'metabench': mb,
                 'Random': [int(i) for i in np.random.RandomState(100 + seed * PJ + js).permutation(n)[:Tn]],
                 'Random-strat': [int(i) for i in stratified_order(typ[bi], np.random.RandomState(100 + seed * PJ + js))[:Tn]]}
 
@@ -91,7 +113,7 @@ def run(seeds):
             f2 = calibrate(panel.Y, calR, cs, mode='2pl', sigma_b=f1['sigma_b'])
             for js in hp:
                 bi, yy = panel.bank_rows(calR, js)
-                bank, od = orders_for(f1, f2, bi, yy, seed, js, typ)
+                bank, od = orders_for(f1, f2, bi, yy, seed, js, typ, Kc)
                 rec = {'seed': seed, 'K': Kc, 'js': int(js), 'SR': float(yy.mean()), 'sigma_g': f1['sigma_g']}
                 for k, o in od.items():
                     Sh, R1 = track(bank, yy, o)
@@ -133,7 +155,7 @@ def report(recs):
             Bm, em = np.mean([s[0] for s in st]), np.mean([s[1] for s in st])
             row.append(f'tau {tau:.3f}: {Bm:5.1f} roll, {em:.4f} vs fixed {float(np.interp(Bm, xs, ys)):.4f} ({em - float(np.interp(Bm, xs, ys)):+.4f})')
         print(f'-- K_cal = {K} --\n   ' + '\n   '.join(row))
-    tau_path = OUT / 'tau_hat.json'
+    tau_path = OUT / f'tau_hat{TAG}.json'
     T2 = {}
     if tau_path.exists() and not POINT_CURVES:      # the matched-cost table's IES reference is the Random order
         TAU = json.load(open(tau_path))
@@ -160,7 +182,7 @@ def report(recs):
                     T2[(K, tg, o)] = es.mean()
     else:
         print('\n(matched-cost table skipped: no tau_hat.json, or a single-order run with no Random reference)')
-    cal_path = OUT / 'risk_cal.json'
+    cal_path = OUT / f'risk_cal{TAG}.json'
     if cal_path.exists():
         C = json.load(open(cal_path))
         print('\n===== Table 2 — risk-target stopping: first t with c*R1_t <= eps, c = LOO 90th pct |err|/R1 (risk_cal.json) =====')
@@ -177,7 +199,7 @@ def report(recs):
                           f'SR-MAE {es.mean():.4f}  gap {es.mean() - cr.mean():+.4f}'
                           + ('' if o == 'ATDrive' else f'   d {d:+.4f} [{lo:+.4f},{hi:+.4f}]'))
     else:
-        print('\n(results/risk_cal.json not found: run run_tau_calibration.py --merge for the risk-target table)')
+        print(f'\n(results/risk_cal{TAG}.json not found: run run_tau_calibration.py --merge for the risk-target table)')
     return FX, T2
 
 
@@ -214,20 +236,24 @@ def main():
     args = ap.parse_args()
     OUT.mkdir(exist_ok=True)
     if args.merge:
-        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'adaptive_*_*.json')))], [])
+        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / f'adaptive{TAG}_[0-9]*_[0-9]*.json')))], [])
         if recs:
-            json.dump(recs, open(OUT / 'adaptive.json', 'w'))
+            json.dump(recs, open(OUT / f'adaptive{TAG}.json', 'w'))
         else:                                   # no shards (a clone): score the results of record
-            recs = json.load(open(OUT / 'adaptive.json'))
+            recs = json.load(open(OUT / f'adaptive{TAG}.json'))
     elif args.seeds:
         lo, hi = args.seeds
         recs = run(range(lo, hi))
-        json.dump(recs, open(OUT / f'adaptive_{lo}_{hi}.json', 'w'))
+        json.dump(recs, open(OUT / f'adaptive{TAG}_{lo}_{hi}.json', 'w'))
         print('shard saved; run with --merge after all shards')
         return
     else:
         recs = run(range(R_DRAWS))
-        json.dump(recs, open(OUT / 'adaptive.json', 'w'))
+        json.dump(recs, open(OUT / f'adaptive{TAG}.json', 'w'))
+    if OFFICIAL:
+        print('\nOFFICIAL-ORDER ARM: Fluid and metabench are the orders their own code selects '
+              '(experiments/official/orders.py); ATDrive, Random and Random-strat are unchanged, '
+              'and so are the readout, the risk scale and the stopping rule.')
     FX, T2 = report(recs)
     assert len(recs) == len(KCALS) * 64
     if NO_TESTLET or POINT_CURVES:
@@ -239,6 +265,9 @@ def main():
     fx = lambda K, o, t: np.mean([abs(r[o]['Shat'][t - 1] - r['SR']) for r in recs if r['K'] == K])
     for K, o, t, v in ((4, 'ATDrive', 30, .0450), (4, 'ATDrive', 55, .0332), (8, 'ATDrive', 110, .0202),
                        (12, 'ATDrive', 165, .0081), (4, 'Random', 55, .0405), (12, 'Fluid', 55, .0290)):
+        if OFFICIAL and o in ('Fluid', 'metabench'):
+            print(f'   official-order arm: {o} K{K} t{t} = {fx(K, o, t):.4f} (was {v:.4f} on our order)')
+            continue                          # the swapped rows have their own numbers; ATDrive's anchors still hold
         assert abs(fx(K, o, t) - v) < .002, (K, o, t, fx(K, o, t))
     print('anchors OK')
 

@@ -23,14 +23,18 @@ M is reported in two forms, both computed from the SAME 11-planner response matr
        holds by construction of `deltas()` for any subset and is kept only as a
        consistency check.) Enrichment is reported next to Delta M.
 
-Every Delta M is computed identically for (i) the two encoder arms — C0e, the
-canonical encoder, and A2e, the ego speed removed from both ego paths — three
-training seeds each, trained on the 16-planner panel of record
-(`b2d_e2e16sel_response_matrix.csv`) with the repo calibration; (ii) their
-label-shuffle nulls, 20 permutations x 3 training seeds per arm, trained under the
-same ablation on permuted Bench2Drive route labels (C4r2n for C0e, C4r2e for A2e);
-(iii) random q% subsets; (iv) an oracle that ranks by the response-calibrated
-difficulty b_ref (in sample).
+Every Delta M is computed identically for (i) the three encoder arms — NLe, THE
+ENCODER OF RECORD, which HAS NO LANE GRAPH (R2-noLane: no lane tokens, lane_feat,
+L2L edges, A2L candidates or route_rel; ego + command + agents only, applied to the
+Bench2Drive source graph and to the nuPlan target graph alike), and the two
+lane-carrying controls C0e (speed kept) and A2e (the ego speed removed from both ego
+paths), which are what the lane graph cost on transfer — three training seeds each,
+trained on the 16-planner panel of record (`b2d_e2e16sel_response_matrix.csv`) with
+the repo calibration; (ii) their label-shuffle nulls, 20 permutations x 3 training
+seeds per arm, trained under the same ablation on permuted Bench2Drive route labels
+(C4nl for NLe, C4r2n for C0e, C4r2e for A2e — every arm is judged against a null
+trained exactly like itself); (iii) random q% subsets; (iv) an oracle that ranks by
+the response-calibrated difficulty b_ref (in sample).
 
 THE NULL IS MATCHED TO THE ARM STATISTIC AND TO ITS VARIANCE STRUCTURE. An arm is a
 mean over three training seeds that all see the SAME labels, so the exchangeable
@@ -85,10 +89,12 @@ FAIL_THR = 0.5        # CLS < 0.5 counts as a failure (reproduces the stored bin
 NSEED = 3             # training seeds per labeling (arms and every null permutation)
 NPERM = 20            # fixed label permutations per null family
 
-# arm -> (label, matched null family)
-ARMS = {'C0e': ('C0e speed kept (canonical)', 'C4r2n'),
-        'A2e': ('A2e -speed both ego paths', 'C4r2e')}
-NULLS = {'C4r2n': f'NULL C4r2n label shuffle ({NPERM} perms x {NSEED} seeds)',
+# arm -> (label, matched null family); NLe is the encoder of record, the other two are controls
+ARMS = {'NLe': ('NLe lane-free (canonical)', 'C4nl'),
+        'C0e': ('C0e lane graph kept, speed kept', 'C4r2n'),
+        'A2e': ('A2e lane graph kept, -speed both egos', 'C4r2e')}
+NULLS = {'C4nl': f'NULL C4nl label shuffle, lane-free ({NPERM} perms x {NSEED} seeds)',
+         'C4r2n': f'NULL C4r2n label shuffle ({NPERM} perms x {NSEED} seeds)',
          'C4r2e': f'NULL C4r2e label shuffle, -speed ({NPERM} perms x {NSEED} seeds)'}
 PERM = np.repeat(np.arange(NPERM), NSEED)         # labeling index of every null run (perm-major order)
 
@@ -346,7 +352,8 @@ def main():
     if ANCHORS is None:
         print('anchors: panel and oracle only (arm / null anchors not yet pinned)')
         return
-    for blk, nm, v in ((q5, 'C0e', ANCHORS['q5_C0e']), (q5, 'A2e', ANCHORS['q5_A2e']),
+    for blk, nm, v in ((q5, 'NLe', ANCHORS['q5_NLe']), (q5, 'C0e', ANCHORS['q5_C0e']),
+                       (q5, 'A2e', ANCHORS['q5_A2e']), (q10, 'NLe', ANCHORS['q10_NLe']),
                        (q10, 'C0e', ANCHORS['q10_C0e']), (q10, 'A2e', ANCHORS['q10_A2e'])):
         assert abs(blk['arms'][nm]['dM_cls_mean'] - v) < 5e-4, (blk['k'], nm, blk['arms'][nm]['dM_cls_mean'])
     V = lambda blk, nm, key: blk['arms'][nm]['verdict'][key]
@@ -361,8 +368,13 @@ def main():
 
 ANC5_ORC, ANC10_ORC = 0.4486, 0.3631               # oracle Delta M_CLS (labels of the target panel; unchanged)
 ANCHORS = dict(                                    # panel of record, 20 permutations x 3 seeds (RESULTS.md)
-    q5_C0e=0.1914, q5_A2e=0.2275, q10_C0e=0.1376, q10_A2e=0.1590,
+    q5_NLe=0.2351, q5_C0e=0.1914, q5_A2e=0.2275,   # NLe (lane-free) is the arm of record
+    q10_NLe=0.1973, q10_C0e=0.1376, q10_A2e=0.1590,
     verdicts={                                     # (q, arm, key): (T_null, #null perm means >= arm, clears)
+        (5, 'NLe', 'dM_cls'): (0.1871, 0, True),
+        (5, 'NLe', 'enrich'): (1.9686, 0, True),
+        (10, 'NLe', 'dM_cls'): (0.1582, 0, True),
+        (10, 'NLe', 'enrich'): (1.7857, 0, True),
         (5, 'A2e', 'dM_cls'): (0.1972, 0, True),
         (5, 'A2e', 'enrich'): (2.0570, 0, True),
         (5, 'C0e', 'dM_cls'): (0.2052, 2, False),
@@ -372,7 +384,7 @@ ANCHORS = dict(                                    # panel of record, 20 permuta
         (10, 'C0e', 'dM_cls'): (0.1515, 3, False),
         (10, 'C0e', 'enrich'): (1.7998, 3, False),
     },
-    spearman={'A2e': (0.3016, 1), 'C0e': (0.2485, 1)},
+    spearman={'NLe': (0.4254, 1), 'A2e': (0.3016, 1), 'C0e': (0.2485, 1)},
 )
 
 if __name__ == '__main__':

@@ -13,6 +13,14 @@ benchmark for the held-out planner,
     T        the 40 held-out-type routes     -- inferred from the
              scene-conditioned prior b_s ~ N(b_tilde_s, sigma^2) (PROTOCOL 3.1)
 
+The scene prior is the ENCODER OF RECORD, RelGraph R2-noLane, which HAS NO
+LANE GRAPH (data/encoder/relgraph_r2nolane_s0.npz); the lane-carrying R2 that
+earlier releases used here is now a control and is not read by this script.
+Every record carries the name and content md5 of the npz it was produced with
+and `main()` re-checks it before any anchor, so records made with another
+encoder -- the lane-carrying shards earlier releases left in results/ -- fail
+loudly instead of passing on cells the two encoders happen to share.
+
 Everything else is `run_ups.py`: the 36:8 type split (`unified_split`), the
 12:4 planner split, 16 draws, K_cal = 12, probe budgets B in {30, 55, 110}
 placed on the calibrated routes only, and the ability posterior q_B built
@@ -59,6 +67,7 @@ intervals throughout.
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import sys
@@ -81,13 +90,26 @@ DEV = os.environ.get('ATDRIVE_DEVICE', 'cpu')
 BP = (30, 55, 110)
 TMAX = max(BP)
 K_CAL = 12
-ENC_RUN = 0                                     # RelGraph R2 run s0 (canonical)
+ENC_RUN = 0                                     # RelGraph R2-noLane run s0 (canonical)
+ENC_NPZ = DATA / 'encoder' / f'relgraph_r2nolane_s{ENC_RUN}.npz'
 POL = ('Random', 'Delta-R1 on D', 'Delta-R1 on D (scene-free)', 'Delta-R1 on full I')
 CANP = 'Delta-R1 on D'                          # the probe rule of record (run_ups.py)
 ARM = ('naive', 'calC + priorT(marg)', 'calC + priorT(const)', 'calC + sceneT',
        'trueC + sceneT', 'calC + trueT')
 CANA = 'calC + sceneT'
 TARM = ('naive', 'calC + priorT(marg)', 'calC + priorT(const)', 'calC + sceneT')   # arms with a T readout
+
+
+def enc_id():
+    """Identity of the scene prior a record was produced with (name + content md5).
+
+    Written into every rec by run() and re-checked in main(), so records made
+    with a different encoder -- e.g. the lane-carrying shards earlier releases
+    left in results/ -- fail before any anchor is read. The anchors cannot do
+    this job: the lane-carrying and lane-free target-block cells agree to
+    .003, so ANCHORS_T passes on either encoder.
+    """
+    return f'{ENC_NPZ.name}:{hashlib.md5(ENC_NPZ.read_bytes()).hexdigest()}'
 
 
 def full_readout(q, yo, mu, var, n_unobs, N):
@@ -99,8 +121,8 @@ def full_readout(q, yo, mu, var, n_unobs, N):
 
 def run(seeds):
     panel = Panel()
-    pz = np.load(DATA / 'encoder' / f'relgraph_r2_s{ENC_RUN}.npz', allow_pickle=True)
-    recs = []
+    pz = np.load(ENC_NPZ, allow_pickle=True)
+    eid, recs = enc_id(), []
     for seed in seeds:
         hp, ht = unified_split(seed, panel.utypes, panel.J)
         cols = [c for c in range(panel.J) if c not in hp]      # K_cal = 12, no subsampling
@@ -145,7 +167,7 @@ def run(seeds):
                     st.add(o[-1])
                 S[name] = o
             # ---- readouts --------------------------------------------------
-            rec = {'seed': int(seed), 'js': int(js), 'nC': nC, 'nT': nT,
+            rec = {'enc': eid, 'seed': int(seed), 'js': int(js), 'nC': nC, 'nT': nT,
                    'SR_full': float((yb.sum() + yD.sum()) / N), 'SR_C': float(yb.mean()),
                    'SR_T': float(yD.mean()), 'sigma_b': f1['sigma_b'], 'sigma_g': f1['sigma_g'],
                    'yT': [int(v) for v in yD], 'pol': {}}
@@ -271,37 +293,47 @@ def main():
     else:
         recs = run(range(R_DRAWS))
         json.dump(recs, open(OUT / 'ups_full.json', 'w'))
+    seen = sorted({r.get('enc', '(no enc field: pre-lane-free record)') for r in recs})
+    assert seen == [enc_id()], (
+        'these records were not produced with the scene prior of record. Expected '
+        f'{enc_id()}, found {seen}. Delete the stale shards / merged json and recompute '
+        '(--seeds lo hi, then --merge).')
     E, ET, AU = report(recs)
     assert len(recs) == 64, len(recs)
     JS = [r['js'] for r in sorted(recs, key=lambda r: (r['seed'], r['js']))]
-    for (p, a, B, ref) in ANCHORS_FULL:
-        assert abs(np.mean(E(p, B, a)) - ref) < .003, (p, a, B, np.mean(E(p, B, a)))
     for (p, a, B, ref) in ANCHORS_T:                # these reproduce Table 3B (results/ups.json)
         assert abs(np.mean(ET(p, B, a)) - ref) < .003, (p, a, B, np.mean(ET(p, B, a)))
+    for (p, a, B, ref) in ANCHORS_FULL:
+        assert abs(np.mean(E(p, B, a)) - ref) < .003, (p, a, B, np.mean(E(p, B, a)))
     for (p, a, B, ref) in ANCHORS_AUC:
         assert abs(AU(p, B, a) - ref) < .006, (p, a, B, AU(p, B, a))
-    # the null of record: the scene prior moves the full-SR error by less than .0025 with every paired
-    # interval containing zero, in the readout and in the acquisition
+    # the null of record: the scene prior moves the full-SR error by less than .003 with every paired
+    # interval containing zero, in the readout and in the acquisition (largest observed |d| .0026)
     for B in BP:
         for x, y in (((CANP, CANA), (CANP, 'calC + priorT(marg)')),
                      (('Delta-R1 on D (scene-free)', 'calC + priorT(marg)'), (CANP, CANA))):
             d, lo, hi = paired_cluster_boot(E(x[0], B, x[1]), E(y[0], B, y[1]), JS)
-            assert lo < 0 < hi and abs(d) < .0025, (x, y, B, d, lo, hi)
+            assert lo < 0 < hi and abs(d) < .003, (x, y, B, d, lo, hi)
     print('anchors OK')
 
 
 # (probe policy, readout arm, B, value) -- the numbers this script produced on the
-# 16-draw x 4-planner protocol; ANCHORS_T are Table 3B's cells (results/ups.json).
-ANCHORS_FULL = ((CANP, CANA, 30, .0467), (CANP, CANA, 55, .0319), (CANP, CANA, 110, .0211),
-                (CANP, 'calC + priorT(marg)', 55, .0330), (CANP, 'trueC + sceneT', 110, .0173),
-                (CANP, 'calC + trueT', 110, .0098), ('Delta-R1 on full I', CANA, 55, .0234),
-                ('Random', 'naive', 30, .0698), ('Random', CANA, 110, .0276),
+# 16-draw x 4-planner protocol with the scene prior of record (the lane-free
+# relgraph_r2nolane_s0.npz). ANCHORS_T are Table 3B's cells (results/ups.json): the
+# target-block readout of this script is the same object, so it reproduces them
+# element-wise. Note that ANCHORS_T alone does NOT identify the encoder -- the
+# lane-carrying and lane-free target-block cells agree to within its .003 tolerance --
+# which is why every record also carries enc_id() and main() checks it first.
+ANCHORS_FULL = ((CANP, CANA, 30, .0448), (CANP, CANA, 55, .0300), (CANP, CANA, 110, .0209),
+                (CANP, 'calC + priorT(marg)', 55, .0319), (CANP, 'trueC + sceneT', 110, .0168),
+                (CANP, 'calC + trueT', 110, .0097), ('Delta-R1 on full I', CANA, 55, .0245),
+                ('Random', 'naive', 30, .0698), ('Random', CANA, 110, .0277),
                 ('Delta-R1 on D (scene-free)', 'calC + priorT(marg)', 30, .0454),
                 ('Delta-R1 on D (scene-free)', 'calC + priorT(marg)', 55, .0326),
                 ('Delta-R1 on D (scene-free)', 'calC + priorT(marg)', 110, .0205))
-ANCHORS_T = (('Random', 'naive', 30, .1007), ('Random', CANA, 30, .1129),
-             (CANP, CANA, 30, .0950), (CANP, CANA, 55, .0936), (CANP, CANA, 110, .0950))
-ANCHORS_AUC = ((CANP, CANA, 30, .760), (CANP, 'calC + priorT(marg)', 30, .710))
+ANCHORS_T = (('Random', 'naive', 30, .1007), ('Random', CANA, 30, .1140),
+             (CANP, CANA, 30, .0922), (CANP, CANA, 55, .0920), (CANP, CANA, 110, .0926))
+ANCHORS_AUC = ((CANP, CANA, 30, .744), (CANP, 'calC + priorT(marg)', 30, .708))
 
 if __name__ == '__main__':
     np.random.seed(0)

@@ -223,28 +223,37 @@ independent-item model exactly (one grid point for u).
 ### 3.1 Unseen scenes — the difficulty prior from the scene
 
 ```
-b_s | scene_s ~ N( b_tilde_s , sigma^2 )        (RelGraph R2 scene encoder)
+b_s | scene_s ~ N( b_tilde_s , sigma^2 )    (RelGraph R2-noLane scene encoder)
 ```
 
-The scene encoder is the RelGraph R2: ego, agent and lane tokens with R-GCN
-lane-lane message passing, agent-lane cross-attention over relative-geometry
-relations and an ego-route relation (d = 64). Per draw it is trained
-end-to-end on the calibration types only, with the cell likelihood
-marginalised over the residual b_s - b_tilde_s ~ N(0, sigma^2) by
+THE SCENE ENCODER OF RECORD HAS NO LANE GRAPH. It is RelGraph R2-noLane: the
+R2 architecture (d = 64) with the whole map side removed before any tensor is
+built — no lane tokens, no lane geometry or lane_feat, no R-GCN lane-lane
+message passing, no agent-lane cross-attention and no ego-route relation — so
+the scene reaches it as ego + command + agent tokens and the agent-agent
+structure. R2Net itself is not rebuilt (same parameter count and
+initialisation), the lane-side modules simply receive an all-masked input.
+Per draw it is trained end-to-end on the calibration types only, with the cell
+likelihood marginalised over the residual b_s - b_tilde_s ~ N(0, sigma^2) by
 Gauss-Hermite and sigma learned jointly (the encoder's shared residual SD,
-~.65 on this panel); the release
-ships its per-run out-of-fold predictions (`data/encoder/relgraph_r2_s*.npz`,
-three independent runs, no ensembling; the structural controls of
-Table 3A(b) — route relation removed, route or agent-lane correspondence
-shuffled — are the same architecture and recipe with different graph
-tensors, `data/encoder/relgraph_r2_{noroute,sroute,sa2l}_s*.npz`; the
-fourth control is a channel control, the ego-speed channel removed from
-both ego paths, `relgraph_r2_nospeed_s*.npz`, the arm that clears the
-nuPlan shuffle null in Section 9). Table 3A
-scores these point predictions; on this panel the encoder is
-tied with the hand-crafted descriptor baselines on AUROC / scene-MAE and
-behind them on rank correlation (RelGraph minus cmdkin+gtrisk: Delta rho
--.043 +- .016 across runs, about three run-SDs).
+~.65 on this panel); the release ships its per-run out-of-fold predictions
+(`data/encoder/relgraph_r2nolane_s*.npz`, three independent runs, no
+ensembling).
+
+The lane-carrying R2 that earlier releases used as the encoder of record is
+now the first control of Table 3A(b) (`data/encoder/relgraph_r2_s*.npz`),
+beside the structural controls that keep the lane graph and damage one
+relation — route relation removed, route or agent-lane correspondence
+shuffled, `data/encoder/relgraph_r2_{noroute,sroute,sa2l}_s*.npz` — and the
+channel control with the ego-speed channel removed from both ego paths,
+`relgraph_r2_nospeed_s*.npz`. All six are the same architecture, recipe and
+seeds. Table 3A scores these point predictions; on this panel the lane-free
+encoder is slightly ahead of the hand-crafted descriptor baselines on AUROC
+and rank correlation (R2-noLane minus cmdkin+gtrisk: Delta rho +.012 +- .024
+across runs, inside its run-to-run noise) and behind them on scene-MAE, and it
+beats the lane-carrying model in all three runs on all three metrics
+(Delta rho +.055 +- .031 paired by seed). The one place the lane graph pays is
+the UPS per-cell NLL (Section 5, Table 3B).
 
 ## 4. UP — one posterior for inference, acquisition and stopping
 
@@ -311,12 +320,12 @@ transported to the evaluation-type routes D:
 
 ```
 probes: Delta-R1 on the block-D success rate (atdrive/acquisition.r1_pick_transfer) — the probe-bank
-        route whose outcome most reduces E|SR_D - SR_hat_D|; theta-EIG and 2PL Fisher are ablations
+        route whose outcome most reduces E|SR_D - SR_hat_D|; theta-EIG is the ablation
 D:      b_s | scene_s ~ N(b_tilde_s, sigma^2),  u_g ~ N(0, sigma_g^2) for the (unobserved) evaluation types
 ```
 
-with b_tilde_s the RelGraph R2 out-of-fold prediction of that draw and
-sigma the residual SD the encoder learned on the calibration block — the
+with b_tilde_s the out-of-fold prediction of the lane-free encoder of record
+for that draw and sigma the residual SD it learned on the calibration block — the
 same prior as Section 3.1, so US and UPS share one difficulty model (run
 s0 is canonical; the across-run SD is reported). The probe posterior q_B
 is transported as is (`atdrive/bayes.transfer`): the D-block success rate is
@@ -326,10 +335,18 @@ scores) — two Bayes actions for two losses, one posterior. The probe rule
 is the same Delta-R1 machinery with the risk evaluated on D instead of on
 the probe bank: the principle is *acquire for the quantity that must
 generalise* — full-bank SR in UP, the block-D SR in UPS, nothing in US;
-theta-EIG and the 2PL Fisher rule are reported as ablations (Table 3B).
-Table 3B is repeated with the speed-ablated prior
-(`results/ups_nospeed.json`); the shipped R2 prior remains canonical. The
-same machinery retargeted to the full 220-route success rate is Section 9.
+theta-EIG is reported as the ablation (Table 3B). No published method is
+run in UPS: none of the Table 1 baselines has a transport step, so the table
+carries ATDrive, its ablation and the two floors (Random probes, naive readout).
+Table 3B is repeated with two control priors: the lane-carrying R2
+(`results/ups_lane.json`), which is worse on the block-SR MAE by .002-.003
+(paired intervals containing zero) and better on the per-cell NLL by .012 at
+every budget — the one place the lane graph pays — and the speed ablation of
+the encoder of record (`results/ups_nospeed.json`: R2-noLane with the ego-speed
+channel zeroed), which is indistinguishable on the block-SR MAE (paired
+intervals containing zero) and .008-.009 better on the NLL. The lane-free prior
+remains canonical. The same machinery retargeted to the full 220-route success
+rate is Section 9.
 
 ## 6. Published baselines (`atdrive/baselines.py`)
 
@@ -341,11 +358,19 @@ explicit priors log a ~ N(0, .5^2), b ~ N(0, sigma_b^2) with sigma_b from
 the 1PL empirical-Bayes fit) — not from the methods' own fitting code. The
 adaptations, per row:
 
-**Tie and device sensitivity of the static baselines.** Total-Fisher, Marginal-Fisher, tinyBenchmarks-lite
-and metabench-lite orders are argsort / k-means tie-dependent and AnchorPoints' PAM is tie-unstable
-(6 of 768 cells move on CPU); two Table 1 cells differ across devices by up to .007 (Total-Fisher K4 B30
-.0604 GPU vs .0536 CPU; tinyBenchmarks K4 B30 .0755 vs .0689). ATDrive's lead is unchanged under either;
-the tracked values are the GPU run.
+**Tie and seed convention of the static baselines.** Total-Fisher, Marginal-Fisher and DISCO break ties
+by the project convention -- round the score to `TIE_DECIMALS = 10` (`atdrive/acquisition.py`), then take the
+LOWEST bank index -- which is also the rule catR's own wrapper uses (`experiments/official/catr.py`), so the
+lite and official Fisher rows share it. This matters: at K_cal = 4 a 219-route bank has only ~20 distinct
+information values, so the B = 30 / 55 boundaries fall inside tie groups. metabench-lite is deterministic
+(the ability grid and the greedy argmax carry no random element). tinyBenchmarks-lite is the one remaining
+seeded row: `kmeans_anchors` takes a single fixed `seed` (default 0) for both the k-means restart and the
+random fill of the budget when duplicate embedding points leave clusters empty, matching the single fixed
+`random_state` of the official code (`experiments/official/tinybench.py`). Every table calls it at that one
+seed; the readout is never averaged over seeds, because the union of several seeded selections would consume
+more than the B rollouts the row is priced at. AnchorPoints' PAM remains tie-unstable (6 of 768 cells move on
+CPU). The device-sensitivity deltas previously recorded here (Total-Fisher / tinyBenchmarks K4 B30) were
+measured under the pre-convention orders and are pending re-measurement against the re-run.
 
 - **Random (IRT-free) / Random + IRT / Random-strat + IRT** — random order
   (type round-robin for the stratified one) read with the sample mean or
@@ -355,16 +380,38 @@ the tracked values are the GPU run.
   expected error over five independent orders per evaluation (`NREP = 5`);
   the adaptive tables use one order (the stopping rule is applied to a
   single trajectory).
-- **tinyBenchmarks-lite** (Polo et al., 2024) — K-means with K = B on the
-  (a_hat, b_hat) embedding, one medoid per cluster, read with the p-IRT
-  plug-in; duplicate (a, b) points (routes with identical calibration
-  responses) leave clusters empty, so the budget is filled with the routes
-  closest to their centroid. Their gp-IRT blend and the anchor-weighted
-  correctness estimate are not used.
+- **tinyBenchmarks-lite** (Polo et al., 2024) — K-means with K = B on their
+  (discrimination, difficulty) embedding, one medoid per cluster, read with
+  the p-IRT plug-in. Their logit is sig(disc theta - diff) and ours is
+  sig(a (theta - b)), so the embedding is (a_hat, a_hat b_hat) here.
+  Duplicate embedding points (routes with identical calibration responses)
+  leave clusters empty, so the budget is filled with the routes closest to
+  their centroid (see the seed convention above). Budget-specific, not a
+  prefix order. Their gp-IRT blend and the anchor-weighted correctness
+  estimate are not used.
 - **metabench-lite** (Kipnis et al., 2024) — greedy maximum 2PL information
-  over a fixed 25-point quantile grid of b_hat (prefix order), read with the
-  p-IRT plug-in; the published subset-size tuning and GAM readout are
-  replaced by the budget grid and the plug-in.
+  over a grid of ABILITY points, one route per grid point in a single pass,
+  read with the p-IRT plug-in. The grid is B evenly spaced ability points over
+  the range of the calibration abilities, one route each — the lite stand-in
+  for reduce.R's B quantile bins of a 500-point uniform grid, whose within-bin
+  maximum information is reduced here to the information at a single
+  representative theta. Uniform over the calibration range is reduce.R's
+  grid.type = 2, the same grid the official wrapper uses
+  (`experiments/official/metabench.py`), since grid.type = 1 (the fitted
+  abilities themselves) gives at most K_cal <= 12 non-empty bins and cannot
+  reach the budget. The grid is sized to the request, so two budgets are not
+  nested. The fixed-budget rows visit the grid ascending, as reduce.R's
+  select.items does. metabench returns a subset and not an order, so the
+  adaptive tables — which walk one metabench order over growing lengths — need
+  a prefix order that reads as an administration at every length; there the
+  grid points are visited in bit-reversed rather than ascending order, so a
+  length-t prefix is spread over the ability range instead of being its easy
+  end. That is our construction, and because each visit removes its pick from
+  the pool it changes WHICH routes are selected and not only their order: up
+  to 3 of 30, 9 of 55, 20 of 110 and 30 of 165 routes differ from the
+  ascending construction (seeds 0 / 3 / 7 at K_cal = 12). It is confined to
+  the adaptive scripts for that reason. The published subset-size tuning and
+  GAM readout are replaced by the budget grid and the plug-in.
 - **Fluid-style** (Hofmann et al., 2025) — adaptive Fisher selection at the
   Newton-MAP 2PL ability, read with the p-IRT plug-in on the SR scale
   (Fluid reports the ability itself).
@@ -502,9 +549,11 @@ tracks) so that selection and stopping can each be swapped alone.
   `data/nuplan/val14_zeroshot.npz`): the Bench2Drive-trained encoder (panel
   of record, repo calibration) ranks the 584 nuPlan val14 scenarios; the
   statistic is the drop in the 11-planner closed-loop score on the
-  predicted-hard top-q%, q in {5, 10}, for the canonical encoder and the
-  speed-ablated one (three training seeds each) against label-shuffled
-  encoders trained under the same ablation. The null is matched to the arm
+  predicted-hard top-q%, q in {5, 10}, for the lane-free encoder of record and
+  the two lane-carrying controls (speed kept, speed removed; three training
+  seeds each) against label-shuffled encoders trained under the same ablation
+  — one null family per arm, so the controls show what the lane graph cost on
+  transfer. The null is matched to the arm
   statistic and to its variance structure: an arm's three seeds share one
   labeling, so the null family is 20 fixed label permutations x 3 training
   seeds, the threshold is the 95th percentile of the 20 per-permutation

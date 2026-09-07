@@ -6,7 +6,7 @@ uncertainty-aware Rasch posterior does everything:
     evaluation model   y_sk ~ Bernoulli(sigmoid(theta_k - b_s + u_kg)),  exact grid posterior of b_s | A,  u_kg ~ N(0, sigma_g^2)
     acquisition        Delta-R1: expected drop in the posterior L1 risk of SR_hat
     stopping           c * R1(D_t) <= eps, c fixed on the calibration panel
-    unseen scenes      b_s | scene ~ N(b_tilde_s, sigma^2)  (RelGraph R2, shipped as per-run predictions)
+    unseen scenes      b_s | scene ~ N(b_tilde_s, sigma^2)  (RelGraph R2-noLane, shipped as per-run predictions)
 
     splits        random 12/4 planners x 36/8 scene types, R = 16 draws
     b2d           data loading (repo-local, canonical route order)

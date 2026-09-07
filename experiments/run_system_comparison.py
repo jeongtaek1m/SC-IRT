@@ -99,8 +99,24 @@ reference is read with that system's own readout, so the IES of a row is that
 system's own efficiency score; the reference MAEs are printed so the
 denominators are visible.
 
+THE OFFICIAL-CODE ROWS.  The ATLAS-style and Fluid-style rows above are OUR
+re-implementations of those complete systems.  Since `experiments/official/` we
+also have the real ones, and they do not behave the same: the official ATLAS
+stopping rule stops at 61.4 / 38.7 / 32.2 routes for tau = .1 / .2 / .3 at
+K_cal = 12 (SR-MAE .0680 / .0744 / .0769), where our re-implementation at
+tau = .1 exhausts the bank.  With ATDRIVE_OFFICIAL_ORDERS=1 the report adds
+those systems as their OWN rows, labelled '(official code)', read from the
+per-cell records of results/up_official*.json -- their fit, their selection,
+their stopping rule, their p-IRT readout, on the same protocol cells, paired to
+the same ATDrive base by (draw, K_cal, evaluation planner).  For Fluid only its
+fixed-length design is its own system (it publishes no stopping rule), so the
+official Fluid rows are fixed budgets and the SE <= delta* row stays OURS and
+stays labelled ours.  The extra rows go to results/syscmp_official_table.json;
+results/syscmp_table.json, the numbers of record, is not touched.
+
     python experiments/run_system_comparison.py --seeds 0 2    # shard
     python experiments/run_system_comparison.py --merge        # table + anchors
+    ATDRIVE_OFFICIAL_ORDERS=1 python experiments/run_system_comparison.py --merge   # + the official rows
 """
 import argparse
 import glob
@@ -120,6 +136,11 @@ from atdrive.calibration import calibrate
 from atdrive.bayes import bank_from_fit, track, state_from, stop_at
 from atdrive.acquisition import r1_traj
 from atdrive.metrics import paired_cluster_boot, ies
+
+OFFICIAL = os.environ.get('ATDRIVE_OFFICIAL_ORDERS', '0') == '1'   # add the official-code systems as their own rows
+if OFFICIAL:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from official.orders import slot_of, _records as official_records
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
 KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
@@ -534,6 +555,55 @@ def _cell(rs, sysname, stops):
             np.array([float(ti == r['n']) for r, ti in zip(rs, t)]))
 
 
+# Official ATLAS stopping-rule cells of results/up_official.json (methods.atlas.stops),
+# pinned for the official-row anchors: (K_cal, tau) -> (rollouts, SR-MAE).
+OFFICIAL_ATLAS_STOPS = {(4, 0.1): (36.4, .1026), (4, 0.2): (34.1, .1093), (4, 0.3): (31.3, .1109),
+                        (8, 0.1): (47.9, .0759), (8, 0.2): (34.0, .0856), (8, 0.3): (31.4, .0874),
+                        (12, 0.1): (61.4, .0680), (12, 0.2): (38.7, .0744), (12, 0.3): (32.2, .0769)}
+
+
+def official_rows(rs, K):
+    """The published systems run through THEIR OWN code, as rows of this table.
+
+    Read from the per-cell records of results/up_official*.json (run_up_official.py),
+    which hold, per protocol cell, the items each method read and the error of its own
+    readout: for ATLAS the three cells of its published stopping rule (min 30 items,
+    stop at SE(theta) <= tau, p-IRT readout), for Fluid its fixed-length design at the
+    budgets that run was priced at. Nothing is recomputed here.
+
+    Returns {label: (rollouts, |err|, hit-the-bank flag, indices into rs)}; a cell the
+    official run could not produce (2 of the 192 ATLAS cells: their p-IRT comes back NA
+    when the 3PL is unidentified at K_cal = 4) is dropped from its row and from that
+    row's paired comparison, and the surviving count is printed."""
+    recs = official_records()
+    out = {}
+
+    def rows(method, key, getter):
+        t, e, cap, keep = [], [], [], []
+        for i, r in enumerate(rs):
+            c = recs.get((method, r['seed'], K, slot_of(r['seed'], r['js'])))
+            if c is None or 'error' in c:
+                continue
+            v = getter(c)
+            if v is None:
+                continue
+            n_fit = int(c.get('model_info', {}).get('n_items_fit', c['n_bank']))
+            t.append(v['n_items'])
+            e.append(v['err'])
+            cap.append(float(v['n_items'] >= n_fit))
+            keep.append(i)
+        if t:
+            out[key] = (np.array(t, float), np.array(e, float), np.array(cap, float), keep)
+
+    for tau in ATLAS_TAUS:
+        rows('atlas', f'ATLAS  tau={tau:.1f} (official code)',
+             lambda c, tau=tau: c.get('stops', {}).get(f'tau{tau}'))
+    for B in (55, 110):
+        rows('fluid', f'Fluid  fixed B={B} (official code)',
+             lambda c, B=B: c['budgets'].get(str(B)))
+    return out
+
+
 def rows_for(rs):
     """Per-system operating points of one K_cal cell.
     Returns {label: (rollouts, |err|, hit-the-bank flag) arrays over evaluations}."""
@@ -598,6 +668,21 @@ def report(recs):
                                           'coverage': float(np.mean(e <= ETOL)), 'ies55': float(i1),
                                           'ies110': float(i2), 'delta_vs_atdrive': [float(d), float(lo), float(hi)],
                                           'ref_mae': ref[s]}
+        if OFFICIAL:
+            print('   -- the same two published systems run through THEIR OWN code (results/up_official.json '
+                  'per-cell records); IES has no denominator here because the official run never read a '
+                  'random order --')
+            for lab, (t, e, cap, keep) in official_rows(rs, K).items():
+                b = base[keep]
+                d, lo, hi = paired_cluster_boot(e, b, [js[i] for i in keep])
+                print(f'   {lab:34s} {t.mean():7.1f} {t.mean() / NROUTES:5.0%} {cap.mean():5.0%} {e.mean():8.4f} '
+                      f'{"—":>8s} {"—":>8s}   {d:+.4f} [{lo:+.4f},{hi:+.4f}]  (n {len(keep)} of {len(rs)})')
+                res[f'K{K}|{lab.strip()}'] = {'rollouts': float(t.mean()), 'frac': float(t.mean() / NROUTES),
+                                              'cap': float(cap.mean()), 'mae': float(e.mean()),
+                                              'coverage': float(np.mean(e <= ETOL)), 'ies55': None, 'ies110': None,
+                                              'delta_vs_atdrive': [float(d), float(lo), float(hi)],
+                                              'n_eval': len(keep), 'n_eval_full': len(rs),
+                                              'source': 'results/up_official.json per-cell records'}
     return res
 
 
@@ -608,8 +693,9 @@ def main():
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     if args.merge:
-        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'syscmp_*_*.json')))], [])
+        recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'syscmp_[0-9]*_[0-9]*.json')))], [])
         if recs:
+            assert len(recs) == len(KCALS) * 64, f'{len(recs)} records: a shard is missing or a stale partition was merged in'
             json.dump(recs, open(OUT / 'syscmp.json', 'w'))
         else:                                   # no shards (a clone): score the results of record
             recs = json.load(open(OUT / 'syscmp.json'))
@@ -623,14 +709,21 @@ def main():
         recs = run(range(R_DRAWS))
         json.dump(recs, open(OUT / 'syscmp.json', 'w'))
     res = report(recs)
-    json.dump(res, open(OUT / 'syscmp_table.json', 'w'), indent=1)
-    print(f'\nwritten: {OUT / "syscmp_table.json"}')
+    out_path = OUT / ('syscmp_official_table.json' if OFFICIAL else 'syscmp_table.json')
+    json.dump(res, open(out_path, 'w'), indent=1)
+    print(f'\nwritten: {out_path}')
     if not ANCHORS:
         print('anchors: TODO — pin after the 16-draw run of record')
         return
     for K, lab, field, v, tol in ANCHORS:
         got = res[f'K{K}|{lab}'][field]
         assert abs(got - v) < tol, (K, lab, field, got)
+    if OFFICIAL:            # the official ATLAS rows must BE results/up_official.json's own stopping-rule cells
+        for (K, tau), (roll, mae) in OFFICIAL_ATLAS_STOPS.items():
+            if K not in KCALS:
+                continue
+            row = res[f'K{K}|ATLAS  tau={tau:.1f} (official code)']
+            assert abs(row['rollouts'] - roll) < .15 and abs(row['mae'] - mae) < .0005, (K, tau, row)
     print('anchors OK')
 
 
