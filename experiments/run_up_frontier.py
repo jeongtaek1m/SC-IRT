@@ -29,7 +29,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split, R_DRAWS
+from atdrive.splits import up_split, R_DRAWS, N_EVAL, UP_LOO
 from atdrive.calibration import calibrate
 from atdrive.bayes import bank_from_fit, readout
 from atdrive.acquisition import r1_traj
@@ -39,7 +39,7 @@ from atdrive.baselines import (fluid_order, total_fisher_order, marginal_fisher_
 from atdrive.metrics import paired_cluster_boot
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 BGRID = [30, 55, 110, 165]
 NREP = 5          # random-policy rows: expected |error| over NREP independent orders per evaluation
 T = max(BGRID)
@@ -164,7 +164,10 @@ def main():
         recs = run(range(R_DRAWS))
         json.dump(recs, open(OUT / 'up_frontier.json', 'w'))
     E = report(recs)
-    assert len(recs) == len(KCALS) * 64
+    assert len(recs) == len(KCALS) * N_EVAL
+    if UP_LOO:
+        print('anchors: skipped (leave-one-planner-out mode, K_cal = 15; the anchors pin the 12 : 4 protocol of record)')
+        return
     macro = np.mean([np.mean(E[K]['ATDrive'][B]) for K in KCALS for B in BGRID])
     for (K, B, ref) in ((4, 30, .0450), (4, 55, .0332), (8, 110, .0202), (12, 55, .0231), (12, 165, .0081)):
         assert abs(np.mean(E[K]['ATDrive'][B]) - ref) < .002, (K, B, np.mean(E[K]['ATDrive'][B]))

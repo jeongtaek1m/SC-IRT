@@ -24,7 +24,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split, R_DRAWS
+from atdrive.splits import up_split, R_DRAWS, N_EVAL, UP_LOO
 from atdrive.calibration import calibrate
 from atdrive.curves import marginal_curves
 from atdrive.bayes import Bank, bank_from_fit, readout
@@ -32,7 +32,7 @@ from atdrive.acquisition import r1_traj
 from atdrive.metrics import paired_cluster_boot
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 BGRID = [30, 55, 110, 165]
 T = max(BGRID)
 ARMS = ['ATDrive (full)', 'w/o b-uncertainty', 'w/o testlet', 'w/o risk acquisition']
@@ -114,7 +114,10 @@ def main():
                                                     [r['js'] for r in rs])
                     row.append(f'{a}: {v:.4f} ({d:+.4f} [{lo:+.4f},{hi:+.4f}])')
             print(f'  K_cal={K:2d} B={B:>3d}  ' + '  '.join(row))
-    assert len(recs) == len(KCALS) * 64
+    assert len(recs) == len(KCALS) * N_EVAL
+    if UP_LOO:
+        print('anchors: skipped (leave-one-planner-out mode, K_cal = 15; the anchors pin the 12 : 4 protocol of record)')
+        return
     m = lambda a, K, B: np.mean([r['err'][a][str(B)] for r in recs if r['K'] == K])
     for a, K, B, v in (('ATDrive (full)', 4, 30, .0450), ('ATDrive (full)', 8, 55, .0337), ('ATDrive (full)', 12, 165, .0081),
                        ('w/o risk acquisition', 8, 30, .0567), ('w/o testlet', 8, 55, .0383),

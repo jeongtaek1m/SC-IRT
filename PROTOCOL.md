@@ -54,7 +54,10 @@ and it is calibrated from the 12 calibration planners on those same 220
 routes. That is the configuration a user of the tool is in: a panel of
 published planners, a new planner to place on the full benchmark. The
 36 : 8 type hold-out is kept for US and UPS, whose target block is the 40
-routes of the 8 evaluation types.
+routes of the 8 evaluation types. A supplementary leave-one-planner-out mode
+(`ATDRIVE_UP_LOO=1`) makes fold k hold out planner k alone and calibrate on the
+other 15 (K_cal = 15, 16 evaluations per cell, `results/loo15/`); RESULTS.md
+reports it as a supplement and the 12 : 4 draws remain the protocol of record.
 
 **Estimand.** SR is the planner's success rate over the routes the simulator completed for
 it — the routes with a recorded outcome in the response matrix (210-220 of the 220 Bench2Drive

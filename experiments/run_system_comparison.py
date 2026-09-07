@@ -131,7 +131,7 @@ from scipy.special import logsumexp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split, R_DRAWS
+from atdrive.splits import up_split, R_DRAWS, N_EVAL, UP_LOO
 from atdrive.calibration import calibrate
 from atdrive.bayes import bank_from_fit, track, state_from, stop_at
 from atdrive.acquisition import r1_traj
@@ -143,7 +143,7 @@ if OFFICIAL:
     from official.orders import slot_of, _records as official_records
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 DEVICE = os.environ.get('ATDRIVE_DEVICE', 'cuda' if torch.cuda.is_available() else 'cpu')
 
 NROUTES = 220               # the benchmark; per-planner banks are its recorded subset (210-220)
@@ -697,7 +697,7 @@ def main():
     if args.merge:
         recs = sum([json.load(open(f)) for f in sorted(glob.glob(str(OUT / 'syscmp_[0-9]*_[0-9]*.json')))], [])
         if recs:
-            assert len(recs) == len(KCALS) * 64, f'{len(recs)} records: a shard is missing or a stale partition was merged in'
+            assert len(recs) == len(KCALS) * N_EVAL, f'{len(recs)} records: a shard is missing or a stale partition was merged in'
             json.dump(recs, open(OUT / 'syscmp.json', 'w'))
         else:                                   # no shards (a clone): score the results of record
             recs = json.load(open(OUT / 'syscmp.json'))
@@ -733,6 +733,9 @@ def main():
     out_path = OUT / ('syscmp_official_table.json' if OFFICIAL else 'syscmp_table.json')
     json.dump(res, open(out_path, 'w'), indent=1)
     print(f'\nwritten: {out_path}')
+    if UP_LOO:
+        print('anchors: skipped (leave-one-planner-out mode, K_cal = 15; the anchors pin the 12 : 4 protocol of record)')
+        return
     if not ANCHORS:
         print('anchors: TODO — pin after the 16-draw run of record')
         return

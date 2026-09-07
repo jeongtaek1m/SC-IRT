@@ -106,6 +106,7 @@ python experiments/make_figures.py                   # figs/fig_cost_error, fig_
 python experiments/make_icc_figure.py                # figs/fig_icc
 python experiments/make_uncertainty_figure.py        # figs/fig_uncertainty
 python experiments/eval_us_predictions.py [npz ...]  # score any US difficulty predictions; no args = the encoder of record (GPU)
+# K_cal = 15 supplement: prefix any UP script with ATDRIVE_UP_LOO=1 ATDRIVE_KCALS=15 ATDRIVE_RESULTS_DIR=results/loo15 (RESULTS.md, K_cal = 15)
 
 # Use it inside a real closed-loop evaluation (UP): pick routes, ingest outcomes, stop on risk
 python tools/b2d_adaptive_eval.py --dry-run VAD --eps 0.03          # simulate from the matrix (GPU)

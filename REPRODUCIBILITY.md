@@ -184,6 +184,14 @@ for sw in "ATDRIVE_NO_TESTLET=1 ATDRIVE_RESULTS_DIR=results/notestlet" "ATDRIVE_
   for lo in 0 4 8 12; do env $sw python experiments/run_adaptive.py --seeds $lo $((lo+4)) & done; wait
   env $sw python experiments/run_adaptive.py --merge
 done
+# the K_cal = 15 leave-one-planner-out supplement (results/loo15): the same scripts, 16 folds of one
+# evaluation planner; the anchors are skipped in this mode (they pin the 12 : 4 protocol of record)
+export ATDRIVE_UP_LOO=1 ATDRIVE_KCALS=15 ATDRIVE_RESULTS_DIR=results/loo15
+for s in run_up_frontier run_tau_calibration run_system_comparison run_cat_objective run_ablation; do
+  for lo in 0 4 8 12; do python experiments/$s.py --seeds $lo $((lo+4)) & done; wait; python experiments/$s.py --merge; done
+for lo in 0 4 8 12; do python experiments/run_adaptive.py --seeds $lo $((lo+4)) & done; wait; python experiments/run_adaptive.py --merge
+python experiments/run_policy_matrix.py; python experiments/run_ranking_quality.py
+unset ATDRIVE_UP_LOO ATDRIVE_KCALS ATDRIVE_RESULTS_DIR
 python experiments/run_system_ablation.py              # full-system ablation (reads the three trees above)
 for lo in 0 2 4 6 8 10 12 14; do python experiments/run_system_comparison.py --seeds $lo $((lo+2)) & done; wait
 python experiments/run_system_comparison.py --merge    # complete-system comparison

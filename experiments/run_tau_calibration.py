@@ -46,7 +46,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split, R_DRAWS
+from atdrive.splits import up_split, R_DRAWS, UP_LOO
 from atdrive.calibration import calibrate
 from atdrive.curves import marginal_curves
 from atdrive.bayes import Bank, bank_from_fit, track, stop_at
@@ -60,7 +60,7 @@ if OFFICIAL:
     from official.orders import loo_order, padded
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 ORD = ('ATDrive', 'Fluid', 'metabench', 'Random', 'Random-strat')
 TMAX = 220        # = the whole benchmark: LOO trajectories run through the whole 220-route bank
 TARGETS = (30, 55)
@@ -183,7 +183,7 @@ def main():
             seeds = sorted(set(int(k.split('|')[0]) for k in C))
             assert len(seeds) == R_DRAWS
             print(f'no tau_loo{TAG} shards in {OUT}: risk_cal{TAG}.json / tau_hat{TAG}.json read back (run --seeds to recompute)')
-            if NO_TESTLET or POINT_CURVES:
+            if NO_TESTLET or POINT_CURVES or UP_LOO:
                 return
             for J, v in ((4, 1.97), (8, 2.12), (12, 1.95)):
                 cm = float(np.median([C[f'{s}|{J}|ATDrive'] for s in seeds]))
@@ -210,7 +210,7 @@ def main():
     C = risk_scale(recs)
     json.dump(C, open(OUT / f'risk_cal{TAG}.json', 'w'))
     print(f'risk_cal{TAG}.json written')
-    if NO_TESTLET or POINT_CURVES:
+    if NO_TESTLET or POINT_CURVES or UP_LOO:
         return                                    # the anchors pin the paper's panel, not the switched arms
     for J, v in ((4, 1.97), (8, 2.12), (12, 1.95)):
         cm = float(np.median([C[f'{s}|{J}|ATDrive'] for s in sorted(set(r['seed'] for r in recs))]))

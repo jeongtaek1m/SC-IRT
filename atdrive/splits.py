@@ -15,10 +15,18 @@ type partition, so the C and D blocks are unchanged.
 Verbatim port of the research script `b2d_splits.py`; the RandomState seed
 convention (1000 + draw index) is part of the protocol and must not change.
 """
+import os
+
 import numpy as np
 
 R_DRAWS = 16
 H_P, H_S = 4, 8
+# Leave-one-planner-out mode (ATDRIVE_UP_LOO=1): 16 folds, one evaluation planner per fold and the
+# other 15 as the calibration panel (K_cal = 15). A supplementary UP protocol; the 12 : 4 draws stay
+# the protocol of record. Only up_split changes; unified_split (US / UPS) is untouched.
+UP_LOO = os.environ.get('ATDRIVE_UP_LOO', '0') == '1'
+EVAL_PER_DRAW = 1 if UP_LOO else H_P          # evaluation planners per draw
+N_EVAL = R_DRAWS * EVAL_PER_DRAW              # evaluations per K_cal cell (16 or 64)
 
 
 def unified_split(seed, utypes, n_planners=16):
@@ -36,5 +44,8 @@ def unified_split(seed, utypes, n_planners=16):
 
 def up_split(seed, utypes, n_planners=16):
     """The UP-side split of one draw: the same held-out planners, no held-out
-    scenario types, so the bank is the whole 220-route benchmark."""
+    scenario types, so the bank is the whole 220-route benchmark. Under
+    ATDRIVE_UP_LOO=1 the draw is fold `seed` of a leave-one-planner-out split."""
+    if UP_LOO:
+        return [int(seed)], set()
     return unified_split(seed, utypes, n_planners)[0], set()

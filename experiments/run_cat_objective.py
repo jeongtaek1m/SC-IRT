@@ -51,14 +51,14 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split, R_DRAWS
+from atdrive.splits import up_split, R_DRAWS, EVAL_PER_DRAW, UP_LOO
 from atdrive.calibration import calibrate
 from atdrive.bayes import bank_from_fit, track3
 from atdrive.acquisition import r1_pick, eig_pick, fisher_pick, traj
 from atdrive.metrics import paired_cluster_boot
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 PJ = 16
 T0 = 10                      # no stop before 10 routes (PROTOCOL section 4)
@@ -209,8 +209,8 @@ def main():
     if a.merge:
         recs = [r for f in sorted(glob.glob(str(OUT / 'cat_objective_*_*.json'))) for r in json.load(open(f))]
         if recs:                                # the trajectories of record, 8 decimals (about half the size)
-            assert len(recs) == len(KCALS) * 16 * 12, \
-                f'{len(recs)} records (expected K_cal x 16 draws x 12 leave-one-out planners): a shard is missing or a stale partition was merged in'
+            assert len(recs) == sum(R_DRAWS * (EVAL_PER_DRAW + K) for K in KCALS), \
+                f'{len(recs)} records (expected per K_cal: 16 draws x (evaluation planners + K_cal leave-one-out tracks)): a shard is missing or a stale partition was merged in'
             json.dump(_round(recs), open(OUT / 'cat_objective.json', 'w'), separators=(',', ':'))
         else:                                   # no shards (a clone): score the results of record
             recs = json.load(open(OUT / 'cat_objective.json'))
@@ -221,6 +221,9 @@ def main():
     res = report(recs)
     json.dump(res, open(OUT / 'cat_objective_table.json', 'w'), indent=1)
     print(f'\nwritten: {OUT / "cat_objective_table.json"}')
+    if UP_LOO:
+        print('anchors: skipped (leave-one-planner-out mode, K_cal = 15; the anchors pin the 12 : 4 protocol of record)')
+        return
     # anchors: the 16-draw run of record (c pooled over draws, see the docstring). The trajectories
     # themselves are pinned by run_policy_matrix.py, whose per-draw-c ATDrive rows reproduce Table 2.
     for key, field, v, tol in (('K4|sel|Delta-R1 (metric)|0.05', 'routes', 86.9, 0.5),

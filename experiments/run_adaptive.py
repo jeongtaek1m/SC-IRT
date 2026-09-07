@@ -36,7 +36,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split, R_DRAWS
+from atdrive.splits import up_split, R_DRAWS, N_EVAL, UP_LOO
 from atdrive.calibration import calibrate
 from atdrive.curves import marginal_curves
 from atdrive.bayes import Bank, bank_from_fit, track, stop_at
@@ -51,7 +51,7 @@ if OFFICIAL:
     from official.orders import order as official_order, padded, slot_of
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 ORD = ('ATDrive', 'Fluid', 'metabench', 'Random', 'Random-strat')
 BGRID = [30, 55, 110, 165]        # 5 x {6, 11, 22, 33} = 14 / 25 / 50 / 75% of the 220-route benchmark
 NROUTES = 220                     # routes in the benchmark; the bank is all of them
@@ -255,8 +255,8 @@ def main():
               '(experiments/official/orders.py); ATDrive, Random and Random-strat are unchanged, '
               'and so are the readout, the risk scale and the stopping rule.')
     FX, T2 = report(recs)
-    assert len(recs) == len(KCALS) * 64
-    if NO_TESTLET or POINT_CURVES:
+    assert len(recs) == len(KCALS) * N_EVAL
+    if NO_TESTLET or POINT_CURVES or UP_LOO:
         return                                    # the anchors pin the paper's panel, not the switched arms
     BT = budget_table(recs)
     for K, B, v in ((4, 30, (.0450, .20, .27, .38, .917)), (8, 55, (.0337, .19, .36, .56, .906)),

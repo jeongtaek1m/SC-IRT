@@ -94,14 +94,14 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from atdrive.b2d import Panel
-from atdrive.splits import up_split
+from atdrive.splits import up_split, N_EVAL, UP_LOO, EVAL_PER_DRAW
 from atdrive.metrics import paired_cluster_boot
 from run_system_comparison import rows_for            # the complete-system operating points, verbatim
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = (4, 8, 12)
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 BGRID = (30, 55, 110, 165)
-NCAL = 12                     # calibration planners per draw = the leaderboard a new planner is placed on
+NCAL = 16 - EVAL_PER_DRAW     # calibration planners per draw = the leaderboard a new planner is placed on (12; 15 under ATDRIVE_UP_LOO)
 BASE = 'ATDrive eps=0.05'     # the row every delta is taken against, as in the complete-system table
 
 
@@ -300,7 +300,8 @@ def report(recs, panel):
                          'gap_median': float(np.median(gaps)), 'gap_p10': float(np.percentile(gaps, 10)),
                          'mae_rank_exact': float(P[0][P[1] == 0].mean()), 'mae_rank_moved': float(P[0][P[1] > 0].mean()),
                          'n_rank_exact': int((P[1] == 0).sum()), 'n_scored': int(P.shape[1]),
-                         'boundary_cell': {'cell': f'K12|ATLAS  tau=0.2', 'd_mae': res['K12|ATLAS  tau=0.2']['d_mae']}}
+                         'boundary_cell': ({'cell': 'K12|ATLAS  tau=0.2', 'd_mae': res['K12|ATLAS  tau=0.2']['d_mae']}
+                             if 'K12|ATLAS  tau=0.2' in res else None)}   # the 12 : 4 boundary cell; absent under ATDRIVE_UP_LOO
     res['eps05_rank_exact'] = {f'K{K}': res[f'K{K}|{BASE}']['rank_exact'] for K in KCALS}
     res['eps05_rank_le1'] = {f'K{K}': res[f'K{K}|{BASE}']['rank_le1'] for K in KCALS}
     res['fluid_se_stop_macro'] = {'rollouts': float(np.mean([res[f'K{K}|Fluid  SE<=delta*']['rollouts'] for K in KCALS])),
@@ -345,7 +346,10 @@ def main():
     res = report(recs, Panel())
     json.dump(res, open(OUT / 'ranking_quality.json', 'w'), indent=1)
     print(f'\nwritten: {OUT / "ranking_quality.json"}')
-    assert len(recs) == len(KCALS) * 64
+    assert len(recs) == len(KCALS) * N_EVAL
+    if UP_LOO:
+        print('anchors: skipped (leave-one-planner-out mode, K_cal = 15; the anchors pin the 12 : 4 protocol of record)')
+        return
     for K, lab, field, v, tol in ANCHORS:
         got = res[f'K{K}|{lab}'][field]
         assert abs(got - v) < tol, (K, lab, field, got, v)

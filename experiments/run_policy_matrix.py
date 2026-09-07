@@ -74,10 +74,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.metrics import paired_cluster_boot, ies
-from atdrive.splits import R_DRAWS
+from atdrive.splits import R_DRAWS, UP_LOO
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '4,8,12').split(','))
+KCALS = tuple(int(x) for x in os.environ.get('ATDRIVE_KCALS', '15' if UP_LOO else '4,8,12').split(','))
 NROUTES = 220               # the benchmark; a planner's own bank is its recorded subset (210-220)
 T0 = 10                     # no stop before 10 routes (PROTOCOL section 4)
 QUANT = 90                  # percentile of the LOO |err| / R1 ratio
@@ -309,6 +309,9 @@ def main():
     res = report(recs, alt)
     json.dump(res, open(OUT / 'policy_matrix.json', 'w'), indent=1)
     print(f'\nwritten: {OUT / "policy_matrix.json"}')
+    if UP_LOO:
+        print('anchors: skipped (leave-one-planner-out mode, K_cal = 15; the anchors pin the 12 : 4 protocol of record)')
+        return
 
     # anchors: the 16-draw run of record. The ATDrive rows are also the cross-check
     # against RESULTS.md Table 2 / syscmp (83.5 / .0272, 79.0, 70.3 / .0207 at eps = .05),

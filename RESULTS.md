@@ -319,6 +319,110 @@ budget as well as a fixed budget of the same mean length: at matched mean cost t
 error equals the fixed-budget error (paired deltas -.0047 to +.0034; the stop is a budget-selection
 device that converts an SR-unit error target into a stopping time, not an accuracy gain).
 
+## K_cal = 15 leave-one-planner-out supplement (`ATDRIVE_UP_LOO=1`, `results/loo15/`)
+
+The 12 : 4 draws cap the calibration panel at 12 planners. To see the UP
+tables with every other planner in the panel, the same scripts run under
+`ATDRIVE_UP_LOO=1 ATDRIVE_KCALS=15 ATDRIVE_RESULTS_DIR=results/loo15`: 16
+folds, fold k holds planner k out and calibrates on the other 15, everything
+else (bank, budgets, readouts, risk scales, the leave-one-planner-out c inside
+each fold) unchanged. Each cell is therefore 16 evaluations — one per
+planner — against 64 in the tables of record, and the paired intervals are
+about twice as wide. The anchors are not asserted in this mode. This is a
+supplement: the protocol of record stays the 12 : 4 draws.
+
+Fixed budgets (`run_up_frontier.py`; the ATLAS-style row is the fixed-B
+prefix of its `run_system_comparison.py` trajectory as in Table 1):
+
+| method | B30 | B55 | B110 | B165 | macro |
+|---|---|---|---|---|---|
+| Random (IRT-free) | .0585 | .0458 | .0262 | .0152 | .0364 |
+| Random + IRT | .0394 | .0353 | .0222 | .0133 | .0276 |
+| Random-strat + IRT | .0614 | .0376 | .0214 | .0113 | .0329 |
+| DISCO-sel + IRT | .0598 | .0460 | .0259 | .0096 | .0353 |
+| AnchorPoints | .0536 | .0502 | .0344 | .0190 | .0393 |
+| Total-Fisher | .0512 | .0374 | .0208 | .0142 | .0309 |
+| Marginal-Fisher | .0592 | .0347 | .0234 | .0125 | .0324 |
+| tinyBenchmarks-lite | .0453 | .0334 | .0203 | .0089 | .0270 |
+| metabench-lite | .0617 | .0344 | .0221 | .0152 | .0334 |
+| Fluid-style | **.0249** | **.0221** | .0190 | .0111 | **.0193** |
+| ATLAS-style | .0321 | .0298 | .0223 | .0116 | .0240 |
+| **ATDrive** | .0573 | .0258 | **.0149** | **.0061** | .0260 |
+
+Risk-target stopping (`run_tau_calibration.py` / `run_adaptive.py`; c medians
+ATDrive 2.02, Fluid 2.08, metabench 2.18, Random 1.88, Random-strat 1.96):
+
+| eps | method | rollouts | SR-MAE | d vs ATDrive |
+|---|---|---|---|---|
+| .05 | **ATDrive** | **71.8** | .0233 | — |
+| | Fluid | 84.9 | .0200 | -.0034 [-.0125, +.0061] |
+| | metabench | 109.8 | .0203 | -.0030 [-.0169, +.0113] |
+| | Random | 88.1 | .0222 | -.0011 [-.0114, +.0097] |
+| | Random-strat | 86.3 | .0211 | -.0022 [-.0108, +.0062] |
+| .03 | **ATDrive** | **116.6** | **.0119** | — |
+| | Fluid | 129.8 | .0193 | +.0074 [+.0015, +.0139] |
+| | metabench | 158.8 | .0177 | +.0057 [-.0013, +.0129] |
+| | Random | 142.6 | .0156 | +.0037 [-.0059, +.0142] |
+| | Random-strat | 141.4 | .0128 | +.0009 [-.0050, +.0061] |
+
+Complete systems at their own stop (`run_system_comparison.py`,
+`run_ranking_quality.py`; RankAcc = insertion accuracy on the 15-planner
+leaderboard):
+
+| row | routes | SR-MAE | RankAcc |
+|---|---|---|---|
+| ATLAS-style SE <= 0.1 (exhausts the bank) | 217.6 | .0000 | 1.000 |
+| ATLAS-style SE <= 0.2 | 50.0 | .0291 | .962 |
+| ATLAS-style SE <= 0.3 | 30.0 | .0321 | .954 |
+| Fluid-style fixed B = 100 | 100.0 | .0223 | .971 |
+| **ATDrive eps = .05** | 71.8 | .0233 | .983 |
+| ATDrive eps = .03 | 116.6 | .0119 | .983 |
+| ATDrive fixed B = 30 / 55 / 110 / 165 | — | .0573 / .0258 / .0149 / .0061 | .938 / .979 / .988 / 1.000 |
+
+Component ablation (`run_ablation.py`, paired vs full):
+
+| B | full | w/o b-uncertainty | w/o testlet | w/o risk acquisition |
+|---|---|---|---|---|
+| 30 | .0573 | .0528 (-.0045) | .0631 (+.0058) | .0441 (-.0133) |
+| 55 | .0258 | .0268 (+.0011) | .0486 (+.0229*) | .0407 (+.0150) |
+| 110 | .0149 | .0153 (+.0004) | .0240 (+.0090*) | .0198 (+.0048) |
+| 165 | .0061 | .0051 (-.0010*) | .0086 (+.0025) | .0134 (+.0073*) |
+
+Selection orders under the common ATDrive readout (`results/loo15/adaptive.json`
+and `cat_objective.json`, B = 30 / 55 / 110 / 165): Delta-R1 .0573 / .0258 /
+.0149 / .0061, the Fluid order .0254 / .0264 / .0161 / .0096, 1PL Fisher
+.0523 / .0296 / .0181 / .0073, theta-EIG .0502 / .0336 / .0137 / .0066, three
+random permutations at B = 30 .0394 / .0441 / .0686. The one-IRT factorial at
+about 70 routes: C - B (Fisher vs Delta-R1, fixed length) -.0012 [-.0185, +.0149],
+G - B (theta-EIG vs Delta-R1) -.0070 [-.0145, +.0010], B - A (fixed length vs
+risk stop) +.0024 [-.0040, +.0080], E - A (ability-SD stop vs risk stop)
++.0064 [-.0015, +.0137].
+
+Reading. With every other planner in the panel the picture splits by budget.
+At B >= 110 and at the stricter stop ATDrive is clearly ahead: .0149 / .0061
+against the next-best .0190 / .0089 (Fluid / tinyBenchmarks), and at eps = .03
+it reaches .0119 in 116.6 routes where Fluid needs 129.8 for .0193 (+.0074,
+interval excluding zero). At eps = .05 it stops first (71.8 vs 85-110 routes)
+with an error inside the others' intervals, and its ranking accuracy at the
+stop (.983) is the highest of the systems. At B = 30 it is the worst of the
+adaptive orders: .0573 against Fluid .0249 (the Fluid order read by ATDrive's
+own readout gives .0254, so this is the order, not the readout), the
+ATLAS-style system .0321 and even two of three random permutations. The error
+at B = 30 is a shrinkage of the extreme planners toward the panel middle —
+the signed error correlates -.80 with the planner's true SR (-.49 at K_cal =
+12), the strongest planner is under-estimated by .04 and the weakest ones
+over-estimated by .05-.13 — and it is shared by every order that reads the
+1PL posterior (Fisher -.81, theta-EIG -.53, Random -.69). Removing the
+testlet or the difficulty posterior does not repair it (+.0058 / -.0045,
+both inside their intervals); the Fluid order, whose 2PL Fisher rule moves
+with the MAP ability, does not show it. The advantage of Delta-R1 over
+Fisher and theta-EIG at matched cost that the 12 : 4 factorial establishes
+(+.0062* / +.0031*) is not resolved at n = 16 (-.0012 / -.0070, intervals
+containing zero). The macro over the four budgets (.0260 vs Fluid's .0193)
+is therefore the wrong summary for this panel size: the low-budget cell
+dominates it, and the honest statement is that at K_cal = 15 ATDrive's
+selection wins from 55 routes on and loses below.
+
 ## Adaptive policies under one IRT (`run_cat_objective.py`, `run_policy_matrix.py`)
 
 Complete policies (selection rule x stopping rule) scored on the saved
