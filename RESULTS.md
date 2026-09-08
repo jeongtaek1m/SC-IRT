@@ -223,9 +223,11 @@ as in the Table 1-official section):
 | **ATDrive** | **.958** | **.966** | **.977** | **.990** | **.953** | **.962** | **.979** | **.997** | **.957** | **.982** | **.986** | **.999** | **.975** |
 
 Reading. ATDrive orders the new planner best in every one of the 12 cells
-against the official-code baselines and in 10 of 12 against the Table 1
-rows (DISCO's re-implementation ties or edges it at K4 B165 and K8 B110 by
-.001 / .01 — no paired test is run on this metric). The margins are small
+against the official-code baselines; against the Table 1 rows it is highest
+outright in 8 of 12, tied at K4 B110 (DISCO, tinyBenchmarks .977) and K12
+B165 (Fluid .999), and below at K4 B165 (DISCO .991 vs .990) and K8 B110
+(tinyBenchmarks .984, Fluid .980 vs .979) — no paired test is run on this
+metric. The margins are small
 in rank units: at K12 B55 ATDrive's .982 is a quarter of a position, the best
 random reference (.957) and the best official baseline (Fluid .961) half a
 position. The metric separates methods mostly at B = 30, where the random
