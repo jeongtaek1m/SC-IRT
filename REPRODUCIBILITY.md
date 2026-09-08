@@ -32,7 +32,7 @@ past a failed anchor.
 
 | script | asserts |
 |---|---|
-| `run_up_frontier.py --merge` | Table 1: 5 ATDrive cells, Fluid / Random-strat / Random cells, ATDrive macro .0262 |
+| `run_up_frontier.py --merge` | Table 1: 5 ATDrive cells, Fluid / Random-strat / Random cells, ATDrive macro .0262; also prints the pairwise ranking accuracy companion of Table 1 (paper Eq. 10) from the estimates stored in `up_frontier.json` (`est`) |
 | `run_tau_calibration.py --merge` | risk-scale medians c per K_cal (ATDrive) + one matched-cost tau_hat median (from risk_cal.json / tau_hat.json on a clone) |
 | `run_adaptive.py --merge` | fixed-t track errors of ATDrive / Random / Fluid at representative (K_cal, t); "what each budget buys" rows at K4 B30, K8 B55, K12 B30, K12 B165 |
 | `run_ablation.py --merge` | full and each off-arm at representative cells |
@@ -45,7 +45,7 @@ past a failed anchor.
 | `run_us.py` | Table 3A: null, the two hand-crafted rows, the 3-run means of the encoder of record (lane-free R2-noLane); Table 3A(b): the rho of the five controls (the lane-carrying R2, noroute, sroute, sa2l, nospeed) |
 | `run_ups.py` | Table 3B: representative MAE cells per policy under the lane-free prior of record (tol .003), and the Delta-R1 MAE + per-cell NLL cells of all three priors (lane-free, the lane-carrying control, the speed-ablated control) |
 | `run_ups_full.py --merge` | the scene prior's identity (npz name + content md5, checked before any anchor); 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .003 in the readout and in the acquisition |
-| `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the ATLAS stopping rule, and the 2 recorded ATLAS failures |
+| `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the pairwise ranking accuracy of each cell (`rank_acc`), the ATLAS stopping rule, and the 2 recorded ATLAS failures |
 | `run_nuplan_zeroshot.py` | panel constants, oracle point estimates, arm means, the permutation-fixed T_null with the count of null per-permutation means at or above each arm and the verdicts, the whole-panel Spearman of the three arms (NLe, C0e, A2e) and their null counts |
 | `run_model_adequacy.py` | held-out NLL of 1PL / 2PL / 3PL and the split-half reliability of log a on the UP bank |
 | `run_readout_dropin.py` | the drop-in cells (incl. AnchorPoints K12 B55 / B110) |

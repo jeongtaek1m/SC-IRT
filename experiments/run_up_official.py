@@ -113,6 +113,21 @@ def merge():
     # slot -> js map via the draw
     from official.data import draw
     js_of = {(s, k): draw(s)[0] for s in range(NDRAWS) for k in KCALS}
+    from atdrive.b2d import Panel
+    panel = Panel()
+    T = {k: float(panel.bank_rows(panel.allr, k)[1].mean()) for k in range(panel.J)}     # true SR over each planner's recorded routes
+
+    def rank_acc(seed, js, est):
+        """Pairwise ranking accuracy (paper Eq. 10): the new planner's estimated SR against the true SR of every
+        calibration-pool planner of the draw; credit 1 if ordered as the truth, 1/2 if either comparison is a tie."""
+        held = js_of[(seed, KCALS[0])]
+        out = []
+        for c in range(panel.J):
+            if c in held:
+                continue
+            st, se = np.sign(T[js] - T[c]), np.sign(est - T[c])
+            out.append(0.5 if (st == 0 or se == 0) else float(st == se))
+        return float(np.mean(out))
     table = {}
     for r in recs:
         if 'error' in r:
@@ -120,8 +135,9 @@ def merge():
             continue
         key = (r['seed'], r['K'], js_of[(r['seed'], r['K'])][r['slot']])
         for B, v in r['budgets'].items():
-            t = table.setdefault(r['method'], {}).setdefault('cells', {}).setdefault((r['K'], int(B)), {'err': [], 'n': [], 'd_atdrive': [], 'var': {}})
+            t = table.setdefault(r['method'], {}).setdefault('cells', {}).setdefault((r['K'], int(B)), {'err': [], 'n': [], 'd_atdrive': [], 'var': {}, 'rank_acc': []})
             t['err'].append(v['err'])
+            t['rank_acc'].append(rank_acc(r['seed'], key[2], v['est']))
             t['n'].append(v['n_items'])
             t['d_atdrive'].append(v['err'] - refE[key]['err']['ATDrive'][B])
             for vn, x in v['variants'].items():
@@ -131,15 +147,15 @@ def merge():
             t['err'].append(v['err'])
             t['n'].append(v['n_items'])
     out = {'provenance': provenance(), 'methods': {}}
-    print(f"{'method':14}{'K':>3}{'B':>5}{'n_eval':>7}{'SR-MAE':>8}{'items':>7}{'d vs ATDrive':>14}   variants")
+    print(f"{'method':14}{'K':>3}{'B':>5}{'n_eval':>7}{'SR-MAE':>8}{'RankAcc':>8}{'items':>7}{'d vs ATDrive':>14}   variants")
     for m, T in table.items():
         out['methods'][m] = {'errors': T.get('errors', []), 'cells': {}, 'stops': {}}
         for (K, B), t in sorted(T.get('cells', {}).items()):
-            row = {'n_eval': len(t['err']), 'sr_mae': float(np.mean(t['err'])), 'items_mean': float(np.mean(t['n'])),
+            row = {'n_eval': len(t['err']), 'sr_mae': float(np.mean(t['err'])), 'rank_acc': float(np.mean(t['rank_acc'])), 'items_mean': float(np.mean(t['n'])),
                    'd_atdrive': float(np.mean(t['d_atdrive'])),
                    'variants': {vn: float(np.mean(x)) for vn, x in t['var'].items()}}
             out['methods'][m]['cells'][f'K{K}_B{B}'] = row
-            print(f"{m:14}{K:3d}{B:5d}{row['n_eval']:7d}{row['sr_mae']:8.4f}{row['items_mean']:7.1f}{row['d_atdrive']:+14.4f}   "
+            print(f"{m:14}{K:3d}{B:5d}{row['n_eval']:7d}{row['sr_mae']:8.4f}{row['rank_acc']:8.3f}{row['items_mean']:7.1f}{row['d_atdrive']:+14.4f}   "
                   + ' '.join(f'{k}={v:.4f}' for k, v in row['variants'].items()))
         for (K, rule), t in sorted(T.get('stops', {}).items()):
             row = {'n_eval': len(t['err']), 'sr_mae': float(np.mean(t['err'])), 'items_mean': float(np.mean(t['n']))}

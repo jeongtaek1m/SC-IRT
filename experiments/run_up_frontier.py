@@ -91,6 +91,7 @@ def run(seeds):
                           'mf': marginal_fisher_order(a2, b2), 'fluid': fluid_order(a2, b2, yy, T),
                           'ours': r1_traj(bank, yy, T)}
                 err = {m: {} for m in METHODS}
+                estd = {m: {} for m in METHODS}          # the estimates themselves (ranking accuracy is scored from them)
                 for B in BGRID:
                     est = {
                         'Random (IRT-free)': np.mean([yy[pm[:B]].mean() for pm in perms]),
@@ -107,14 +108,17 @@ def run(seeds):
                     }
                     for m in METHODS:
                         err[m][B] = abs(float(est[m]) - SR)
+                        estd[m][B] = float(est[m])
                     for m, ests in (('Random (IRT-free)', [yy[pm[:B]].mean() for pm in perms]),
                                     ('Random + IRT', [pirt(b1, ones, yy, pm[:B]) for pm in perms]),
                                     ('Random-strat + IRT', [pirt(b1, ones, yy, st[:B]) for st in strats])):
                         err[m][B] = float(np.mean([abs(e - SR) for e in ests]))   # expected error of the random policy
+                        estd[m][B] = [float(e) for e in ests]
                 recs.append({'seed': seed, 'K': Kc, 'js': int(js), 'SR': SR,
                              'sel': [calR[bi[i]] for i in orders['ours']],
                              'sigma_b': f1['sigma_b'], 'sigma_g': f1['sigma_g'],
-                             'err': {m: {str(B): err[m][B] for B in BGRID} for m in METHODS}})
+                             'err': {m: {str(B): err[m][B] for B in BGRID} for m in METHODS},
+                             'est': {m: {str(B): estd[m][B] for B in BGRID} for m in METHODS}})
             print(f'seed {seed} K{Kc} done', flush=True)
     return recs
 
@@ -139,6 +143,30 @@ def report(recs):
             row.append(f'{v:.4f}{star}')
         print(f'{m:20s} ' + ' '.join(f'{c:>8s}' for c in row)
               + f'   {np.mean([np.mean(E[K][m][B]) for K, B in cells]):.4f}')
+    # ===== Table 1 companion: pairwise ranking accuracy (paper Eq. 10) from the stored estimates =====
+    # the new planner's estimated SR against the true SR of every calibration-pool planner of its draw;
+    # credit 1 when ordered as the truth, 1/2 when either comparison is a tie (no true SR is tied on this panel).
+    # The random rows average the accuracy over their NREP orders, as their error column averages the error.
+    if all('est' in r for r in recs):
+        panel = Panel()
+        T = {k: float(panel.bank_rows(panel.allr, k)[1].mean()) for k in range(panel.J)}
+
+        def acc(seed, js, e):
+            held, _ = up_split(seed, panel.utypes, panel.J)
+            out = []
+            for c in range(panel.J):
+                if c in held:
+                    continue
+                st, se = np.sign(T[js] - T[c]), np.sign(e - T[c])
+                out.append(0.5 if (st == 0 or se == 0) else float(st == se))
+            return float(np.mean(out))
+        A = {K: {m: {B: [float(np.mean([acc(r['seed'], r['js'], e) for e in np.atleast_1d(r['est'][m][str(B)])]))
+                         for r in recs if r['K'] == K] for B in BGRID} for m in METHODS} for K in KCALS}
+        print('\n===== Table 1 companion: pairwise ranking accuracy, K_cal x B (higher is better) =====')
+        print(f'{"method":20s} ' + ' '.join(f'K{K}B{B:<3d}' for K, B in cells) + '   macro')
+        for m in METHODS:
+            print(f'{m:20s} ' + ' '.join(f'{np.mean(A[K][m][B]):8.3f}' for K, B in cells)
+                  + f'   {np.mean([np.mean(A[K][m][B]) for K, B in cells]):.3f}')
     return E
 
 

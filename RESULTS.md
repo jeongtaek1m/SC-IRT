@@ -175,6 +175,67 @@ Method-level findings the official code exposes, which our re-implementations hi
   response patterns, so the medoids cannot separate more than that many routes however
   large the budget.
 
+### Pairwise ranking accuracy at fixed budgets — the Table 1 companion (`run_up_frontier.py --merge`, `run_up_official.py --merge`)
+
+The paper's Eq. 10: for each new planner, the fraction of the 12
+calibration-pool planners of its draw that the estimated SR orders correctly
+against their true SR (over their recorded routes); a tie in either comparison
+scores 1/2. No true SR is tied on this panel, so the tie rule fires only when
+an estimate equals a pool SR exactly (AnchorPoints' anchor-weighted readout
+does, a handful of times; +.001 on its K4 B30 cell). 64 evaluations per cell
+(ATLAS at K_cal = 4: 62). The estimates are exactly the ones Table 1 scores —
+`est` in `up_frontier.json` (stored since this run; the errors are unchanged
+to the last digit and the anchors hold) and the official shards' `est` —
+and the random rows average the accuracy over their random orders as their
+error column averages the error. In rank units the same number is
+|r_hat - r| = 12 x (1 - accuracy) (the identity of the ranking-quality
+section), so .96 is half a rank position and .98 a quarter.
+
+Table 1 rows (shared 2PL calibration + p-IRT readout for the
+re-implementations; the random references; ATDrive):
+
+| method | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Random (IRT-free) | .924 | .951 | .968 | .986 | .924 | .951 | .968 | .986 | .924 | .951 | .968 | .986 | .957 |
+| Random + IRT | .934 | .953 | .970 | .986 | .936 | .952 | .971 | .987 | .932 | .952 | .971 | .988 | .961 |
+| Random-strat + IRT | .915 | .953 | .973 | .986 | .923 | .957 | .977 | .988 | .922 | .957 | .976 | .988 | .959 |
+| DISCO | .953 | .957 | .977 | .991 | .949 | .958 | .969 | .990 | .938 | .967 | .974 | .995 | .968 |
+| AnchorPoints | .869 | .869 | .869 | .869 | .941 | .952 | .959 | .959 | .921 | .946 | .966 | .984 | .925 |
+| Total-Fisher | .947 | .943 | .973 | .979 | .927 | .952 | .974 | .992 | .938 | .944 | .973 | .988 | .961 |
+| Marginal-Fisher | .938 | .930 | .964 | .979 | .917 | .941 | .965 | .993 | .936 | .948 | .967 | .988 | .956 |
+| tinyBenchmarks | .935 | .953 | .977 | .984 | .936 | .954 | .984 | .992 | .927 | .965 | .977 | .993 | .965 |
+| metabench | .924 | .953 | .969 | .978 | .935 | .941 | .966 | .988 | .924 | .956 | .971 | .983 | .957 |
+| Fluid | .952 | .957 | .966 | .984 | .934 | .949 | .980 | .993 | .949 | .964 | .975 | .999 | .967 |
+| **ATDrive** | **.958** | **.966** | **.977** | .990 | **.953** | **.962** | .979 | **.997** | **.957** | **.982** | **.986** | **.999** | **.975** |
+
+The official-code rows (each method's own fit, selection and native readout,
+as in the Table 1-official section):
+
+| method (own code) | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AnchorPoints | .830 | .885 | .859 | .861 | .914 | .936 | .941 | .965 | .894 | .937 | .954 | .977 | .913 |
+| DISCO | .811 | .822 | .794 | .792 | .826 | .833 | .836 | .879 | .848 | .867 | .895 | .888 | .841 |
+| tinyBenchmarks | .923 | .941 | .961 | .986 | .947 | .954 | .969 | .975 | .948 | .948 | .958 | .979 | .957 |
+| metabench | .724 | .773 | .741 | .841 | .833 | .844 | .891 | .863 | .897 | .883 | .884 | .896 | .839 |
+| catR | .956 | .948 | .973 | .987 | .932 | .952 | .970 | .995 | .936 | .952 | .973 | .988 | .963 |
+| Fluid | .891 | .917 | .941 | .966 | .936 | .949 | .974 | .986 | .936 | .961 | .973 | .992 | .952 |
+| ATLAS | .859 | .875 | .934 | .952 | .866 | .913 | .948 | .973 | .915 | .936 | .958 | .977 | .925 |
+| **ATDrive** | **.958** | **.966** | **.977** | **.990** | **.953** | **.962** | **.979** | **.997** | **.957** | **.982** | **.986** | **.999** | **.975** |
+
+Reading. ATDrive orders the new planner best in every one of the 12 cells
+against the official-code baselines and in 10 of 12 against the Table 1
+rows (DISCO's re-implementation ties or edges it at K4 B165 and K8 B110 by
+.001 / .01 — no paired test is run on this metric). The margins are small
+in rank units: at K12 B55 ATDrive's .982 is a quarter of a position, the best
+random reference (.957) and the best official baseline (Fluid .961) half a
+position. The metric separates methods mostly at B = 30, where the random
+references sit at .915-.936 and the official-code readouts of AnchorPoints,
+DISCO, metabench and ATLAS at .72-.92, following their SR bias in the
+Table 1-official section; the same selection rules under the shared
+calibration and readout (upper table) order at .92-.95 there. Fluid's own
+code, whose SR-MAE is the closest to ATDrive's in Table 1-official, orders at
+.89-.94 at B = 30 against ATDrive's .95-.96.
+
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 
 Table 1 scores one aggregate per evaluation. This diagnostic asks how well
