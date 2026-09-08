@@ -575,6 +575,17 @@ tracks) so that selection and stopping can each be swapped alone.
   (Averaging three single-seed shuffles that carry three different
   permutations divides the permutation variance as well and understates the
   threshold; that construction is withdrawn.)
+- **nuPlan Val14 zero-shot retrieval, full split** (`ATDRIVE_NUPLAN_BUNDLE=data/nuplan/val14_full_zeroshot.npz
+  python experiments/run_nuplan_zeroshot.py` -> `results/nuplan_zeroshot_full.json`):
+  the same test on the whole official Val14 split — 1,118 scenario tokens in
+  all 328 val log databases, 10 planners (STR2 has no full-split run), one
+  closed-loop run per planner on the main server (RESULTS.md, "nuPlan Val14
+  zero-shot retrieval on the full split"). Arm = the encoder of record NLe
+  (three training seeds) with its permutation-fixed null C4nl only; the
+  lane-carrying controls are not re-run. Same statistic, null, verdict and
+  bootstraps (the paired bootstrap resamples the 328 logs). The paper's nuPlan
+  table reports this run; the 584-token run above is kept as the panel on
+  which the lane-graph controls were compared.
 - **Model adequacy** (`run_model_adequacy.py`): held-out cell NLL of 1PL vs
   2PL vs 3PL on the UP calibration block (10% of the cells per draw) and the
   split-half reliability of log a.

@@ -70,3 +70,22 @@ launchers is rewritten to this directory; everything else is as run. The outputs
 Data the frozen driver reads and that is NOT shipped (nuPlan-derived): `val14_tensors.npz`
 (3.6 MB, md5 ee96671c), `b2d_tensors.npz` (1.7 MB, 37796a05), the `frozen30/` r0 checkpoints;
 paths are the constants at the top of `frozen/chdrop.py` and `frozen/r0_ego.py`.
+
+### full_val14/ — the full-split run (1,118 tokens, 10 planners)
+
+`chdrop_nolane_full.py` is `chdrop_nolane.py` with the four nuPlan file constants of
+`r0_ego` (`NUPLAN_NPZ`, `NUPLAN_EGO`, `NUPLAN_K11`, `NUPLAN_META`) pointed at the 1,118-token
+files; `worker_full.sh` / `launch_wave.sh` / `jobs_w*.txt` ran NLe s0-2 and C4nl p0-19 x s0-2
+(63 runs on GPUs 2/3, ~3 min each); `export_nuplan_full.py` writes
+`data/nuplan/val14_full_zeroshot.npz` (b_ref = `scirt_rasch.rasch` on the 10 x 1,118 matrix).
+The 534 tokens absent from the 584 panel were built by `dump_route_centerlines_n534.py`
+(navsim env; 533 of 534 routes have a centerline) -> `make_routed_pkls_n534.py` ->
+`interact_data_n534.py` -> `build_ego_logged_n534.py` -> `nuplan_extract_n534.py`
+(`chain_n534.sh`) — copies of the record scripts with paths swapped — and `merge_1118.py`
+concatenates 584 + 534 into `val14_1118_tensors.npz`, `val14_1118_ego_logged.npz` and
+`nuplan_val14_1118_relgraph_v2.npz` (2,236 windows). Rebuilding the 584 with these copies
+reproduces the record tensors bit for bit, and the wrapper reproduces the record NLe
+predictions on the 584 overlap to 5e-7 (the encoder is trained on Bench2Drive only; nuPlan
+responses enter the score and the oracle b_ref, never the training). Working tree
+`/data2/jeongtae/nuplan_full_val14/` (not shipped); the 10-planner score matrix and the
+scenario / log / map table ship in `data/nuplan/full_val14/`.

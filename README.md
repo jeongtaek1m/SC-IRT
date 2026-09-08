@@ -101,6 +101,7 @@ python experiments/run_us.py                         # Table 3A + 3A(b) (GPU)
 python experiments/run_ups.py                        # Table 3B + the two control priors (GPU)
 python experiments/run_ups_full.py --merge           # UPS retargeted to the full 220-route SR
 python experiments/run_nuplan_zeroshot.py            # nuPlan val14 zero-shot retrieval
+ATDRIVE_NUPLAN_BUNDLE=data/nuplan/val14_full_zeroshot.npz python experiments/run_nuplan_zeroshot.py   # the full 1,118-token split
 python experiments/run_model_adequacy.py             # model adequacy appendix (GPU)
 python experiments/make_figures.py                   # figs/fig_cost_error, fig_kb_map
 python experiments/make_icc_figure.py                # figs/fig_icc
@@ -130,7 +131,8 @@ data/
                 six controls of Table 3A(b): the lane-carrying R2 (relgraph_r2_s*.npz)
                 and noroute / sroute / sa2l / nospeed, and the speed ablation of the
                 encoder of record itself (relgraph_r2nolane_nospeed_s*.npz)
-  nuplan/       the 584-scenario nuPlan val14 panel (a log-availability subset of the 1,118-token split) and encoder predictions of the zero-shot test
+  nuplan/       the 584-scenario nuPlan val14 panel (a log-availability subset of the 1,118-token split) and encoder predictions of the zero-shot test;
+                val14_full_zeroshot.npz + full_val14/ the full-split panel (1,118 tokens, 10-planner score matrix, scenario / log / map table)
   live/         cached leave-one-planner-out risk scales for the live evaluator (keyed by bank)
 results/        merged results of record (tracked; per-shard intermediates are not) — RESULTS.md quotes them
 figs/           the figures the make_*.py scripts write
@@ -211,6 +213,13 @@ tests/          fast invariants
   marginal at top-10% (p .095), and the speed-kept one does not clear at
   either (p .14 / .19). The whole-panel rank correlation stays marginal for
   all three arms (p .095) (RESULTS.md, nuPlan val14 zero-shot retrieval).
+  On the full official Val14 split (1,118 scenarios, all 328 logs, 10
+  planners; `results/nuplan_zeroshot_full.json`) the encoder of record clears
+  at top-5% (p .048, 0/20 labelings; failure enrichment 1.74) and is marginal
+  at top-10% (p .095, 1/20; 1.62). The signal sits on the 584 tokens of the
+  panel above (enrichment 2.17 / 1.96 scored within them) and is weak on the
+  534 added tokens (1.31 / 1.34), 94 of which are Singapore scenes
+  (RESULTS.md, nuPlan Val14 zero-shot retrieval on the full split).
 - The RelGraph encoder ships as predictions; its training code depends on
   Bench2Drive raw rollouts (not redistributable) and is staged for a
   separate release; everything downstream of the predictions (US scoring,
@@ -243,7 +252,8 @@ tests/          fast invariants
   truncation), so the sigma_g = 2.0 grid candidate is effectively 1.49.
 - **Encoder.** Shipped as out-of-fold predictions; the training harness, the Bench2Drive scene
   tensors and every launcher of record are in `encoder/` (`encoder/README.md`; the nuPlan-derived
-  tensors are not shipped). nuPlan zero-shot inputs ship as `data/nuplan/val14_zeroshot.npz`. The
+  tensors are not shipped). nuPlan zero-shot inputs ship as `data/nuplan/val14_zeroshot.npz` and, for the full
+  1,118-token split, `data/nuplan/val14_full_zeroshot.npz`. The
   lane-free encoder became canonical after the lane-carrying one had been scored on every table,
   i.e. it was selected on the same panel these numbers are reported on.
 - **2PL baselines** use log a ~ N(0, .5^2) and are prior-shrunk at K_cal = 4 (`run_model_adequacy.py`).

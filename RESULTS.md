@@ -971,6 +971,98 @@ fixed family was run through a wrapper that only swaps the seed handed to
 the shuffle. Top-q retrieval stays a low-power statistic — per-run shuffle
 drops span -.16 to +.24 — and 20 labelings floor the achievable p at .048.
 
+## nuPlan Val14 zero-shot retrieval on the full split (`ATDRIVE_NUPLAN_BUNDLE=data/nuplan/val14_full_zeroshot.npz`)
+
+The section above scores the 584-token log-availability subset. This
+section repeats the test on the WHOLE official Val14 split: 1,118 scenario
+tokens in all 328 val log databases, 10 planners (IDM, PDM-Closed,
+PDM-Hybrid, PDM-Open, GC-PGP, UrbanDriver, PLUTO, DTPP, DiffusionPlanner,
+FlowPlanner; STR2 has no full-split run and is dropped), one closed-loop
+run per planner on the main server (`irt_v14full_*` for the first seven,
+`k12_val14_*` for the last three), 11,141 of the 11,180 planner x scenario
+cells finite, base failure rate 19.74% (failure = CLS < .5), M_CLS(full) =
+.7596. These runs are not the runs behind the 584 panel: on the 584 overlap
+the stochastic planners disagree with the record run (failure labels flip
+on 17% of the GC-PGP cells, 4% PLUTO, 2% DTPP, 0.3% IDM), so the full split
+uses the one main-server run per planner throughout and its numbers on the
+584 tokens differ from the section above. Output
+`results/nuplan_zeroshot_full.json`; the panel sources (token lists, the
+10 x 1,118 response matrix, the scenario / log / map table) ship in
+`data/nuplan/full_val14/`.
+
+The scene tensors of the 534 tokens absent from the 584 were built with
+copies of the record pipeline (`encoder/nuplan/full_val14/`); rebuilding the
+584 with the same copies reproduces the record tensors, logged-ego file and
+relgraph windows bit for bit. The arm is the encoder of record NLe (R2-noLane)
+trained on the 16 x 220 Bench2Drive panel of record with the repo
+calibration, three training seeds, against its permutation-fixed null C4nl
+(20 labelings x 3 seeds); the driver wrapper swaps only the nuPlan file
+constants, and on the 584 overlap it reproduces the record predictions to
+5e-7 (nuPlan responses enter the score and the oracle b_ref, never the
+training). The lane-carrying controls C0e / A2e were not re-run on the full
+split. b_ref is the Rasch calibration of the 10 x 1,118 matrix (in sample).
+Same statistic, null, verdict rule and bootstraps as above; the paired log
+bootstrap resamples the 328 logs; random = 3,000 q% draws.
+
+| q | arm | Delta M_CLS | shuffle mean (60) | T95 | p (20 labelings) | z (Gaussian p) | enrichment | T95 | p | verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 5% | oracle b_ref | +.4548 | — | — | — | — | 3.458 | — | — | ceiling |
+| 5% | random 5% (3,000 draws) | +.0001 | — | — | — | — | 1.001 | — | — | floor |
+| 5% | **NLe, lane-free (record)** | **+.1544** | +.0566 | +.1349 | **.048 (0/20)** | +1.28 (.101) | **1.736** | 1.598 | .048 | **clears** |
+| 10% | oracle b_ref | +.3713 | — | — | — | — | 2.939 | — | — | ceiling |
+| 10% | random 10% | +.0002 | — | — | — | — | 1.001 | — | — | floor |
+| 10% | **NLe, lane-free (record)** | +.1364 | +.0541 | +.1322 | .095 (1/20) | +1.14 (.126) | 1.617 | 1.598 | .095 | marginal |
+
+Variance components of the null: SD_perm .071 / SD_train .050 at q = 5%,
+.064 / .056 at q = 10%; the arm's own training-seed SD is .008 / .004. The
+single-run 95th percentile of the 60 shuffles is +.1492 at q = 5% (all three
+NLe seeds above it) and +.1504 at q = 10% (none of the three above it). The
+arm recovers 34.0% / 36.7% of the oracle ceiling; the shuffled encoders
+recover 12-15%. Paired cluster bootstrap over the 328 logs of the
+arm-minus-shuffle contrast: +.0978 [+.0549, +.1479] at q = 5% and +.0823
+[+.0580, +.1147] at q = 10%. Whole-panel Spearman of predicted difficulty
+with the observed failure rate: +.393 (seeds SD .007) against a
+per-labeling null mean of +.070 (SD_perm .175, SD_train .124); one labeling
+of 20 reaches it (p .095; z +1.71, Gaussian p .044), single-run 95th
+percentile +.391 with two of three seeds above it.
+
+Where the signal sits. Scoring the same predictions and the same
+10-planner labels inside each half of the split (top-q re-selected within
+the half, the 20 labelings re-scored the same way):
+
+| tokens | n | base fail | q | Delta M_CLS (NLe) | enrichment | shuffle mean | T95 | labelings >= arm | Spearman NLe / shuffle |
+|---|---|---|---|---|---|---|---|---|---|
+| the 584 of the record panel | 584 | .1932 | 5% / 10% | +.2377 / +.2038 | 2.171 / 1.959 | +.0844 / +.0684 | +.1885 / +.1618 | 0/20 / 0/20 | +.419 / +.078 |
+| the 534 added tokens | 534 | .2021 | 5% / 10% | +.0729 / +.0766 | 1.313 / 1.338 | +.0332 / +.0378 | +.0962 / +.1019 | 8/20 / 6/20 | +.362 / +.062 |
+
+The retrieval signal is concentrated on the 584 tokens of the record panel
+(their re-scored enrichment under the main-server labels, 2.17 / 1.96, is
+close to the record panel's 2.28 / 2.02) and is weak on the 534 added
+tokens, where the arm's top-q drop is inside the shuffle distribution at
+both budgets even though its whole-half rank correlation (+.362) is not.
+The added tokens shift the map mix: the 584 are 487 Las Vegas / 66
+Pittsburgh / 30 Boston / 1 Singapore, the 534 are 334 / 68 / 38 / 94
+Singapore (left-hand traffic; the Bench2Drive source is right-hand). Per-map
+Spearman on the full split: Las Vegas +.295 (821 tokens), Boston +.298 (68),
+Pittsburgh +.261 (134), Singapore +.111 (95); inside the 534 the Las Vegas
+and Pittsburgh tokens also correlate less than their 584 counterparts (+.223
+vs +.351, +.162 vs +.352). Of the retrieved top-5% / top-10% on the full
+split, 44% / 39% are 584 tokens (52% of the panel). The pipeline is not the
+cause: the 584 tensors rebuild identically and the predictions match the
+record; the 534 tokens are the part of Val14 the encoder transfers to
+less well.
+
+Reading. On the full official split the lane-free encoder of record
+clears the matched null at top-5% (no labeling of 20 reaches its drop, all
+three seeds above the single-run 95th percentile, enrichment 1.74) and is
+marginal at top-10% (one labeling of 20, p .095, no seed above the
+single-run 95th percentile). The paired bootstrap over logs excludes zero at
+both budgets, and the whole-panel rank correlation is again marginal
+(p .095). Against the 584-token result the effect is smaller (enrichment
+1.74 / 1.62 vs 2.28 / 2.02) and the top-10% verdict drops from clears to
+marginal; the difference is the 534 added tokens, above. The paper's nuPlan
+table reports this full-split run.
+
 ## Table 3B — UPS: unseen planner x unseen scenes (`run_ups.py`)
 
 Predict an unseen planner's behaviour on unseen scenario types with zero

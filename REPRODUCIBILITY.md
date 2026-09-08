@@ -156,6 +156,17 @@ mean +- SD, never an averaged prediction.
   20 fixed permutations x 3 training seeds each — all trained on the panel of
   record (`b2d_e2e16sel`) with the repo calibration, exported by
   `experiments/build_data.py` from the encoder's stage-2 transfer outputs.
+- `data/nuplan/val14_full_zeroshot.npz` — the full-split panel of the
+  supplementary run (`ATDRIVE_NUPLAN_BUNDLE`, `results/nuplan_zeroshot_full.json`):
+  1,118 tokens and their logs, the 10 x 1,118 closed-loop score matrix with
+  the planner names, its binarised failures, the per-scene failure rate,
+  b_ref (Rasch on the 10-planner matrix), the NLe arm (3 seeds) and its C4nl
+  null (20 permutations x 3 seeds), exported by
+  `encoder/nuplan/full_val14/export_nuplan_full.py`. Its sources ship in
+  `data/nuplan/full_val14/` (token lists, the 10-planner response matrix,
+  the scenario / log / map table); the tensor pipeline for the 534 tokens
+  absent from the 584 panel and the encoder job lists are in
+  `encoder/nuplan/full_val14/` (`encoder/README.md`).
 - `data/live/risk_scale.json` — cached risk scales c of `atdrive.live.LiveEvaluator`,
   keyed by a bank fingerprint (planner set, route list, iterations) and
   validated against a digest of the responses; the shipped entries are the
@@ -206,6 +217,7 @@ python experiments/run_ups.py                          # Table 3B (results/ups.j
 for lo in 0 2 4 6 8 10 12 14; do ATDRIVE_DEVICE=cpu python experiments/run_ups_full.py --seeds $lo $((lo+2)) & done; wait
 python experiments/run_ups_full.py --merge             # UPS on the full 220-route SR
 python experiments/run_nuplan_zeroshot.py              # nuPlan val14 zero-shot (data/nuplan/val14_zeroshot.npz)
+ATDRIVE_NUPLAN_BUNDLE=data/nuplan/val14_full_zeroshot.npz python experiments/run_nuplan_zeroshot.py   # full 1,118-token split -> results/nuplan_zeroshot_full.json
 python experiments/run_readout_dropin.py
 python experiments/run_model_adequacy.py
 python experiments/make_figures.py; python experiments/make_icc_figure.py; python experiments/make_uncertainty_figure.py

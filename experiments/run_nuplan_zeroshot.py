@@ -79,7 +79,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from atdrive.b2d import DATA
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-SRC = DATA / 'nuplan' / 'val14_zeroshot.npz'
+SRC = Path(os.environ['ATDRIVE_NUPLAN_BUNDLE']) if os.environ.get('ATDRIVE_NUPLAN_BUNDLE') else DATA / 'nuplan' / 'val14_zeroshot.npz'
+FULL = bool(os.environ.get('ATDRIVE_NUPLAN_BUNDLE'))      # a supplementary bundle (e.g. the full 1,118-scenario val14): its own
+                                                          # output file, arms restricted to the keys it carries, anchors skipped
 
 QS = (0.05, 0.10)
 NBOOT = 1000          # per-run log bootstrap (per-seed intervals in the json)
@@ -112,6 +114,9 @@ def target():
     B = np.where(np.isfinite(C), (C < FAIL_THR).astype(float), np.nan)
     ok = np.isfinite(Y) & np.isfinite(B)
     assert (Y[ok] == B[ok]).all() and ((~np.isfinite(Y)) == (~np.isfinite(C))).all()
+    if FULL:                                              # keep only the arms / null families present in the bundle
+        for k in [k for k in ARMS if f'pred_{k}_s0' not in z.files]: del ARMS[k]
+        for k in [k for k in NULLS if f'pred_{k}_p0_s0' not in z.files]: del NULLS[k]
     preds = {k: [np.asarray(z[f'pred_{k}_s{s}'], float) for s in range(NSEED)] for k in ARMS}
     preds.update({k: [np.asarray(z[f'pred_{k}_p{p}_s{s}'], float) for p in range(NPERM) for s in range(NSEED)]
                   for k in NULLS})
@@ -332,8 +337,12 @@ def main():
               f"p {v['p']:.3f} ({v['n_ge']}/{v['n_perm']} perm means >= arm); z {v['z']:+.2f} (Gaussian p {v['p_gauss']:.4f}); "
               f"single-run T95 {v['T95_single']:+.4f}, arm seeds above it {v['n_seed_clear']}/{NSEED}")
 
-    json.dump(res, open(OUT / 'nuplan_zeroshot.json', 'w'), indent=1, default=float)
-    print(f"\nwrote {OUT / 'nuplan_zeroshot.json'}")
+    name = 'nuplan_zeroshot_full.json' if FULL else 'nuplan_zeroshot.json'
+    json.dump(res, open(OUT / name, 'w'), indent=1, default=float)
+    print(f"\nwrote {OUT / name}")
+    if FULL:
+        print('anchors: skipped (supplementary bundle; the anchors pin the 584-scenario panel of record)')
+        return
 
     # ---------------------------- anchors ----------------------------------------
     p = res['panel']
