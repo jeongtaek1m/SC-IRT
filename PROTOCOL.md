@@ -554,7 +554,10 @@ tracks) so that selection and stopping can each be swapped alone.
   scene-free readout and scene-free acquisition arms and two oracles.
 - **nuPlan val14 zero-shot retrieval** (`run_nuplan_zeroshot.py`,
   `data/nuplan/val14_zeroshot.npz`): the Bench2Drive-trained encoder (panel
-  of record, repo calibration) ranks the 584 nuPlan val14 scenarios; the
+  of record, repo calibration) ranks 584 nuPlan val14 scenarios — the subset
+  of the 1,118-token official split that lies in the 218 (of 328) val log
+  databases available to the simulation server, fixed before any run; not a
+  failure- or type-filtered set (RESULTS.md, nuPlan section); the
   statistic is the drop in the 11-planner closed-loop score on the
   predicted-hard top-q%, q in {5, 10}, for the lane-free encoder of record and
   the two lane-carrying controls (speed kept, speed removed; three training

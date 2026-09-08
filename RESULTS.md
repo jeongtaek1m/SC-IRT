@@ -864,8 +864,15 @@ Rasch fit no longer consumes the torch RNG — so it is not a separate arm.
 
 ## nuPlan val14 zero-shot retrieval (`run_nuplan_zeroshot.py`)
 
-A scene encoder trained on Bench2Drive difficulty ranks the 584 nuPlan
-val14 scenarios zero-shot; the score is the drop in planner performance on
+A scene encoder trained on Bench2Drive difficulty ranks 584 nuPlan val14
+scenarios zero-shot — a SUBSET of the official split: val14 has 1,118 scenario
+tokens spanning 328 val log databases, and the 584 are exactly the val14
+tokens contained in the 218 log databases that the auxiliary simulation
+server held when the planners were run (the scenario list was fixed before
+any simulation; one further token in those logs was left out of the handoff
+list; no scenario was removed by a simulation failure or a filter, 6,421 of
+the 6,424 planner x scenario cells are scored). Every rate below is relative
+to this subset. The score is the drop in planner performance on
 the predicted-hard top-q%, Delta M_CLS = M(all 584) - M(top-q%), on the
 11-planner closed-loop score (6,421 finite cells, 218 logs; the matrix is
 not binary, so M_CLS is the primary metric; M_CLS(full) = .7808, base

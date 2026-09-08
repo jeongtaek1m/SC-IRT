@@ -130,7 +130,7 @@ data/
                 six controls of Table 3A(b): the lane-carrying R2 (relgraph_r2_s*.npz)
                 and noroute / sroute / sa2l / nospeed, and the speed ablation of the
                 encoder of record itself (relgraph_r2nolane_nospeed_s*.npz)
-  nuplan/       the 584-scenario nuPlan val14 panel and encoder predictions of the zero-shot test
+  nuplan/       the 584-scenario nuPlan val14 panel (a log-availability subset of the 1,118-token split) and encoder predictions of the zero-shot test
   live/         cached leave-one-planner-out risk scales for the live evaluator (keyed by bank)
 results/        merged results of record (tracked; per-shard intermediates are not) — RESULTS.md quotes them
 figs/           the figures the make_*.py scripts write
