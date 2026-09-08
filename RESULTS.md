@@ -689,7 +689,7 @@ the raw R1 (c = 1), which changes nothing at a fixed budget.
 
 Reading. The four pieces fail in different ways, which is why all four are
 in the method. Dropping the LOO calibration is the one that breaks the
-guarantee: the raw risk stops after 26-29 routes, less than half the cost,
+calibration: the raw risk stops after 26-29 routes, less than half the cost,
 but the realised error at that stop is .042-.054 against the .05 target it
 claims to have met, so the saving is not real. Dropping the testlet or the
 acquisition keeps the error at the target but pays for it in routes, 13-24
@@ -1218,8 +1218,11 @@ bank, eps = .03; the bank is the planner's recorded routes, 211-220 of
 
 Every run stopped on its own: half the bank for VAD and LEAD-tfv6, 61% for
 HiP-AD, with errors of .015 and .007 for VAD and HiP-AD. The LEAD-tfv6
-stop (99 routes) missed its .03 target with a realised error of .036 —
-the kind of miss the risk target admits for roughly one run in ten. The weakest planner remains the hardest case: an all-fail
+stop (99 routes) missed its .03 target with a realised error of .036. Such
+misses are not rare: in Table 2 the realised error exceeds the target in
+6-12 of the 64 evaluations per cell (9-19%, K_cal and eps dependent); c is the
+90th percentile of the calibration planners' pooled error ratios, not a
+coverage guarantee for the new planner's stop. The weakest planner remains the hardest case: an all-fail
 record only bounds theta from above, so its estimate leans on the prior
 early (SR_hat .22 after 40 routes) and settles as the acquisition finds
 the routes it can pass.
