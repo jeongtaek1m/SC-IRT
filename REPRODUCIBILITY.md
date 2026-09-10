@@ -104,7 +104,11 @@ mean +- SD, never an averaged prediction.
   selected from it (PROTOCOL section 1).
   `ATDRIVE_RESPONSE_CSV` overrides the panel for new matrices.
 - `data/features/` — per-route descriptor sets (cmdkin, gtrisk, routegeom,
-  ...) used as US baselines. They are computed from a fixed probe rollout
+  ...) used as US baselines; the rebuilt rows of record ship as
+  `eval_min_ttc.npz`, `eval_edrf.npz`, `eval_agentjepa_bestval.npz` /
+  `eval_agentjepa_official.npz` and `eval_smart_ent_catk.npz`
+  (`experiments/us_official/`, provenance in `results/us_official_provenance/`;
+  RESULTS.md, "Provenance chain of every baseline row"). They are computed from a fixed probe rollout
   per route, so they are probe-conditioned but contain nothing from the
   evaluated planners' rollouts. The scenario-definition parameters
   (scenparamz) that earlier versions used were removed: they are the

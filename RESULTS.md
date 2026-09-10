@@ -443,6 +443,56 @@ Zoox paper's argument — find more collisions per simulated mile while
 covering every cluster — is about a 800,000-scenario pool with rare
 collisions, not about the error of a benchmark score.
 
+## Provenance chain of every baseline row
+
+What each baseline row is made of, stage by stage, so that a reader can see
+which stage is the cited paper's procedure, which is executed through the
+authors' released code, and which is ours. Tags: **P** = the paper's own
+procedure, **C** = executed through the authors' released code (commit ids in
+`results/up_official.json` and the wrapper docstrings), **O** = ours (an
+addition, a substitution forced by the data, or a design choice the paper
+leaves open). The wrapper docstrings (`experiments/official/*.py`,
+`experiments/run_av_baselines.py`, `experiments/us_official/`) carry the
+line-level version of this table. This is a record of sources and
+constructions; it is not a re-execution of the papers' own experiments.
+
+Planner evaluation (Table 1; every row on the same 16 draws x K_cal x B):
+
+| row | input | calibration / model | selection | estimator (readout) | target | verdict |
+|---|---|---|---|---|---|---|
+| tinyBenchmarks | binary matrix, missing cells omitted (O, data) | py-irt multidim 2PL, their fork, D from their validation split (P, C) | K-means anchors on the IRT embedding (P, C) | gp-IRT (P, C) | benchmark score = SR (P) | exact |
+| metabench | same | mirt 2PL, their utils.R (P, C) | their quantile-bin information selection, threshold 0 (P, C; O: data) | their GAM score readout (P, C) | full score = SR (P) | exact |
+| ATLAS | same; single fit chunk (O) | mirt 3PL (P, C) | catR MFI + randomesque + EAP, stop SE <= tau (P, C) | their p-IRT accuracy script, denominator = fitted items (P, C); full-bank rescale as a variant (O) | accuracy = SR (P) | exact |
+| Fluid | same | their 2PL fit script (P, C) | their MFI selection at the MAP ability (P, C) | ability theta (P, C); **SR by a p-IRT plug-in (O)** | paper: theta; here: SR (O) | adapted: our readout |
+| DISCO | binary outcomes where the paper takes class probabilities (O, data) | py-irt 2PL via their experiments.py (P, C) | PDS ranking (P, C), two-valued on binary input | their headline signature random-forest metamodel on the source models (P, C; 4-12 training points) | accuracy = SR (P) | adapted: input |
+| AnchorPoints | binary votes where the paper takes class probabilities (O, data); K_cal 4-8 below the paper's N >= 10 | correlation clustering, their function (P, C) | PAM medoids, num_medoids = B (P, C) | APW cluster-size-weighted vote (P, C) | accuracy = SR (P) | adapted: input |
+| GP adaptive, official code | route descriptor as the scenario coordinates, f = outcome - 1/2, uniform p (O) | their sklearn GPR; isotropic RBF kernel (O; the paper's is 2-d ARD) | their AcqIVR_FP on the discrete grid, the grid index resolved in the wrapper (P, C) | their failure_probability, posterior mean < 0 (P, C) | accident rate = 1 - SR (P) | adapted: input, kernel |
+| GP adaptive, our port | same input | our GP with the same acquisition (P; O impl.) | unexecuted-route argmax (O) | predictive success probability + observed outcomes (O) | SR | our port |
+| FST | surrogates = the K_cal calibration planners (P role); route descriptor as the scenario state (O) | cross-attention similarity net, min-max surrogate loss, P_c draws (P; O impl., no code) | fixed set by discrete swap search (O; the paper: gradient descent on continuous coordinates) | weighted observed outcomes (P) | performance index = SR (P) | re-implemented |
+| KTCS | route descriptor (O) | information-potential weights, Pareto-order sampling, QP alignment weights (P; O impl., capsule unreachable) | fixed set (P) | lambda-weighted outcomes, unit exposure (P; O: exposure) | accident rate -> SR (P role) | re-implemented |
+| DICE | our route tensors (O, data) | masked autoencoder with the paper's recipe at our scale; their head on calibration outcomes (P; O impl., no code) | Algorithm 2, M = 10 and K_0 = 1 (P; M, K_0 O) | their stratified count (P, mentioned but not evaluated by the paper) | collision rate -> SR | re-implemented |
+| Random references | — | ATDrive's own calibration (O) | random / type-stratified (O) | plain mean or ATDrive's readout (O) | SR | ours |
+| catR (static MFI order) | — | — | — | — | — | our construct: excluded (a library, not a published method; the same object is the Fisher ablation) |
+
+Route difficulty (Table 3A / Table V; every row through the same two-stage
+Ridge readout, which is ours):
+
+| row | input | difficulty / criticality computation | readout | verdict |
+|---|---|---|---|---|
+| Min-TTC | reference rollout (O, data) | TTC per Hayward 1972 / Westhofen 2023 Sec. 5.2.1, min over time and actors per their Sec. 5.2 (P; O impl. from the definition) | Ridge -> difficulty (O) | literature computation + our readout |
+| EDRF-based risk field | rollout; the single realised future replaces the multimodal predictor (O, substitution of the model's input) | DRP / EDRF / IR / F equations and constants (P; O impl., no code); six route statistics (O) | Ridge (O) | EDRF-based features, not EDRF |
+| Agent-JEPA | Bench2Drive expert clips at the 0.5 s grid (O, data) | Sec. 3 model and loss (P; O impl.; official code found, rerun pending); surprise = latent L2 (P); route aggregation (O) | Ridge (O) | literature method + our readout |
+| Traffic entropy | rollout converted to the model's format (O) | SMART model through the official CAT-K code and checkpoint (C); the entropy as a difficulty descriptor (O) | Ridge (O) | our construct on a released model: not a literature baseline |
+| in-house rows | rollout | ours | Ridge (O) | ours |
+| ATDrive encoder | rollout | ours (Section Method) | — | ours |
+
+Pending rows under the same rule: Agent-JEPA through the official code
+(minDrive-JEPA, retrained on our rollouts with its own tokenizer and
+trainer; route aggregation ours) and REEval's amortized calibration (Truong
+et al. 2025: z = w . e + b fitted with the Rasch likelihood by their
+notebook, with our route features as the content embedding) — both Table 3A
+rows, neither a Table 1 row.
+
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 
 Table 1 scores one aggregate per evaluation. This diagnostic asks how well
@@ -1033,6 +1083,35 @@ prediction of the encoder of record (trained per draw on the 36 calibration
 types of the 12 calibration planners). Planner-only null: AUROC .699 /
 scene-MAE .214.
 
+Provenance of the descriptor rows (the readout — Ridge from the descriptor
+to the calibrated difficulty, then the plug-in — is OURS for every row; what
+differs is where the descriptor itself comes from; `experiments/us_official/`,
+`results/us_official_provenance/`):
+- *literature criticality / difficulty computations*: Min-TTC (the metric of
+  Hayward 1972 as reviewed by Westhofen et al. 2023, minimum over time and
+  actors per their Sec. 5.2, computed from the definition on the reference
+  rollout); EDRF-based risk field (the equations and constants of Jiang et al.
+  2024, with the single realised future of the rollout in place of the
+  multimodal predictor — a substitution of the model's core input, so the row
+  is "EDRF-based features", not EDRF; six route statistics); Agent-JEPA (our
+  re-implementation of Jaiswal 2026 Sec. 3 on Bench2Drive expert clips, the
+  paper-literal best-validation checkpoint and the full 50-epoch schedule;
+  official code exists — github.com/hellojais/mindrive-jepa — and a run
+  through it is pending).
+- *our descriptors*: Traffic entropy (the mean next-token entropy of the SMART
+  traffic model run through the official CAT-K code and checkpoint; neither
+  paper proposes any quantity of the model as a difficulty measure, so the
+  descriptor is ours and the papers are cited as the source of the model
+  only), Route geometry, Agent density + kin., the in-house traffic risk stack
+  (the earlier "Risk field" row: an uncalibrated potential field plus SSM
+  columns), Kinematics (cmdkin) and Hand-crafted risk (cmdkin + gtrisk). All
+  six read the PDM-Lite reference rollout, so they are probe-rollout
+  descriptors rather than scene-only ones.
+The earlier shipped rows (Min-TTC .692 from the in-house ssm_min_ttc column,
+Risk field .705 = the in-house stack, Traffic entropy .706 from a
+mismatched-vocabulary SMART load, Agent-JEPA .696 from an epoch-0
+checkpoint) are superseded by the rebuilt rows below.
+
 THE ENCODER OF RECORD HAS NO LANE GRAPH. It is RelGraph R2-noLane: the same
 R2Net with the whole map side of the graph removed before any tensor is built
 — no lane tokens, no lane geometry or lane_feat, no lane-lane edges, no
@@ -1042,20 +1121,22 @@ a control and heads the control block below.
 
 | difficulty source | AUROC | scene-MAE | rho(b_tilde, fail rate) |
 |---|---|---|---|
-| Min-TTC | .692 | .219 (-2.6%) | -.061 |
-| Risk field | .705 | .213 (+0.3%) | +.091 |
-| Route geometry | .719 | .201 (+6.1%) | +.268 |
-| Agent density + kin. | .715 | .212 (+0.9%) | +.220 |
-| Traffic entropy | .706 | .212 (+0.7%) | +.097 |
-| Agent-JEPA | .696 | .217 (-1.5%) | +.001 |
-| Kinematics (cmdkin, 25d) | .752 | .180 (+15.6%) | +.497 |
-| Hand-crafted risk (cmdkin+gtrisk, 73d) | .758 | .175 (+18.0%) | +.533 |
+| Min-TTC (Hayward 1972 / Westhofen 2023; 1-d) | .713 | .213 (+0.2%) | +.217 |
+| EDRF-based risk field (Jiang 2024; single realised future; 6-d) | .695 | .217 (-1.6%) | +.099 |
+| Agent-JEPA (Jaiswal 2026, re-impl.; best-val ckpt) | .711 | .205 (+4.1%) | +.151 |
+| Agent-JEPA (re-impl.; full 50-epoch schedule) | .699 | .216 (-1.0%) | -.003 |
+| Traffic entropy (ours, on SMART / CAT-K) | .704 | .213 (+0.2%) | +.072 |
+| Route geometry (ours) | .719 | .201 (+6.1%) | +.268 |
+| Agent density + kin. (ours) | .715 | .212 (+0.9%) | +.220 |
+| In-house traffic risk stack (ours; the former "Risk field") | .705 | .213 (+0.3%) | +.091 |
+| Kinematics (cmdkin, 25d; ours) | .752 | .180 (+15.6%) | +.497 |
+| Hand-crafted risk (cmdkin+gtrisk, 73d; ours) | .758 | .175 (+18.0%) | +.533 |
 | **ATDrive: RelGraph R2-noLane scene encoder (3 runs)** | **.761 +- .006** | **.181 +- .007** | **+.545 +- .024** |
 | Oracle (response-calibrated) | .870 | .037 | +.995 |
 
 Reading. The learned encoder and the two hand-crafted stacks clear every
-single-descriptor baseline by +.04-.07 AUROC (16-18 points of scene-MAE for
-the hand-crafted stacks, 15 for the encoder); between them the lane-free
+single-descriptor row, literature or ours, by +.04-.07 AUROC (16-18 points of
+scene-MAE for the hand-crafted stacks, 15 for the encoder); between them the lane-free
 encoder is slightly ahead on AUROC (.761 vs .758) and on rank correlation
 (R2-noLane minus hand-crafted risk: Delta rho +.012 +- .024 across runs, i.e.
 inside its own run-to-run noise) and still behind on scene-MAE (.181 vs .175).

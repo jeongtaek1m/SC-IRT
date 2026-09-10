@@ -70,7 +70,6 @@ def load_descriptor_arms():
         except ValueError:
             return 0.0
 
-    minttc = {r[0]: np.array([ff(r[ci['ssm_min_ttc']])]) for r in tf[1:]}
     risk = {r[0]: np.array([ff(r[ci[c]]) for c in hdr[2:]]) for r in tf[1:]}
     kd = np.load(DATA / 'b2d' / 'baseline_kin_den.npz', allow_pickle=True)
     kn = [str(x).replace('route_', '') for x in kd['kin_names']]
@@ -78,11 +77,28 @@ def load_descriptor_arms():
     kin = {kn[i]: kd['kin'][i].astype(np.float64) for i in range(len(kn))}
     den = {dn[i]: kd['den'][i].astype(np.float64) for i in range(len(dn))}
     kinden = {r: np.concatenate([kin[r], den[r]]) for r in kin if r in den}
-    return {'Min-TTC': minttc, 'Risk field': risk,
+    # Rows of record (rebuilt 2026-09, experiments/us_official/, provenance in results/us_official_provenance/):
+    #   Min-TTC              the criticality metric of the literature (Hayward 1972 as reviewed by Westhofen et al.
+    #                        2023, min over time and actors, Sec. 5.2), computed from the definition on the reference
+    #                        rollout (eval_min_ttc.npz; the earlier row was the in-house ssm_min_ttc column)
+    #   EDRF-based           the risk-field equations of Jiang et al. 2024 with the single realised future in place of
+    #                        the multimodal predictor, 6 route statistics (eval_edrf.npz)
+    #   Agent-JEPA           our re-implementation of Jaiswal 2026, Sec. 3: the paper-literal best-validation checkpoint
+    #                        and the full 50-epoch schedule (official code exists, github.com/hellojais/mindrive-jepa;
+    #                        a run through it is pending)
+    #   Traffic entropy      OUR descriptor: mean next-token entropy of the SMART traffic model run through the official
+    #                        CAT-K code and checkpoint (eval_smart_ent_catk.npz); neither paper proposes it
+    #   in-house rows        Route geometry, Agent density + kin., Kinematics (cmdkin), Hand-crafted risk (cmdkin+gtrisk),
+    #                        and the traffic risk stack of traffic_features_220.csv (the earlier "Risk field" row)
+    # Every row goes through the same two-stage Ridge readout below; that readout is ours for every row.
+    return {'Min-TTC': load_features('eval_min_ttc'),
+            'EDRF-based risk field': load_features('eval_edrf'),
+            'Agent-JEPA (best-val ckpt)': load_features('eval_agentjepa_bestval'),
+            'Agent-JEPA (full schedule)': load_features('eval_agentjepa_official'),
+            'Traffic entropy (ours, SMART/CAT-K)': load_features('eval_smart_ent_catk'),
             'Route geometry': load_features('eval_routegeom'),
             'Agent density + kin.': kinden,
-            'Traffic entropy': load_features('eval_smart_ent'),
-            'Agent-JEPA': load_features('eval_agentjepa'),
+            'In-house traffic risk stack': risk,
             'Kinematics (cmdkin)': ck,
             'Hand-crafted risk (cmdkin+gtrisk)': {k: np.concatenate([ck[k], gtr[k]]) for k in ck if k in gtr}}
 
