@@ -44,7 +44,7 @@ past a failed anchor.
 | `run_route_discrimination.py --merge` | 6 AUROC cells, macro AUROC / Brier of 3 orders, 36 drops, both rank-agreement rhos, pooled ATDrive - Random-strat spans 0 (n 751, 9 of 12), zero-rollout macro Brier of every order, Brier skill / AUROC gain of Random-strat > 0, common-set macro AUROC and spread |
 | `run_us.py` | Table 3A: null, the two hand-crafted rows, the 3-run means of the encoder of record (lane-free R2-noLane); Table 3A(b): the rho of the six controls (the lane-carrying R2, noroute, sroute, sa2l, nospeed, nlnospeed); the two difficulty-matching arms (match0.1, match1) are printed in the same block without anchors |
 | `us_official/reeval_amortized.py` | the REEval amortized-calibration row of Table 3A (`results/us_reeval_amortized.json`): AUROC .725 / scene-MAE .210 / rho +.456 over 640 route evaluations; no anchors |
-| `run_ups.py` | Table 3B: representative MAE cells per policy under the lane-free prior of record (tol .003), and the Delta-R1 MAE + per-cell NLL cells of all three priors (lane-free, the lane-carrying control, the speed-ablated control) |
+| `run_ups.py` | Table 3B: representative MAE cells per policy under the lane-free prior of record (tol .003), and the Delta-R1 MAE + per-cell NLL cells of all five priors (lane-free, the lane-carrying control, the speed-ablated control, the two difficulty-matching arms) |
 | `run_ups_full.py --merge` | the scene prior's identity (npz name + content md5, checked before any anchor); 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .003 in the readout and in the acquisition |
 | `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the pairwise ranking accuracy of each cell (`rank_acc`), the ATLAS stopping rule, and the 2 recorded ATLAS failures |
 | `run_av_baselines.py --merge` | the FST port, the GP-adaptive port, the official-code GP run, kernel test case sampling and the DICE re-implementation on the Table 1 protocol (`results/up_avbase.json`): SR-MAE, the paired delta against ATDrive and the pairwise ranking accuracy of every cell; no anchors |
@@ -141,10 +141,15 @@ mean +- SD, never an averaged prediction.
   channel removed from both ego paths of the LANE-CARRYING model, and
   `relgraph_r2nolane_nospeed_s{0,1,2}.npz` the same ablation of the encoder of
   record (lane-free), which also drives the speed-ablated repeat of Table 3B
-  (`results/ups_nospeed.json`). All 21 files are exported by
-  `experiments/build_data.py` from the run outputs of the 16-planner RelGraph
-  training harness (`relgraph_e16sel`: `r2nolane_b2d_s{k}.npz` and the six
-  control runs); the harness calibrates its training-fold abilities with
+  (`results/ups_nospeed.json`); `relgraph_r2nolane_match{0.1,1}_s{0,1,2}.npz`
+  are the two difficulty-matching ablation arms of the encoder of record
+  (`--match` of the harness: lambda x mean (f_phi(x) - b_hat)^2 added to the
+  objective), which also drive two repeats of Table 3B
+  (`results/ups_match0.1.json`, `results/ups_match1.json`). All 27 files are
+  exported by `experiments/build_data.py` from the run outputs of the
+  16-planner RelGraph training harness (`relgraph_e16sel`:
+  `r2nolane_b2d_s{k}.npz`, the six control runs and the two matching-term
+  runs); the harness calibrates its training-fold abilities with
   `atdrive.calibration.calibrate_dense` from this package, so the encoder is
   trained against the release's own Rasch fit. The harness is in `encoder/`
   (code verbatim, the Bench2Drive scene tensors it trains on, the launchers of
@@ -230,7 +235,7 @@ for lo in 0 4 8 12; do python experiments/run_route_discrimination.py --seeds $l
 python experiments/run_route_discrimination.py --merge # route-level discrimination (reads up_frontier.json, adaptive.json)
 python experiments/run_us.py                           # Table 3A + 3A(b) (+ the difficulty-matching arms)
 CUDA_VISIBLE_DEVICES=3 python experiments/us_official/reeval_amortized.py   # the REEval row of Table 3A
-python experiments/run_ups.py                          # Table 3B (results/ups.json) + the two control priors (ups_lane.json, ups_nospeed.json)
+python experiments/run_ups.py                          # Table 3B (results/ups.json) + the four control priors (ups_lane.json, ups_nospeed.json, ups_match0.1.json, ups_match1.json)
 for lo in 0 2 4 6 8 10 12 14; do ATDRIVE_DEVICE=cpu python experiments/run_ups_full.py --seeds $lo $((lo+2)) & done; wait
 python experiments/run_ups_full.py --merge             # UPS on the full 220-route SR
 python experiments/run_nuplan_zeroshot.py              # nuPlan val14 zero-shot (data/nuplan/val14_zeroshot.npz)

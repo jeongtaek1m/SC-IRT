@@ -15,14 +15,18 @@ and agents only) — for that draw, and sigma the per-draw shared residual SD it
 learned on the calibration block (data/encoder/relgraph_r2nolane_s*.npz; run
 s0 is canonical, runs s1-s2 give the across-run SD).
 
-The table is repeated with two control priors, each also driving its own
+The table is repeated with four control priors, each also driving its own
 Delta-R1 probe rule:
   _lane      the lane-carrying R2 earlier releases shipped as canonical
              (relgraph_r2_s*.npz) -> results/ups_lane.json
   _nospeed   R2-noLane with the ego-speed channel removed from both ego paths
              (relgraph_r2nolane_nospeed_s*.npz) -> results/ups_nospeed.json,
              a clean speed ablation OF THE ENCODER OF RECORD: it differs from
-             the canonical prior in the speed channel and nothing else.
+             the canonical prior in the speed channel and nothing else;
+  _match0.1, _match1  the encoder of record trained with the difficulty-matching
+             term of the ablation arm (--match of the training code;
+             relgraph_r2nolane_match{0.1,1}_s*.npz) -> results/ups_match0.1.json,
+             results/ups_match1.json.
 
 Probe policies: naive SR transfer, Random, Delta-R1 on the transported block-D
 success rate (canonical — acquire for the quantity that must generalise), and
@@ -65,7 +69,9 @@ RUNS = (0, 1, 2)
 # suffix -> (row label, the shipped npz stem).  The encoder of RECORD is lane-free.
 ENC = {'': ('RelGraph R2-noLane (encoder of record)', 'relgraph_r2nolane'),
        '_lane': ('R2 with the lane graph (control)', 'relgraph_r2'),
-       '_nospeed': ('R2-noLane, ego speed removed (control)', 'relgraph_r2nolane_nospeed')}
+       '_nospeed': ('R2-noLane, ego speed removed (control)', 'relgraph_r2nolane_nospeed'),
+       '_match0.1': ('R2-noLane + matching term, lambda .1 (ablation arm)', 'relgraph_r2nolane_match0.1'),
+       '_match1': ('R2-noLane + matching term, lambda 1 (ablation arm)', 'relgraph_r2nolane_match1')}
 
 
 def main():
@@ -143,7 +149,7 @@ def main():
             print(f'  {p:18s} ' + '  '.join('B{}: {:+.4f} [{:+.4f},{:+.4f}]'.format(
                 B, *paired_cluster_boot(RES[e][p][B]['mae'], RES[e][CAN][B]['mae'], JS)) for B in BP))
     print('\npaired delta MAE (control prior - encoder of record), same policy:')
-    for e2 in ('_lane', '_nospeed'):
+    for e2 in [e for e in ENC if e]:
         print(f'  -- {ENC[e2][0]} --')
         for p in POL:
             print(f'    {p:18s} ' + '  '.join('B{}: {:+.4f} [{:+.4f},{:+.4f}]'.format(
@@ -152,9 +158,8 @@ def main():
     def dump(e, path):                                 # ups.json keeps the shipped-prior schema;
         json.dump({p: {str(B): {m: [float(x) for x in v] for m, v in d.items()}                # the
                        for B, d in bb.items()} for p, bb in RES[e].items()}, open(path, 'w'))  # no-
-    dump('', OUT / 'ups.json')                         # each control goes to its own file so
-    dump('_lane', OUT / 'ups_lane.json')               # nothing downstream of ups.json changes shape
-    dump('_nospeed', OUT / 'ups_nospeed.json')
+    for e in ENC:                                      # each control goes to its own file (ups_lane.json,
+        dump(e, OUT / f'ups{e}.json')                  # ups_nospeed.json, ...) so nothing downstream of ups.json changes shape
     for (p, B, ref) in ANCHORS:                        # pinned on the lane-free encoder of record
         assert abs(np.mean(RES[''][p][B]['mae']) - ref) < .003, (p, B, np.mean(RES[''][p][B]['mae']))
     print('anchors OK')

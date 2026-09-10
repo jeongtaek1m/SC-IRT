@@ -1272,7 +1272,9 @@ term dominant the encoder becomes a regressor onto the block-A point
 difficulties, which are estimates from 12 planners per route and already
 enter the objective through the responses themselves. The marginal-likelihood
 objective stays the recipe of record; the arms are kept as controls, not
-candidates.
+candidates. On UPS (Table 3B, control priors 3 and 4) they behave like the
+other control priors: block-SR MAE unchanged, per-cell NLL .008 (lambda = 0.1)
+and .002-.004 (lambda = 1) better than the record.
 
 ## nuPlan val14 zero-shot retrieval (`run_nuplan_zeroshot.py`)
 
@@ -1551,6 +1553,43 @@ The paired delta of its Delta-R1 row against the encoder of record is
 -.0033 [-.0109, +.0044] / -.0031 [-.0098, +.0038] / +.0004 [-.0076, +.0084]:
 indistinguishable on the block-SR scale, .009 / .009 / .008 better on the NLL.
 Speed is not what the transport lives on; the reading above does not change.
+
+**Control priors 3 and 4 — the difficulty-matching arms of the encoder of
+record** (`results/ups_match0.1.json`, `results/ups_match1.json`: R2-noLane
+trained with lambda x mean (f_phi(x) - b_hat)^2 added to its objective, see the
+recipe control of Table 3A; three runs each, run s0 in the table, the Delta-R1
+probe rule running on the same prior):
+
+| probe policy, lambda = 0.1 | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
+|---|---|---|---|---|---|---|
+| naive (no IRT) | .1007 | .6414 | .0900 | .6262 | .0865 | .6203 |
+| Random | .1113 | .6057 | .1023 | .5977 | .0949 | .5914 |
+| theta-EIG (abl.) | .0897 | .5903 | .0917 | .5891 | .0919 | .5904 |
+| ATDrive (Delta-R1 on D) | .0884 | .5889 | .0908 | .5888 | .0918 | .5903 |
+
+| probe policy, lambda = 1 | B30 MAE | NLL | B55 MAE | NLL | B110 MAE | NLL |
+|---|---|---|---|---|---|---|
+| naive (no IRT) | .1007 | .6414 | .0900 | .6262 | .0865 | .6203 |
+| Random | .1124 | .6110 | .1028 | .6022 | .0950 | .5969 |
+| theta-EIG (abl.) | .0909 | .5958 | .0891 | .5943 | .0893 | .5945 |
+| ATDrive (Delta-R1 on D) | .0886 | .5951 | .0886 | .5941 | .0891 | .5944 |
+
+Both arms sit where the other two control priors sit. On the block-SR scale
+the paired delta of the Delta-R1 row against the encoder of record contains
+zero at every budget (lambda = 0.1: -.0038 [-.0084, +.0013] / -.0012 [-.0068,
++.0053] / -.0009 [-.0061, +.0056]; lambda = 1: -.0036 [-.0115, +.0032] /
+-.0034 [-.0096, +.0031] / -.0035 [-.0105, +.0031]; across-run SD of the cells
+.001-.003), and the .09 floor does not move. On the per-cell NLL the
+lambda = 0.1 arm is .008 better at every budget (.5889 / .5888 / .5903 against
+.5974 / .5963 / .5985), the size of the speed control's shift (.009) and below
+the lane control's (.012); the lambda = 1 arm is .002-.004 better. The prior
+width is not what moves: every one of the five priors learns sigma = .652-.655.
+The predictions' spread does differ (SD of b_tilde over the held-out routes:
+encoder of record 1.05-1.07, matching arms .84-.93, lane control 1.14-1.20),
+but the NLL ordering does not follow it either. What the four control priors
+say together is that each of them beats the encoder of record on the per-cell
+NLL by .002-.012 and none of them on the block-SR MAE; the matching term adds
+nothing to UPS beyond that, and the reading of Table 3B does not change.
 
 ## UPS retargeted to the full 220-route SR (`run_ups_full.py`)
 
