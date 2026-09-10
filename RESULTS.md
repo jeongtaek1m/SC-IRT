@@ -240,7 +240,7 @@ code, whose SR-MAE is the closest to ATDrive's in Table 1-official, orders at
 
 ## Table 1 — AV-testing baselines re-implemented from their papers (`run_av_baselines.py`)
 
-Two efficient-testing methods of the driving literature on the Table 1
+Three efficient-testing methods of the driving literature on the Table 1
 protocol: the same 16 draws, K_cal subsamples, banks and budgets, every cell
 paired with the ATDrive cell of `up_frontier.json`. FST has no public code (a
 sweep of the paper texts, the authors' GitHub accounts and the Feng group's
@@ -286,8 +286,33 @@ excludes zero against ATDrive.
   continuous optimisation); executed routes enter the estimate with their
   outcome and leave the bound (the paper's f is noise-free, where the two
   coincide). Same two feature spaces.
+- **Kernel test case sampling** (Qian, Xu, Xing, Guo, "Test case sampling
+  optimization for safety validation of automated driving systems", Nature
+  Communications 17:3114, 2026): a FIXED subset of M = B routes from the route
+  descriptors alone, no surrogate planner. Step 1, coverage: importance weights
+  w = softmax over the cases of a one-layer network trained to minimise the
+  information potential sum_{i != j} w_i w_j K(x_i, x_j), then Pareto-order
+  sampling (U_i ~ U(0, 1), Q_i = U_i / (1 - U_i) x (1 - w_i) / w_i, the M
+  smallest Q; nested over the budgets for one draw of U; five draws, the error
+  averaged per draw as for the random rows). Step 2, representativeness:
+  distribution-alignment weights lambda = argmin 1/2 lambda' K_zz lambda -
+  lambda' Kbar with Kbar = (1/N) 1' K_xz, sum lambda = 1, lambda >= 0 (a convex
+  QP). Readout sum_j lambda_j y_j — the paper's accident-rate estimate with unit
+  exposure and no correction factor. RBF kernel with the median-distance
+  bandwidth (the paper states none). Its Code Ocean capsule (10.24433/CO.9203840.v1)
+  was not reachable, so this is from the paper's Methods.
+- **Not run: adaptive importance sampling** (O'Kelly, Sinha, Namkoong, Duchi,
+  Tedrake, NeurIPS 2018). Its substance is a generative traffic model whose
+  proposal distribution the cross-entropy method tilts toward failures, with new
+  scenarios drawn from it and a likelihood-ratio-corrected estimate of a rare
+  failure probability (10^-3 and below). A fixed 220-route benchmark has no
+  generative model to tilt, and its SR of .4-.9 is not a rare event: the
+  variance-optimal sampling design for a Bernoulli mean in that range is nearly
+  uniform, so what survives the transfer is unequal-probability route sampling
+  with a Horvitz-Thompson correction — a survey-sampling estimator, not the
+  method. It is cited, not compared.
 
-SR-MAE (mean seconds per cell: FST 11-13, GP 4-10):
+SR-MAE (mean seconds per cell: FST 11-13, GP 4-10, official GP 19, KTCS 7):
 
 | method | K4 B30 | K4 B55 | K4 B110 | K4 B165 | K8 B30 | K8 B55 | K8 B110 | K8 B165 | K12 B30 | K12 B55 | K12 B110 | K12 B165 | macro (9) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -296,6 +321,7 @@ SR-MAE (mean seconds per cell: FST 11-13, GP 4-10):
 | GP adaptive, scene descriptor (faithful) | .0536 | .0410 | .0254 | .0120 | .0466 | .0397 | .0254 | .0108 | .0495 | .0455* | .0241* | .0116* | .0390 |
 | GP adaptive, response profile | .0848* | .0680* | .0443* | .0188* | .0614* | .0534* | .0294* | .0177* | .0591 | .0457* | .0287* | .0171* | .0527 |
 | GP adaptive, OFFICIAL code, scene descriptor | .1542* | .1244* | .0977* | .0924* | .1354* | .1133* | .1005* | .0917* | .1340* | .1165* | .0933* | .0832* | .1188 |
+| Kernel test case sampling, scene descriptor | .1182* | .0800* | .0457* | .0225* | .1149* | .0835* | .0441* | .0219* | .1170* | .0751* | .0440* | .0226* | .0803 |
 | **ATDrive** (Table 1) | **.0450** | **.0332** | **.0223** | **.0116** | **.0448** | **.0337** | **.0202** | **.0082** | **.0477** | **.0231** | **.0160** | **.0081** | **.0318** |
 
 Paired delta against ATDrive, GP adaptive with the scene descriptor: K4
@@ -307,7 +333,8 @@ the scene descriptor: +.0406 [+.0236, +.0596] at K4 B30 down to +.0052 at K4
 B165, +.0164 / +.0112 / +.0064 / +.0054 at K8, +.0140 [-.0007, +.0304] /
 +.0173 / +.0083 / +.0064 at K12. Pairwise ranking accuracy (the Table 1
 companion metric, mean over the nine cells): FST .940 / .935, GP .962 / .941
-(scene / response), the official GP code .868, ATDrive .969.
+(scene / response), the official GP code .868, kernel test case sampling .945,
+ATDrive .969.
 
 The official code (`run_gp_official`: `DiscreteInputs` over the bank with
 weights 1/N, `AcqIVR_FP`, `OptimalDesign.seq_sampling(discrete=True)` and its
@@ -346,6 +373,20 @@ gives an RBF kernel or a similarity net little to work with. Two facts frame the
 comparison: both ports use a route descriptor that ATDrive's planner-evaluation
 setting never touches (it uses the calibration responses only), and at 165 of
 about 215 routes every method converges (.011-.019).
+
+Kernel test case sampling (.0803) is behind UNIFORM random sampling with the
+plain mean at every budget below 165 (.115-.118 vs 0.0623 at B = 30,
+.075-.084 vs 0.0397 at B = 55, .044-.046 vs 0.0245 at B = 110) and level with
+it at B = 165 (0.0144). Two reasons, both structural: the alignment weights
+lambda concentrate the estimate on the few routes that stand for the
+descriptor distribution, which with binary outcomes cuts the effective sample
+far below M; and representativeness in descriptor space is not
+representativeness in outcome space — the descriptor's difficulty signal is
+weak (Table 3A, rho .50-.55 for the best stacks), so a subset that mirrors the
+descriptor distribution mirrors the planner's success rate no better than a
+uniform draw does. The method is built for a 300,000-case naturalistic pool
+where a representative 118 is the point; on a 220-route benchmark whose SR is
+the target it has nothing to add.
 
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 

@@ -205,14 +205,17 @@ tests/          fast invariants
   reproducible as published (unseeded medoids, a `set.seed(NULL)` inside catR's item
   selection, and a selection rule with no randomness at all), and ATLAS's 3PL is
   unidentified at this panel size (RESULTS.md, "Table 1 through the baselines' OWN code").
-- Two efficient-testing methods of the driving literature on the same protocol:
-  the fixed-design FST (Li et al., T-ITS 2025; no public code, ported from the
-  paper) reaches macro .0485 and the GP-adaptive sampling of Gong et al.
+- Three efficient-testing methods of the driving literature on the same
+  protocol: the fixed-design FST (Li et al., T-ITS 2025; no public code, ported
+  from the paper) reaches macro .0485, the GP-adaptive sampling of Gong et al.
   (T-ITS 2023), on the route descriptor, .0390 as our port and .1188 through its
-  official code, against ATDrive's .0318 — ATDrive is lower in every cell, with
-  the paired interval excluding zero only at K_cal = 12, B >= 55 for the ported
-  GP method (RESULTS.md, "AV-testing baselines re-implemented from their
-  papers").
+  official code, and kernel test case sampling (Qian et al., Nature Comm. 2026)
+  .0803, against ATDrive's .0318 — ATDrive is lower in every cell, with the
+  paired interval excluding zero only at K_cal = 12, B >= 55 for the ported GP
+  method. The adaptive importance sampling of O'Kelly et al. is cited, not run:
+  a fixed benchmark with SR .4-.9 has neither the generative scenario model nor
+  the rare event it needs (RESULTS.md, "AV-testing baselines re-implemented
+  from their papers").
 - Zero-shot on nuPlan val14, against a label-shuffle null that carries the
   arm's own variance structure (20 fixed permutations x 3 training seeds),
   the lane-free encoder of record clears on the performance drop at BOTH

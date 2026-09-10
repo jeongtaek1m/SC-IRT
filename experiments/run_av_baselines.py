@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Two AV-testing baselines on the Table 1 protocol: FST (no public code) and the GP adaptive sampling of Gong et al.,
-the latter both through its official code (gpo_scene) and as our port (gp_*).
+"""Three AV-testing baselines on the Table 1 protocol: FST (no public code), the GP adaptive sampling of Gong et al.
+(through its official code, gpo_scene, and as our port, gp_*) and kernel test case sampling (ktcs_scene, from the
+paper's Methods; see run_ktcs).
 
 fst_*   Few-Shot Testing (Li, He, Yang, Hu, Zhang, Feng; IEEE T-ITS 2025, arXiv 2409.14369).  A FIXED test set of
         n = B routes and aggregation weights, chosen before the new planner is seen, from the K_cal calibration
@@ -39,6 +40,7 @@ ranking accuracy of every cell and writes results/up_avbase.json.
     $P experiments/run_av_baselines.py --methods fst_scene fst_resp --seeds 0 4     # shard
     $P experiments/run_av_baselines.py --methods gp_scene gp_resp --seeds 0 4
     OMP_NUM_THREADS=2 $P experiments/run_av_baselines.py --methods gpo_scene --seeds 0 2   # official code, CPU
+    $P experiments/run_av_baselines.py --methods ktcs_scene --seeds 0 2
     $P experiments/run_av_baselines.py --merge
 """
 import argparse
@@ -63,7 +65,7 @@ from atdrive.b2d import load_features                                          #
 from atdrive.splits import up_split                                            # noqa: E402
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene']
+ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene', 'ktcs_scene']
 MFGP = Path(os.environ.get('ATDRIVE_MFGP', '/data2/jeongtae/official_baselines/MFGPreliability/MFGPreliability'))
 DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 GP_NINIT = 10
@@ -342,6 +344,60 @@ def run_gp_official(y, feats, seed, delta=0.5):
     return out
 
 
+# ------------------------------------------------------------------ Kernel test case sampling -----------------------
+def run_ktcs(y, feats, seed, steps=500, nrep=5):
+    """Kernel Test Case Sampling (Qian, Xu, Xing, Guo, Nature Communications 17:3114, 2026), from the paper's Methods
+    (its Code Ocean capsule was not reachable): a FIXED subset of M = B routes chosen from the route descriptors alone,
+    no surrogate planner.  Step 1, coverage: importance weights w_theta(x) = softmax over the cases of a one-layer
+    network, trained to minimise the information potential sum_{i != j} w_i w_j K(x_i, x_j); then Pareto-order
+    sampling, U_i ~ U(0, 1), Q_i = U_i / (1 - U_i) * (1 - w_i) / w_i, the M smallest Q selected (nested over the
+    budgets for one draw of U; nrep draws, the error averaged over draws like the random rows).  Step 2,
+    representativeness: distribution-alignment weights lambda = argmin 1/2 lambda' K_zz lambda - lambda' Kbar,
+    Kbar = (1/N) 1' K_xz, sum lambda = 1, lambda >= 0 (a convex QP, solved by SLSQP).  Readout = sum_j lambda_j y_j
+    (the paper's accident-rate estimate with unit exposure and no correction factors).  RBF kernel; the paper does not
+    state its bandwidth, the median pairwise distance is used."""
+    from scipy.optimize import minimize
+    X = standardise(feats)
+    N = len(y)
+    d2 = ((X[:, None, :] - X[None, :, :]) ** 2).sum(-1)
+    sig2 = np.median(d2[np.triu_indices(N, 1)])
+    K = np.exp(-d2 / (2 * sig2))
+    torch.manual_seed(seed)
+    Kt = torch.tensor(K, dtype=torch.float32, device=DEV)
+    Xt = torch.tensor(X, dtype=torch.float32, device=DEV)
+    lin = nn.Linear(X.shape[1], 1).to(DEV)
+    opt = torch.optim.Adam(lin.parameters(), lr=1e-2)
+    off = 1.0 - torch.eye(N, device=DEV)
+    for _ in range(steps):                                   # Step 1: information potential of the weighted pool
+        w = torch.softmax(lin(Xt).squeeze(-1), 0)
+        loss = (w[:, None] * w[None, :] * Kt * off).sum()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    w = torch.softmax(lin(Xt).squeeze(-1), 0).detach().cpu().numpy().astype(float)
+    Kbar_all = K.mean(0)                                     # (1/N) 1' K_xz for every candidate z
+    rng = np.random.default_rng(seed)
+    out = {B: {'ests': [], 'items': None} for B in BGRID}
+    for rep in range(nrep):
+        U = rng.uniform(1e-9, 1 - 1e-9, N)
+        Q = U / (1 - U) * (1 - w) / np.clip(w, 1e-12, None)   # Pareto-order sampling
+        order = np.argsort(Q)
+        for B in BGRID:
+            sel = order[:B]
+            Kzz, Kbar = K[np.ix_(sel, sel)], Kbar_all[sel]
+            lam0 = np.ones(B) / B                            # Step 2: distribution-alignment weights (convex QP)
+            res = minimize(lambda l: 0.5 * l @ Kzz @ l - l @ Kbar, lam0, jac=lambda l: Kzz @ l - Kbar, method='SLSQP',
+                           bounds=[(0, 1)] * B, constraints=[{'type': 'eq', 'fun': lambda l: l.sum() - 1, 'jac': lambda l: np.ones(B)}],
+                           options={'maxiter': 300, 'ftol': 1e-10})
+            lam = np.clip(res.x, 0, None)
+            lam /= lam.sum()
+            out[B]['ests'].append(float(lam @ y[sel]))
+            if rep == 0:
+                out[B]['items'] = [int(i) for i in sel]
+    return {B: {'est': float(np.mean(v['ests'])), 'ests': v['ests'], 'items': v['items'],
+                'note': f'{nrep} Pareto-order draws; est = mean of the per-draw estimates, err averaged per draw at merge'} for B, v in out.items()}
+
+
 # ------------------------------------------------------------------ driver --------------------------------------
 def run(methods, seeds, out_path):
     recs = json.load(open(out_path)) if out_path.exists() else []
@@ -357,11 +413,13 @@ def run(methods, seeds, out_path):
                     feats = scene_feats(bi) if name.endswith('scene') else fill(R).T
                     cs = cell_seed(seed, Kc, slot)
                     est = run_fst(R, y, feats, cs) if name.startswith('fst') else \
-                        run_gp_official(y, feats, cs) if name.startswith('gpo') else run_gp(y, feats, cs)
+                        run_gp_official(y, feats, cs) if name.startswith('gpo') else \
+                        run_ktcs(y, feats, cs) if name.startswith('ktcs') else run_gp(y, feats, cs)
                     rec = {'seed': seed, 'K': Kc, 'slot': slot, 'method': name, 'SR': SR, 'n_bank': len(bi),
                            'fit_s': time.time() - t0,
-                           'budgets': {str(B): {'est': v['est'], 'err': abs(v['est'] - SR), 'n_items': len(v['items']),
-                                                'items': [int(i) for i in v['items']], 'note': v.get('note', '')}
+                           'budgets': {str(B): {'est': v['est'], 'err': float(np.mean([abs(e - SR) for e in v['ests']])) if 'ests' in v else abs(v['est'] - SR),
+                                                'n_items': len(v['items']), 'items': [int(i) for i in v['items']], 'note': v.get('note', ''),
+                                                **({'ests': v['ests']} if 'ests' in v else {})}
                                        for B, v in est.items()}}
                     recs.append(rec)
                     json.dump(recs, open(out_path, 'w'))
