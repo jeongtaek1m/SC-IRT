@@ -131,7 +131,8 @@ data/
                 the lane-free RelGraph R2-noLane (relgraph_r2nolane_s*.npz), and for the
                 six controls of Table 3A(b): the lane-carrying R2 (relgraph_r2_s*.npz)
                 and noroute / sroute / sa2l / nospeed, and the speed ablation of the
-                encoder of record itself (relgraph_r2nolane_nospeed_s*.npz)
+                encoder of record itself (relgraph_r2nolane_nospeed_s*.npz); the two
+                difficulty-matching ablation arms of the record (relgraph_r2nolane_match{0.1,1}_s*.npz)
   nuplan/       the 584-scenario nuPlan val14 panel (a log-availability subset of the 1,118-token split) and encoder predictions of the zero-shot test;
                 val14_full_zeroshot.npz + full_val14/ the full-split panel (1,118 tokens, 10-planner score matrix, scenario / log / map table)
   live/         cached leave-one-planner-out risk scales for the live evaluator (keyed by bank)

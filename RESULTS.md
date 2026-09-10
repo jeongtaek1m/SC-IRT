@@ -491,15 +491,18 @@ Ridge readout, which is ours):
 | Min-TTC | reference rollout (O, data) | TTC per Hayward 1972 / Westhofen 2023 Sec. 5.2.1, min over time and actors per their Sec. 5.2 (P; O impl. from the definition) | Ridge -> difficulty (O) | literature computation + our readout |
 | EDRF-based risk field | rollout; the single realised future replaces the multimodal predictor (O, substitution of the model's input) | DRP / EDRF / IR / F equations and constants (P; O impl., no code); six route statistics (O) | Ridge (O) | EDRF-based features, not EDRF |
 | Agent-JEPA | the bank's 10 Hz rollouts in 5 s windows (O, data) | the official minDrive-JEPA tokenizer, trainer and surprise score, retrained (P, C); route aggregation = mean over windows (O); a re-implementation on expert clips kept as a second row (O impl.) | Ridge (O) | literature method through its code + our readout |
+| REEval | the 73-d rollout descriptor as the item's content embedding (O; the paper embeds question text with an LLM) | amortized Rasch calibration z = w . e + b fitted jointly with the response likelihood, the notebook's L-BFGS code verbatim (P, C) | the amortized model's own P and z (P, C); no Ridge | literature method through its code + our features |
 | Traffic entropy | rollout converted to the model's format (O) | SMART model through the official CAT-K code and checkpoint (C); the entropy as a difficulty descriptor (O) | Ridge (O) | our construct on a released model: not a literature baseline |
 | in-house rows | rollout | ours | Ridge (O) | ours |
 | ATDrive encoder | rollout | ours (Section Method) | — | ours |
 
-Pending row under the same rule: REEval's amortized calibration (Truong et
-al. 2025: z = w . e + b fitted with the Rasch likelihood by their notebook,
-with our route features as the content embedding;
-`experiments/us_official/reeval_amortized.py`) — a Table 3A row, not a Table 1
-row.
+REEval's amortized calibration (Truong et al. 2025) is a Table 3A row under
+the same rule, not a Table 1 row: z = w . e + b fitted jointly with the Rasch
+likelihood by their notebook code, with our 73-d route descriptor as the
+content embedding, read out by the amortized model itself
+(`experiments/us_official/reeval_amortized.py`): AUROC 0.725 / scene-MAE
+0.210 / rho +0.456, between the single descriptors and the Ridge
+readout of the same descriptor (.758 / .175 / +.533).
 
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 
@@ -1108,7 +1111,13 @@ differs is where the descriptor itself comes from; `experiments/us_official/`,
   latent L2; `experiments/us_official/jepa_official_b2d.py`; a route = the mean
   surprise over its windows, ours) and our earlier re-implementation of Sec. 3
   on Bench2Drive expert clips (the paper-literal best-validation checkpoint and
-  the full 50-epoch schedule).
+  the full 50-epoch schedule); REEval's amortized calibration (Truong et al.
+  2025, github.com/sangttruong/reeval: the Rasch difficulty of an item is
+  z = w . e + b from its content embedding e, fitted jointly with the response
+  likelihood by the notebook's L-BFGS code, copied verbatim; the 73-d rollout
+  descriptor stands in for the paper's LLM text embedding, and the row is read
+  out by the amortized model itself, not by our Ridge plug-in;
+  `experiments/us_official/reeval_amortized.py`, `results/us_reeval_amortized.json`).
 - *our descriptors*: Traffic entropy (the mean next-token entropy of the SMART
   traffic model run through the official CAT-K code and checkpoint; neither
   paper proposes any quantity of the model as a difficulty measure, so the
@@ -1144,6 +1153,7 @@ a control and heads the control block below.
 | Agent-JEPA, official code ([mean, max, p90] over windows) | .697 | .216 (-1.0%) | -.019 |
 | Agent-JEPA (our re-impl.; paper-literal best-val ckpt) | .711 | .205 (+4.1%) | +.151 |
 | Agent-JEPA (our re-impl.; full 50-epoch schedule) | .699 | .216 (-1.0%) | -.003 |
+| REEval amortized calibration (Truong 2025; official notebook fit, own readout) | 0.725 | 0.210 (+1.8%) | +0.456 |
 | Traffic entropy (ours, on SMART / CAT-K) | .704 | .213 (+0.2%) | +.072 |
 | Route geometry (ours) | .719 | .201 (+6.1%) | +.268 |
 | Agent density + kin. (ours) | .715 | .212 (+0.9%) | +.220 |
@@ -1229,6 +1239,40 @@ refit then under-trains where e* was small. The single-stage recipe stays
 the recipe of record. The `--proper-init` variant (re-seed the weights after
 the Rasch fit) is bit-identical to `--early-stop` in the current code — the
 Rasch fit no longer consumes the torch RNG — so it is not a separate arm.
+
+### Recipe control — a difficulty-matching term in the encoder objective
+
+The encoder of record is trained on the marginal likelihood alone,
+-log integral N(b | f_phi(x), sigma_r^2) prod_j Bern(y_ij | sigmoid(theta_hat_j - b)) db
++ 0.05 (log sigma_r)^2, with theta_hat fixed from the calibration block. An
+ablation arm (`--match lambda` of the training code, 2026-09-11) adds
+lambda x mean_i (f_phi(x_i) - b_hat_i)^2 over the training routes of the batch,
+where b_hat_i is the Rasch point difficulty of the same fit that supplies
+theta_hat — the encoder is asked to regress the calibration point estimates
+directly on top of explaining the responses. Same lane-free graph, seeds,
+draws and single-stage 30-epoch recipe as the record
+(`relgraph_e16sel/r2nolane_match{0.1,1}_b2d_s{0,1,2}.npz`, exported to
+`data/encoder/relgraph_r2nolane_match{0.1,1}_s*.npz`, scored by `run_us.py`
+in the control block; deltas paired by seed):
+
+| objective | AUROC | scene-MAE | rho | paired delta vs record (3 runs) |
+|---|---|---|---|---|
+| marginal likelihood only (record) | .761 +- .006 | .181 +- .007 | +.545 +- .024 | — |
+| + matching term, lambda = 0.1 | .763 +- .007 | .177 +- .008 | +.540 +- .032 | AUROC +.001 +- .001, MAE -.004 +- .001, rho -.005 +- .009 |
+| + matching term, lambda = 1 | .758 +- .002 | .180 +- .001 | +.518 +- .003 | AUROC -.003 +- .005, MAE -.001 +- .006, rho -.027 +- .022 |
+
+Reading. At lambda = 0.1 the term changes the ranking metrics by nothing
+(AUROC +.001, rho -.005, both inside the seed spread, rho lower in two runs of
+three) and lowers scene-MAE by .004 in all three runs — a calibration-level
+gain of 2% of the null MAE, from pulling the predictions onto the scale of the
+point estimates, not a difficulty signal the likelihood had missed. At
+lambda = 1 the rank correlation drops in all three runs (-.027, paired) and the
+run-to-run spread collapses (SD of rho .003 against .024): with the squared
+term dominant the encoder becomes a regressor onto the block-A point
+difficulties, which are estimates from 12 planners per route and already
+enter the objective through the responses themselves. The marginal-likelihood
+objective stays the recipe of record; the arms are kept as controls, not
+candidates.
 
 ## nuPlan val14 zero-shot retrieval (`run_nuplan_zeroshot.py`)
 

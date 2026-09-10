@@ -1005,7 +1005,9 @@ def run_b2d(a, tag):
         for stg in plan.stages():
             trn = stg.train                     # stage 1: A_train.  stage 2: the FULL A block.
             torch.manual_seed(a.seed); np.random.seed(a.seed)  # same seed -> same fresh init
-            th_f, _ = rasch(Y[keepJ][:, trn])   # stage 1 theta_inner / stage 2 theta_outer
+            th_f, b_f = rasch(Y[keepJ][:, trn])   # stage 1 theta_inner / stage 2 theta_outer
+            BH = torch.full((R,), float('nan'), device=dev)    # --match: the stage Rasch difficulty of the training routes
+            BH[torch.tensor(np.where(trn)[0], device=dev)] = torch.tensor(b_f, dtype=torch.float32, device=dev)
             if a.proper_init:
                 torch.manual_seed(a.seed)       # re-seed AFTER rasch: rasch reseeds the torch RNG
                                                 # internally, so without this every seed builds the
@@ -1059,6 +1061,8 @@ def run_b2d(a, tag):
                            + (1 - yy[:, :, None]) * torch.log(1 - p + 1e-7)) * mm[:, :, None]
                     loss = -torch.logsumexp(llc.sum(0) + lgw[None, :], 1).sum() / mm.sum() \
                         + 0.05 * ls.pow(2)
+                    if a.match > 0:                                   # ablation arm, see --match
+                        loss = loss + a.match * ((bt - BH[s]) ** 2).mean()
                     opt.zero_grad(); loss.backward()
                     nn.utils.clip_grad_norm_(m.parameters(), 1.0); opt.step()
                     tl += float(loss); nb += 1
@@ -1339,6 +1343,10 @@ def main():
     ap.add_argument('--bs', type=int, default=None)
     ap.add_argument('--nfolds', type=int, default=5)
     ap.add_argument('--draws', type=int, default=99)
+    ap.add_argument('--match', type=float, default=0.0,
+                    help='ablation arm (2026-09-11): add match * mean_i (f_phi(x_i) - b_hat_i)^2 over the training\n'
+                         'routes of the batch, b_hat = the stage Rasch difficulty of the same fit that gives theta_hat.\n'
+                         'Output tag <tag>_match<value>; never the encoder of record.')
     ap.add_argument('--shuffle', default=None, choices=['route', 'a2l'],
                     help='S-route / S-a2l correspondence control (PROTOCOL_R section 2, amended)')
     ap.add_argument('--shuffle-seed', type=int, default=None, help='shuffle seed 0, 1 or 2')
@@ -1414,6 +1422,8 @@ def main():
         tag = 'r2noroute'
     if a.ablate_lane:
         tag = 'r2nolane'
+    if a.match > 0:
+        tag = f'{tag}_match{a.match:g}'
     if a.domain == 'b2d':
         a.epochs = a.epochs or 30; a.bs = a.bs or 64
         run_b2d(a, tag)

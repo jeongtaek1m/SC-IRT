@@ -42,7 +42,8 @@ past a failed anchor.
 | `run_policy_matrix.py` | policy matrix: ATDrive rows (= Table 2), the degenerate ATLAS rows, the matched rows, the IES reference .0393 at K12; factorial: C-B, F-E, G-B exclude zero, B-A, E-A, F-C include zero, fixed-budget Fisher - Delta-R1 at B=55 / 78 |
 | `run_ranking_quality.py` | 13 insertion cells, the \|Delta rank\| identity < 1e-9, mae_only in {5, 6} with the boundary cell, mae_rank_exact .0203 (1417 of 2112), rank<=1 at K8, Fluid SE stop macro; co-estimated and within-draw rank-only cells, Table 1's pairwise column reproduced, K8 Fluid B=match +.0521 |
 | `run_route_discrimination.py --merge` | 6 AUROC cells, macro AUROC / Brier of 3 orders, 36 drops, both rank-agreement rhos, pooled ATDrive - Random-strat spans 0 (n 751, 9 of 12), zero-rollout macro Brier of every order, Brier skill / AUROC gain of Random-strat > 0, common-set macro AUROC and spread |
-| `run_us.py` | Table 3A: null, the two hand-crafted rows, the 3-run means of the encoder of record (lane-free R2-noLane); Table 3A(b): the rho of the five controls (the lane-carrying R2, noroute, sroute, sa2l, nospeed) |
+| `run_us.py` | Table 3A: null, the two hand-crafted rows, the 3-run means of the encoder of record (lane-free R2-noLane); Table 3A(b): the rho of the six controls (the lane-carrying R2, noroute, sroute, sa2l, nospeed, nlnospeed); the two difficulty-matching arms (match0.1, match1) are printed in the same block without anchors |
+| `us_official/reeval_amortized.py` | the REEval amortized-calibration row of Table 3A (`results/us_reeval_amortized.json`): AUROC .725 / scene-MAE .210 / rho +.456 over 640 route evaluations; no anchors |
 | `run_ups.py` | Table 3B: representative MAE cells per policy under the lane-free prior of record (tol .003), and the Delta-R1 MAE + per-cell NLL cells of all three priors (lane-free, the lane-carrying control, the speed-ablated control) |
 | `run_ups_full.py --merge` | the scene prior's identity (npz name + content md5, checked before any anchor); 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .003 in the readout and in the acquisition |
 | `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the pairwise ranking accuracy of each cell (`rank_acc`), the ATLAS stopping rule, and the 2 recorded ATLAS failures |
@@ -227,7 +228,8 @@ python experiments/run_cat_objective.py --merge        # policy-matrix trajector
 python experiments/run_policy_matrix.py                # adaptive policies under one IRT + the factorial
 for lo in 0 4 8 12; do python experiments/run_route_discrimination.py --seeds $lo $((lo+4)) & done; wait
 python experiments/run_route_discrimination.py --merge # route-level discrimination (reads up_frontier.json, adaptive.json)
-python experiments/run_us.py                           # Table 3A + 3A(b)
+python experiments/run_us.py                           # Table 3A + 3A(b) (+ the difficulty-matching arms)
+CUDA_VISIBLE_DEVICES=3 python experiments/us_official/reeval_amortized.py   # the REEval row of Table 3A
 python experiments/run_ups.py                          # Table 3B (results/ups.json) + the two control priors (ups_lane.json, ups_nospeed.json)
 for lo in 0 2 4 6 8 10 12 14; do ATDRIVE_DEVICE=cpu python experiments/run_ups_full.py --seeds $lo $((lo+2)) & done; wait
 python experiments/run_ups_full.py --merge             # UPS on the full 220-route SR

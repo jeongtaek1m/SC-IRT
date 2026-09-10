@@ -46,13 +46,17 @@ OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parent
 RUNS = (0, 1, 2)
 CONTROLS = {'lane': 'R2, lane graph kept', 'noroute': 'R2 w/o route relation',                 # 'lane' = the encoder earlier releases shipped
             'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled',
-            'nospeed': 'R2, speed channel removed', 'nlnospeed': 'R2-noLane, speed channel removed'}
+            'nospeed': 'R2, speed channel removed', 'nlnospeed': 'R2-noLane, speed channel removed',
+            'match0.1': 'R2-noLane + difficulty-matching term, lambda .1 (ablation arm)',
+            'match1': 'R2-noLane + difficulty-matching term, lambda 1 (ablation arm)'}
 
 
 def ctrl_npz(c, s):
     """The control npz of run s: the lane-carrying model keeps its own file name."""
     if c == 'nlnospeed':                                   # the speed ablation of the encoder of record
         return DATA / 'encoder' / f'relgraph_r2nolane_nospeed_s{s}.npz'
+    if c.startswith('match'):                              # the difficulty-matching ablation arms (--match of the harness)
+        return DATA / 'encoder' / f'relgraph_r2nolane_{c}_s{s}.npz'
     return DATA / 'encoder' / (f'relgraph_r2_s{s}.npz' if c == 'lane' else f'relgraph_r2_{c}_s{s}.npz')
 
 
