@@ -301,30 +301,38 @@ excludes zero against ATDrive.
   exposure and no correction factor. RBF kernel with the median-distance
   bandwidth (the paper states none). Its Code Ocean capsule (10.24433/CO.9203840.v1)
   was not reachable, so this is from the paper's Methods.
-- **DICE-style sampling** (Farid, Schleede, Huang, Heckman, "Foundation models
-  for rapid autonomy validation", ICRA 2025): the paper's Algorithm 2 with OUR
-  inputs, because its substance — a 34M-parameter masked autoencoder pre-trained
-  on 14 million proprietary Zoox snippets, a collision head trained on the
-  simulation outcomes of previous software versions, an 800,000-scenario
-  validation set — is unreleased (no code, no weights, no data; "patent
-  pending" on the first author's page). Embedding z = the route descriptor
-  (`dice_desc`) or a masked autoencoder trained on the bank's own 2,656 RelGraph
-  windows with the paper's recipe at that scale (`dice_mae`,
-  `experiments/dice_mae.py`: ego / agent-track / lane-polyline tokens, mask
-  ratio .5 to a zero vector, 4-layer transformer, L1 reconstruction, the
-  ego-token mean as the embedding, 154k parameters, 64 s on one GPU, no label
-  read); difficulty d = the K_cal calibration planners' failure rate on the
-  route, which is what the paper's head predicts. concat(z, d) is clustered by
-  k-means into M = 10 groups (the paper leaves M and the weight of d open: z
-  standardised, d scaled to the variance of the whole z block), a cluster is
-  drawn with probability proportional to K_0 + mean(d) with K_0 = 1 (the value
-  the paper discusses), a route uniformly inside it without replacement, nested
-  over the budgets, five draws, the error averaged per draw. Readout = the
-  paper's stratified count: the failures found in a cluster scaled by the
-  inverse of its sampled share (an unsampled cluster contributes none), SR =
-  1 - failures / N. The paper reports no estimation error — its metric is the
-  share of collisions found on its own data — so there is no number of its own
-  to reproduce; this row is a "-style" baseline and is labelled so.
+- **DICE** (Farid, Schleede, Huang, Heckman, "Foundation models for rapid
+  autonomy validation", ICRA 2025), re-implemented end to end at the bank's
+  scale, because the paper's own artefacts — a 34M-parameter masked
+  autoencoder pre-trained on 14 million proprietary Zoox snippets, a collision
+  head trained on the simulation outcomes of previous software versions, an
+  800,000-scenario validation set — are unreleased (no code, no weights, no
+  data; "patent pending" on the first author's page). (i) Pre-training
+  (`experiments/dice_mae.py`): a masked autoencoder with the paper's recipe on
+  the bank's own 2,656 RelGraph windows — ego / agent-track / lane-polyline
+  tokens (Bench2Drive has no traffic signals), mask ratio .5 to a zero vector
+  (Sec. III-C), a 4-layer transformer, L1 reconstruction on every valid token
+  with equal type weights (Sec. III-E), 154k parameters, 64 s on one GPU, no
+  label read; the ego-token mean is the 64-d scenario embedding (Sec. VI-A).
+  (ii) The difficulty head (Sec. IV-B / VI-A): backbone frozen, the pooled ego
+  / track / road embeddings concatenated, an MLP to a scalar, binary
+  cross-entropy on the simulation outcomes of previous software versions —
+  here every (route, calibration planner) cell with a response is one example,
+  as the paper adds a log once per software version, trained per cell on the
+  K_cal calibration planners only; its output is the difficulty d (Sec. IV-C).
+  (iii) Algorithm 2: concat(z, d) clustered by k-means into M = 10 groups (the
+  paper leaves M and the weight of d open: z standardised, d scaled to the
+  variance of the whole z block), a cluster drawn with probability
+  proportional to K_0 + mean(d) with K_0 = 1 (the value the paper discusses), a
+  route uniformly inside it without replacement, nested over the budgets, five
+  draws, the error averaged per draw; readout = the paper's stratified count,
+  the failures found in a cluster scaled by the inverse of its sampled share
+  (an unsampled cluster contributes none), SR = 1 - failures / N. This is
+  `dice_full`; two ablations of the port replace the head by the calibration
+  planners' failure rate (`dice_mae`) and, additionally, the embedding by the
+  route descriptor (`dice_desc`). The paper reports no estimation error — its
+  metric is the share of collisions found on its own data — so there is no
+  number of its own to reproduce.
 - **Not run: adaptive importance sampling** (O'Kelly, Sinha, Namkoong, Duchi,
   Tedrake, NeurIPS 2018). Its substance is a generative traffic model whose
   proposal distribution the cross-entropy method tilts toward failures, with new
@@ -346,8 +354,9 @@ SR-MAE (mean seconds per cell: FST 11-13, GP 4-10, official GP 19, KTCS 7, DICE-
 | GP adaptive, response profile | .0848* | .0680* | .0443* | .0188* | .0614* | .0534* | .0294* | .0177* | .0591 | .0457* | .0287* | .0171* | .0527 |
 | GP adaptive, OFFICIAL code, scene descriptor | .1542* | .1244* | .0977* | .0924* | .1354* | .1133* | .1005* | .0917* | .1340* | .1165* | .0933* | .0832* | .1188 |
 | Kernel test case sampling, scene descriptor | .1182* | .0800* | .0457* | .0225* | .1149* | .0835* | .0441* | .0219* | .1170* | .0751* | .0440* | .0226* | .0803 |
-| DICE-style, scene descriptor + surrogate difficulty | .0851* | .0522* | .0296* | .0164* | .0815* | .0526* | .0279* | .0149* | .0853* | .0529* | .0249* | .0137* | .0547 |
-| DICE-style, MAE embedding (trained on the bank) + surrogate difficulty | .0857* | .0552* | .0307* | .0172* | .0772* | .0522* | .0288* | .0159* | .0808* | .0561* | .0283* | .0150* | .0550 |
+| DICE, re-implemented end to end (MAE + head + Algorithm 2) | .0831* | .0527* | .0289* | .0158* | .0808* | .0518* | .0297* | .0147* | .0775* | .0519* | .0279* | .0163* | .0538 |
+| DICE, head replaced by the surrogate failure rate | .0857* | .0552* | .0307* | .0172* | .0772* | .0522* | .0288* | .0159* | .0808* | .0561* | .0283* | .0150* | .0550 |
+| DICE, ... and the embedding by the route descriptor | .0851* | .0522* | .0296* | .0164* | .0815* | .0526* | .0279* | .0149* | .0853* | .0529* | .0249* | .0137* | .0547 |
 | **ATDrive** (Table 1) | **.0450** | **.0332** | **.0223** | **.0116** | **.0448** | **.0337** | **.0202** | **.0082** | **.0477** | **.0231** | **.0160** | **.0081** | **.0318** |
 
 Paired delta against ATDrive, GP adaptive with the scene descriptor: K4
@@ -360,7 +369,7 @@ B165, +.0164 / +.0112 / +.0064 / +.0054 at K8, +.0140 [-.0007, +.0304] /
 +.0173 / +.0083 / +.0064 at K12. Pairwise ranking accuracy (the Table 1
 companion metric, mean over the nine cells): FST .940 / .935, GP .962 / .941
 (scene / response), the official GP code .868, kernel test case sampling .945,
-DICE-style .970 / .965 (descriptor / MAE), ATDrive .969.
+DICE .973 (end to end; .965 / .970 for the two ablations), ATDrive .969.
 
 The official code (`run_gp_official`: `DiscreteInputs` over the bank with
 weights 1/N, `AcqIVR_FP`, `OptimalDesign.seq_sampling(discrete=True)` and its
@@ -413,20 +422,23 @@ uniform draw does. The method is built for a 300,000-case naturalistic pool
 where a representative 118 is the point; on a 220-route benchmark whose SR is
 the target it has nothing to add.
 
-DICE-style sampling (.0547 / .0550) is also behind uniform random sampling at
-every budget (.077-.086 vs .0623 at B = 30, .052-.056 vs .0397 at B = 55,
-.025-.031 vs .0245 at B = 110, .014-.017 vs .0144 at B = 165), and the two
-embeddings give the same number. The scheme trades estimation variance for
+DICE (.0538 end to end; .0550 / .0547 for the ablations) is also behind
+uniform random sampling at every budget (.078-.086 vs .0623 at B = 30,
+.052-.056 vs .0397 at B = 55, .028-.031 vs .0245 at B = 110, .015-.017 vs
+.0144 at B = 165), and the three variants give the same number: the head
+reproduces the calibration planners' failure rate it is trained on (Spearman
+.96-.99 with it in every cell), so the end-to-end pipeline and its ablations
+feed Algorithm 2 the same difficulty. The scheme trades estimation variance for
 exposure to hard clusters by design: the difficulty tilt (at most 2 x between
 clusters at K_0 = 1) buys nothing for an SR of .4-.9, while the stratified
 count over ten k-means clusters, several of them a handful of routes, has a
 larger variance than the plain mean of a uniform draw. Its pairwise ranking
-accuracy is nevertheless as high as ATDrive's (.970 vs .969): the
+accuracy is nevertheless as high as ATDrive's (.973 vs .969): the
 stratified estimate is noisy but unbiased, and an unbiased noise of .05
 rarely crosses the .1-.2 gaps between planners. As a difficulty signal the
 bank-trained MAE embedding is real but weaker than the hand-crafted
 descriptor (a 10-fold ridge probe of the failure rate over the whole bank:
-Spearman +.48 vs +.70), which is why the two DICE rows coincide. The
+Spearman +.48 vs +.70), which is why the DICE rows coincide. The
 Zoox paper's argument — find more collisions per simulated mile while
 covering every cluster — is about a 800,000-scenario pool with rare
 collisions, not about the error of a benchmark score.

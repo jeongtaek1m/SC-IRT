@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Four AV-testing baselines on the Table 1 protocol: FST (no public code), the GP adaptive sampling of Gong et al.
 (through its official code, gpo_scene, and as our port, gp_*), kernel test case sampling (ktcs_scene, from the
-paper's Methods; see run_ktcs) and DICE-style sampling (dice_desc / dice_mae, the sampling scheme of Farid et al.
-with our embedding and difficulty; see run_dice and experiments/dice_mae.py).
+paper's Methods; see run_ktcs) and DICE of Farid et al. re-implemented end to end at the bank's scale (dice_full:
+experiments/dice_mae.py backbone, dice_head, run_dice; dice_mae / dice_desc are ablations of the port).
 
 fst_*   Few-Shot Testing (Li, He, Yang, Hu, Zhang, Feng; IEEE T-ITS 2025, arXiv 2409.14369).  A FIXED test set of
         n = B routes and aggregation weights, chosen before the new planner is seen, from the K_cal calibration
@@ -67,7 +67,7 @@ from atdrive.b2d import load_features                                          #
 from atdrive.splits import up_split                                            # noqa: E402
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene', 'ktcs_scene', 'dice_desc', 'dice_mae']
+ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene', 'ktcs_scene', 'dice_desc', 'dice_mae', 'dice_full']
 MFGP = Path(os.environ.get('ATDRIVE_MFGP', '/data2/jeongtae/official_baselines/MFGPreliability/MFGPreliability'))
 DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 GP_NINIT = 10
@@ -98,7 +98,7 @@ def scene_feats(bi, name='desc'):
             ck, gt = load_features('eval_cmdkin_stats'), load_features('eval_gtrisk')
             _SCENE[name] = np.stack([np.concatenate([ck[r], gt[r]]) for r in calR])
         else:
-            f = load_features('eval_dice_mae')
+            f = load_features('eval_dice_mae' if name == 'mae' else 'eval_dice_mae_pooled')
             _SCENE[name] = np.stack([f[r] for r in calR])
     return _SCENE[name][bi]
 
@@ -405,13 +405,35 @@ def run_ktcs(y, feats, seed, steps=500, nrep=5):
 
 
 # ------------------------------------------------------------------ DICE-style sampling ----------------------------
-def run_dice(R, y, feats, seed, M=10, K0=1.0, nrep=5):
+def dice_head(R, pooled, seed, epochs=300):
+    """The paper's difficulty head (Sec. IV-B / VI-A): backbone frozen, the pooled ego / track / road embeddings
+    concatenated, an MLP to a scalar, binary cross-entropy on the simulation outcomes of previous software
+    versions — here every (route, calibration planner) cell with a response is one example (the paper adds a log
+    once per software version with identical inputs), trained per cell on the K_cal calibration planners only.
+    Returns the head's collision probability of every bank route (Sec. IV-C)."""
+    torch.manual_seed(seed)
+    X = torch.tensor(standardise(pooled), dtype=torch.float32)
+    rows, labels = np.where(~np.isnan(R.T))                       # (route, planner) examples
+    yb = torch.tensor(1.0 - R.T[rows, labels], dtype=torch.float32)  # 1 = failure
+    Xb = X[torch.tensor(rows)]
+    net = nn.Sequential(nn.Linear(X.shape[1], 64), nn.ReLU(), nn.Linear(64, 1))
+    opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
+    for _ in range(epochs):
+        loss = nn.functional.binary_cross_entropy_with_logits(net(Xb).squeeze(-1), yb)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    with torch.no_grad():
+        return torch.sigmoid(net(X).squeeze(-1)).numpy().astype(float)
+
+
+def run_dice(R, y, feats, seed, M=10, K0=1.0, nrep=5, d=None):
     """DICE-style sampling (Farid, Schleede, Huang, Heckman, "Foundation models for rapid autonomy validation", ICRA
-    2025, Algorithm 2), with OUR inputs: the paper's foundation model, difficulty head and data are proprietary and
-    unreleased, so this is its sampling scheme and estimator only.  Embedding z = the route descriptor (dice_desc) or
-    a masked-autoencoder embedding trained on the bank's scene tensors (dice_mae, experiments/dice_mae.py);
-    difficulty d = the K_cal calibration planners' failure rate on the route (what the paper's head, trained on the
-    simulation outcomes of previous software versions, predicts).  concat(z, d) is clustered into M groups by
+    2025, Algorithm 2).  dice_full is the paper's pipeline end to end at the bank's scale: the masked-autoencoder
+    backbone of experiments/dice_mae.py, its difficulty head (dice_head) trained on the calibration planners'
+    outcomes, and this sampling scheme; dice_mae replaces the head by the calibration planners' failure rate,
+    dice_desc additionally replaces the embedding by the route descriptor.  The paper's own model and data are
+    proprietary and unreleased, so every variant is a re-implementation at Bench2Drive scale.  concat(z, d) is clustered into M groups by
     k-means (the paper leaves the weight of d and M open: z standardised, d standardised and scaled to the variance
     of the whole z block, M = 10); a cluster is drawn with probability proportional to K0 + mean(d) (K0 = 1, the value
     the paper discusses), a route uniformly inside it without replacement; the sequence is nested over the budgets,
@@ -420,7 +442,8 @@ def run_dice(R, y, feats, seed, M=10, K0=1.0, nrep=5):
     contributes none), SR = 1 - failures / N."""
     Z = standardise(feats)
     N = len(y)
-    d = 1.0 - fill(R).mean(0)                                # surrogate failure rate = the difficulty score
+    if d is None:
+        d = 1.0 - fill(R).mean(0)                            # surrogate failure rate = the difficulty score
     dz = (d - d.mean()) / (d.std() + 1e-9) * np.sqrt(Z.shape[1])
     lab = KMeans(M, n_init=10, random_state=seed).fit(np.hstack([Z, dz[:, None]])).labels_
     sizes = np.bincount(lab, minlength=M)
@@ -460,11 +483,12 @@ def run(methods, seeds, out_path):
                     if (seed, Kc, slot, name) in done:
                         continue
                     t0 = time.time()
-                    feats = scene_feats(bi, 'mae') if name == 'dice_mae' else scene_feats(bi) if (name.endswith('scene') or name == 'dice_desc') else fill(R).T
+                    feats = scene_feats(bi, 'mae') if name in ('dice_mae', 'dice_full') else scene_feats(bi) if (name.endswith('scene') or name == 'dice_desc') else fill(R).T
                     cs = cell_seed(seed, Kc, slot)
                     est = run_fst(R, y, feats, cs) if name.startswith('fst') else \
                         run_gp_official(y, feats, cs) if name.startswith('gpo') else \
                         run_ktcs(y, feats, cs) if name.startswith('ktcs') else \
+                        run_dice(R, y, feats, cs, d=dice_head(R, scene_feats(bi, 'pooled'), cs)) if name == 'dice_full' else \
                         run_dice(R, y, feats, cs) if name.startswith('dice') else run_gp(y, feats, cs)
                     rec = {'seed': seed, 'K': Kc, 'slot': slot, 'method': name, 'SR': SR, 'n_bank': len(bi),
                            'fit_s': time.time() - t0,

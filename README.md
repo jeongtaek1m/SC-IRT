@@ -210,10 +210,10 @@ tests/          fast invariants
   from the paper) reaches macro .0485, the GP-adaptive sampling of Gong et al.
   (T-ITS 2023), on the route descriptor, .0390 as our port and .1188 through its
   official code, and kernel test case sampling (Qian et al., Nature Comm. 2026)
-  .0803 and the DICE-style sampling of Farid et al. (ICRA 2025; its foundation
-  model and data are proprietary, so its sampling scheme runs on our descriptor
-  or on a masked autoencoder trained on the bank) .0547 / .0550, against
-  ATDrive's .0318 — ATDrive is lower in every cell, with the paired interval
+  .0803 and DICE of Farid et al. (ICRA 2025; its model and data are
+  proprietary, so the pipeline — masked-autoencoder pre-training, difficulty
+  head, cluster-weighted sampling — is re-implemented at the bank's scale)
+  .0538, against ATDrive's .0318 — ATDrive is lower in every cell, with the paired interval
   excluding zero only at K_cal = 12, B >= 55 for the ported GP method. The adaptive importance sampling of O'Kelly et al. is cited, not run:
   a fixed benchmark with SR .4-.9 has neither the generative scenario model nor
   the rare event it needs (RESULTS.md, "AV-testing baselines re-implemented

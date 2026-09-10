@@ -11,7 +11,9 @@ r = 0.5 over the valid tokens replaced by a zero vector (Sec. III-C), a 4-layer 
 linear decoders, L1 reconstruction on every valid token with equal type weights (Sec. III-E with lambda = 1 and
 r_loss = 1), 30 epochs of AdamW 3e-4. The window embedding is the mean of the ego-step tokens (Sec. VI-A), the
 route embedding the mean over its windows. No response, planner or scenario-type label is read: this is
-unsupervised on scene content only. Writes data/features/eval_dice_mae.npz in the load_features format.
+unsupervised on scene content only. Writes data/features/eval_dice_mae.npz (the 64-d ego embedding used for
+clustering) and eval_dice_mae_pooled.npz (the pooled ego / track / road embeddings, 192-d, that the paper's
+difficulty head takes as input; Sec. IV-B) in the load_features format.
 
     CUDA_VISIBLE_DEVICES=1 python experiments/dice_mae.py
 """
@@ -120,12 +122,23 @@ def main():
             print(f'[dice_mae] epoch {ep:2d} loss {tot / nb:.4f}', flush=True)
     m.eval()
     with torch.no_grad():                                                   # no masking at inference (Sec. III-C)
-        emb = torch.cat([m(ego_t[i:i + 256], ag_t[i:i + 256], agv_t[i:i + 256], ln_t[i:i + 256], lm_t[i:i + 256])[0][:, :12].mean(1)
-                         for i in range(0, W, 256)]).cpu().numpy()
+        emb, pooled = [], []
+        for i in range(0, W, 256):
+            h, valid = m(ego_t[i:i + 256], ag_t[i:i + 256], agv_t[i:i + 256], ln_t[i:i + 256], lm_t[i:i + 256])
+            emb.append(h[:, :12].mean(1))                                   # the ego-state embedding (Sec. VI-A)
+            av, lv = agv_t[i:i + 256].float(), lm_t[i:i + 256].float()      # the pooled ego / track / road embeddings
+            pooled.append(torch.cat([h[:, :12].mean(1),                     # that feed the difficulty head (Sec. IV-B)
+                                     (h[:, 12:60] * av[..., None]).sum(1) / av.sum(1, keepdim=True).clamp(min=1),
+                                     (h[:, 60:] * lv[..., None]).sum(1) / lv.sum(1, keepdim=True).clamp(min=1)], 1))
+        emb = torch.cat(emb).cpu().numpy()
+        pooled = torch.cat(pooled).cpu().numpy()
     routes = sorted(set(rid))
+    names = np.array([f'route_{r}' for r in routes])
     stats = np.stack([emb[rid == r].mean(0) for r in routes]).astype(np.float32)
-    np.savez(OUT, names=np.array([f'route_{r}' for r in routes]), stats=stats)
-    print(f'[dice_mae] wrote {OUT}: {stats.shape}, per-dim SD mean {stats.std(0).mean():.3f}', flush=True)
+    np.savez(OUT, names=names, stats=stats)
+    head = np.stack([pooled[rid == r].mean(0) for r in routes]).astype(np.float32)
+    np.savez(OUT.with_name('eval_dice_mae_pooled.npz'), names=names, stats=head)
+    print(f'[dice_mae] wrote {OUT}: {stats.shape}, per-dim SD mean {stats.std(0).mean():.3f}; pooled head input {head.shape}', flush=True)
 
 
 if __name__ == '__main__':
