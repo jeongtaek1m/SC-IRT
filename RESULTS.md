@@ -238,6 +238,93 @@ calibration and readout (upper table) order at .92-.95 there. Fluid's own
 code, whose SR-MAE is the closest to ATDrive's in Table 1-official, orders at
 .89-.94 at B = 30 against ATDrive's .95-.96.
 
+## Table 1 — AV-testing baselines re-implemented from their papers (`run_av_baselines.py`)
+
+Two efficient-testing methods of the driving literature, neither with public
+code, ported to the Table 1 protocol: the same 16 draws, K_cal subsamples,
+banks and budgets, every cell paired with the ATDrive cell of
+`up_frontier.json`. 64 evaluations per cell, `results/up_avbase.json`; * =
+the paired cluster bootstrap over the evaluation planners (as in Table 1)
+excludes zero against ATDrive.
+
+- **FST** (Li, He, Yang, Hu, Zhang, Feng, "Few-shot testing of autonomous
+  vehicles with scenario similarity learning", IEEE T-ITS 2025): a FIXED test
+  set of n = B routes and aggregation weights, chosen before the new planner is
+  seen, from the K_cal calibration planners as the surrogate vehicle set. The
+  cross-attention similarity network (MLP features, reciprocal-L2 attention,
+  softmax over the selected routes for every route of the bank) gives a
+  selected route the similarity mass of the bank it collects as its weight
+  (paper Eq. 13-16); the loss is the max over surrogates of |weighted estimate
+  - true mean| (Eq. 17 / 20) plus the paper's fluctuation term with w_M = 1,
+  the value of its experiments (under the paper's query-wise normalisation the
+  term equals the surrogate's own error, so it is the mean surrogate error
+  here); training sets are drawn from k-means clusters of the surrogate
+  performance (the paper's critical distribution P_c); one network per cell
+  serves every budget (the paper reuses one network for n = 5, 10, 20), then
+  the set is optimised per budget. Deviation: the paper moves continuous
+  scenario coordinates by gradient descent; the bank is discrete, so the set is
+  optimised by best-improvement swap search from the best of 32 P_c draws.
+  Readout = the weighted observed outcomes. "scene descriptor" feeds the
+  network the route descriptor (the paper's scenario state; the 25-d kinematics
+  + 48-d risk descriptors of Table 3A), "response profile" the surrogates'
+  responses instead.
+- **GP adaptive sampling** (Gong, Feng, Pan, "An adaptive multi-fidelity
+  sampling framework for safety analysis of connected and automated vehicles",
+  IEEE T-ITS 2023), the single-fidelity method: GP regression on the new
+  planner's outcomes over a route feature space; the next route is the one
+  whose execution most reduces the variance bound of the accident rate (paper
+  Eq. 8-13: a hypothetical sample at the current mean leaves the mean and
+  shrinks the covariance in closed form, no refit); RBF kernel, hyperparameters
+  by marginal likelihood at every step, 10 random routes first. Deviations: the
+  outcome is binary (regression on {0, 1}, delta = .5, constant prior mean; an
+  unexecuted route's success probability is that of its predictive outcome —
+  latent plus noise variance, the latent alone would call a constant-plus-noise
+  fit certain); the candidates are the unexecuted routes (argmax in place of
+  continuous optimisation); executed routes enter the estimate with their
+  outcome and leave the bound (the paper's f is noise-free, where the two
+  coincide). Same two feature spaces.
+
+SR-MAE (mean seconds per cell: FST 11-13, GP 4-10):
+
+| method | K4 B30 | K4 B55 | K4 B110 | K4 B165 | K8 B30 | K8 B55 | K8 B110 | K8 B165 | K12 B30 | K12 B55 | K12 B110 | K12 B165 | macro (9) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FST, scene descriptor (faithful) | .0856* | .0558* | .0357* | .0168* | .0611* | .0449* | .0266* | .0135* | .0617 | .0403* | .0243* | .0146* | .0485 |
+| FST, response profile | .0986* | .0673* | .0337* | .0155* | .0651* | .0399 | .0292* | .0182* | .0700* | .0493* | .0234* | .0169* | .0529 |
+| GP adaptive, scene descriptor (faithful) | .0536 | .0410 | .0254 | .0120 | .0466 | .0397 | .0254 | .0108 | .0495 | .0455* | .0241* | .0116* | .0390 |
+| GP adaptive, response profile | .0848* | .0680* | .0443* | .0188* | .0614* | .0534* | .0294* | .0177* | .0591 | .0457* | .0287* | .0171* | .0527 |
+| **ATDrive** (Table 1) | **.0450** | **.0332** | **.0223** | **.0116** | **.0448** | **.0337** | **.0202** | **.0082** | **.0477** | **.0231** | **.0160** | **.0081** | **.0318** |
+
+Paired delta against ATDrive, GP adaptive with the scene descriptor: K4
++.0086 [-.0051, +.0243] / +.0078 [-.0049, +.0217] / +.0030 [-.0045, +.0113] /
++.0004 [-.0026, +.0036] at B = 30 / 55 / 110 / 165, K8 +.0019 / +.0060 / +.0052 /
++.0026 (all intervals include zero), K12 +.0018 [-.0153, +.0195] / +.0224
+[+.0117, +.0334] / +.0081 [+.0007, +.0162] / +.0035 [+.0002, +.0066]. FST with
+the scene descriptor: +.0406 [+.0236, +.0596] at K4 B30 down to +.0052 at K4
+B165, +.0164 / +.0112 / +.0064 / +.0054 at K8, +.0140 [-.0007, +.0304] /
++.0173 / +.0083 / +.0064 at K12. Pairwise ranking accuracy (the Table 1
+companion metric, mean over the nine cells): FST .940 / .935, GP .962 / .941
+(scene / response), ATDrive .969.
+
+Reading. The GP method on the route descriptor is the strongest of the four
+(macro .0390 over the nine Table 1 cells; ATDrive .0318, the random references
+.0371-.0422, tinyBenchmarks' own code .0419): ATDrive is lower in all twelve
+cells, but the paired interval excludes zero only at K_cal = 12 with B >= 55;
+at K_cal = 4 and 8 the two are within noise. That method sees the same route
+descriptor the ATDrive encoder uses only for NEW routes, and no calibration
+response at all — its adaptive route choice on a feature-space surrogate does
+most of the work, and it is the closest competitor to ATDrive's own adaptive
+rule in the whole comparison. The fixed-design FST sits at .0485 (ATDrive lower
+in all twelve cells, eleven with the interval excluding zero), between
+tinyBenchmarks and Fluid's own code; the min-max fit to the K_cal surrogates is
+exact on them (the paper's Theorem 2) and the question is only how the fixed
+set transfers to the new planner — the same failure mode as AnchorPoints,
+milder. Feeding either method the surrogates' response profile instead of the
+descriptor is worse (.0527 / .0529): a 4-12-dimensional binary feature space
+gives an RBF kernel or a similarity net little to work with. Two facts frame the
+comparison: both ports use a route descriptor that ATDrive's planner-evaluation
+setting never touches (it uses the calibration responses only), and at 165 of
+about 215 routes every method converges (.011-.019).
+
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 
 Table 1 scores one aggregate per evaluation. This diagnostic asks how well
