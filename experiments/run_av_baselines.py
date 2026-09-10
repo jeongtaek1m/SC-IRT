@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Three AV-testing baselines on the Table 1 protocol: FST (no public code), the GP adaptive sampling of Gong et al.
-(through its official code, gpo_scene, and as our port, gp_*) and kernel test case sampling (ktcs_scene, from the
-paper's Methods; see run_ktcs).
+"""Four AV-testing baselines on the Table 1 protocol: FST (no public code), the GP adaptive sampling of Gong et al.
+(through its official code, gpo_scene, and as our port, gp_*), kernel test case sampling (ktcs_scene, from the
+paper's Methods; see run_ktcs) and DICE-style sampling (dice_desc / dice_mae, the sampling scheme of Farid et al.
+with our embedding and difficulty; see run_dice and experiments/dice_mae.py).
 
 fst_*   Few-Shot Testing (Li, He, Yang, Hu, Zhang, Feng; IEEE T-ITS 2025, arXiv 2409.14369).  A FIXED test set of
         n = B routes and aggregation weights, chosen before the new planner is seen, from the K_cal calibration
@@ -41,6 +42,7 @@ ranking accuracy of every cell and writes results/up_avbase.json.
     $P experiments/run_av_baselines.py --methods gp_scene gp_resp --seeds 0 4
     OMP_NUM_THREADS=2 $P experiments/run_av_baselines.py --methods gpo_scene --seeds 0 2   # official code, CPU
     $P experiments/run_av_baselines.py --methods ktcs_scene --seeds 0 2
+    CUDA_VISIBLE_DEVICES=1 $P experiments/dice_mae.py && $P experiments/run_av_baselines.py --methods dice_desc dice_mae --seeds 0 2
     $P experiments/run_av_baselines.py --merge
 """
 import argparse
@@ -65,7 +67,7 @@ from atdrive.b2d import load_features                                          #
 from atdrive.splits import up_split                                            # noqa: E402
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene', 'ktcs_scene']
+ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene', 'ktcs_scene', 'dice_desc', 'dice_mae']
 MFGP = Path(os.environ.get('ATDRIVE_MFGP', '/data2/jeongtae/official_baselines/MFGPreliability/MFGPreliability'))
 DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 GP_NINIT = 10
@@ -84,17 +86,21 @@ def fill(R):
     return Rf
 
 
-_SCENE = None
+_SCENE = {}
 
 
-def scene_feats(bi):
-    """The route descriptors of the bank rows (25-d kinematics + 48-d risk, as the US baselines use them)."""
-    global _SCENE
-    if _SCENE is None:
-        ck, gt = load_features('eval_cmdkin_stats'), load_features('eval_gtrisk')
+def scene_feats(bi, name='desc'):
+    """Route features of the bank rows: 'desc' = the 25-d kinematics + 48-d risk descriptors the US baselines use,
+    'mae' = the 64-d masked-autoencoder embedding of experiments/dice_mae.py (data/features/eval_dice_mae.npz)."""
+    if name not in _SCENE:
         _, _, calR = draw(0)                                     # the 220-route bank (no held-out types in UP)
-        _SCENE = np.stack([np.concatenate([ck[r], gt[r]]) for r in calR])
-    return _SCENE[bi]
+        if name == 'desc':
+            ck, gt = load_features('eval_cmdkin_stats'), load_features('eval_gtrisk')
+            _SCENE[name] = np.stack([np.concatenate([ck[r], gt[r]]) for r in calR])
+        else:
+            f = load_features('eval_dice_mae')
+            _SCENE[name] = np.stack([f[r] for r in calR])
+    return _SCENE[name][bi]
 
 
 def standardise(F):
@@ -398,6 +404,50 @@ def run_ktcs(y, feats, seed, steps=500, nrep=5):
                 'note': f'{nrep} Pareto-order draws; est = mean of the per-draw estimates, err averaged per draw at merge'} for B, v in out.items()}
 
 
+# ------------------------------------------------------------------ DICE-style sampling ----------------------------
+def run_dice(R, y, feats, seed, M=10, K0=1.0, nrep=5):
+    """DICE-style sampling (Farid, Schleede, Huang, Heckman, "Foundation models for rapid autonomy validation", ICRA
+    2025, Algorithm 2), with OUR inputs: the paper's foundation model, difficulty head and data are proprietary and
+    unreleased, so this is its sampling scheme and estimator only.  Embedding z = the route descriptor (dice_desc) or
+    a masked-autoencoder embedding trained on the bank's scene tensors (dice_mae, experiments/dice_mae.py);
+    difficulty d = the K_cal calibration planners' failure rate on the route (what the paper's head, trained on the
+    simulation outcomes of previous software versions, predicts).  concat(z, d) is clustered into M groups by
+    k-means (the paper leaves the weight of d and M open: z standardised, d standardised and scaled to the variance
+    of the whole z block, M = 10); a cluster is drawn with probability proportional to K0 + mean(d) (K0 = 1, the value
+    the paper discusses), a route uniformly inside it without replacement; the sequence is nested over the budgets,
+    nrep draws, the error averaged per draw as for the random rows.  Readout = the paper's stratified count: the
+    failures found in a cluster scaled by the inverse of the sampled share of that cluster (an unsampled cluster
+    contributes none), SR = 1 - failures / N."""
+    Z = standardise(feats)
+    N = len(y)
+    d = 1.0 - fill(R).mean(0)                                # surrogate failure rate = the difficulty score
+    dz = (d - d.mean()) / (d.std() + 1e-9) * np.sqrt(Z.shape[1])
+    lab = KMeans(M, n_init=10, random_state=seed).fit(np.hstack([Z, dz[:, None]])).labels_
+    sizes = np.bincount(lab, minlength=M)
+    w = np.array([K0 + d[lab == c].mean() if sizes[c] else 0.0 for c in range(M)])
+    rng = np.random.default_rng(seed)
+    out = {B: {'ests': [], 'items': None} for B in BGRID}
+    for rep in range(nrep):
+        pools = {c: list(rng.permutation(np.where(lab == c)[0])) for c in range(M)}
+        S = []
+        while len(S) < max(BGRID):
+            c = rng.choice(M, p=w / w.sum())
+            if pools[c]:
+                S.append(int(pools[c].pop()))
+        for B in BGRID:
+            sel = np.array(S[:B])
+            fails = 0.0
+            for c in range(M):
+                sc = sel[lab[sel] == c]
+                if len(sc):
+                    fails += (1.0 - y[sc]).sum() * sizes[c] / len(sc)
+            out[B]['ests'].append(float(1.0 - fails / N))
+            if rep == 0:
+                out[B]['items'] = [int(i) for i in sel]
+    return {B: {'est': float(np.mean(v['ests'])), 'ests': v['ests'], 'items': v['items'],
+                'note': f'{nrep} draws, M={M}, K0={K0}, cluster sizes {sizes.tolist()}'} for B, v in out.items()}
+
+
 # ------------------------------------------------------------------ driver --------------------------------------
 def run(methods, seeds, out_path):
     recs = json.load(open(out_path)) if out_path.exists() else []
@@ -410,11 +460,12 @@ def run(methods, seeds, out_path):
                     if (seed, Kc, slot, name) in done:
                         continue
                     t0 = time.time()
-                    feats = scene_feats(bi) if name.endswith('scene') else fill(R).T
+                    feats = scene_feats(bi, 'mae') if name == 'dice_mae' else scene_feats(bi) if (name.endswith('scene') or name == 'dice_desc') else fill(R).T
                     cs = cell_seed(seed, Kc, slot)
                     est = run_fst(R, y, feats, cs) if name.startswith('fst') else \
                         run_gp_official(y, feats, cs) if name.startswith('gpo') else \
-                        run_ktcs(y, feats, cs) if name.startswith('ktcs') else run_gp(y, feats, cs)
+                        run_ktcs(y, feats, cs) if name.startswith('ktcs') else \
+                        run_dice(R, y, feats, cs) if name.startswith('dice') else run_gp(y, feats, cs)
                     rec = {'seed': seed, 'K': Kc, 'slot': slot, 'method': name, 'SR': SR, 'n_bank': len(bi),
                            'fit_s': time.time() - t0,
                            'budgets': {str(B): {'est': v['est'], 'err': float(np.mean([abs(e - SR) for e in v['ests']])) if 'ests' in v else abs(v['est'] - SR),
