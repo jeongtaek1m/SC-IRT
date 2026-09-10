@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Two AV-testing baselines re-implemented from their papers (neither has public code), on the Table 1 protocol.
+"""Two AV-testing baselines on the Table 1 protocol: FST (no public code) and the GP adaptive sampling of Gong et al.,
+the latter both through its official code (gpo_scene) and as our port (gp_*).
 
 fst_*   Few-Shot Testing (Li, He, Yang, Hu, Zhang, Feng; IEEE T-ITS 2025, arXiv 2409.14369).  A FIXED test set of
         n = B routes and aggregation weights, chosen before the new planner is seen, from the K_cal calibration
@@ -28,12 +29,16 @@ gp_*    Adaptive sampling with a Gaussian-process surrogate (Gong, Feng, Pan; IE
         coincide).
         gp_scene uses the route descriptor, gp_resp the surrogates' response profile.
 
+gpo_scene  the OFFICIAL code of Gong et al. (github.com/umbrellagong/MFGPreliability, commit 604bfce; see
+        run_gp_official) on the route descriptor, unmodified: its discrete-grid acquisition, its GP and its readout.
+
 Same draws, K_cal subsamples, banks and budgets as run_up_frontier.py (experiments/official/data.py), so every
 cell is paired with the ATDrive cell; --merge prints SR-MAE, the paired delta against ATDrive and the pairwise
 ranking accuracy of every cell and writes results/up_avbase.json.
 
     $P experiments/run_av_baselines.py --methods fst_scene fst_resp --seeds 0 4     # shard
     $P experiments/run_av_baselines.py --methods gp_scene gp_resp --seeds 0 4
+    OMP_NUM_THREADS=2 $P experiments/run_av_baselines.py --methods gpo_scene --seeds 0 2   # official code, CPU
     $P experiments/run_av_baselines.py --merge
 """
 import argparse
@@ -58,7 +63,8 @@ from atdrive.b2d import load_features                                          #
 from atdrive.splits import up_split                                            # noqa: E402
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp']
+ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene']
+MFGP = Path(os.environ.get('ATDRIVE_MFGP', '/data2/jeongtae/official_baselines/MFGPreliability/MFGPreliability'))
 DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 GP_NINIT = 10
 
@@ -276,6 +282,66 @@ def run_gp(y, feats, seed, delta=0.5):
     return out
 
 
+# ------------------------------------------------------------------ GP, official code -------------------------------
+def run_gp_official(y, feats, seed, delta=0.5):
+    """Gong, Feng, Pan's own single-fidelity code (github.com/umbrellagong/MFGPreliability, commit 604bfce), unmodified:
+    DiscreteInputs over the bank (grid = the route descriptors, weights = 1/N), AcqIVR_FP, OptimalDesign.seq_sampling
+    with discrete=True (the acquisition is evaluated on every grid route and the argmin taken) and its
+    failure_probability readout (weighted share of routes whose posterior MEAN is below the limit 0).  f_h(x) = y - 1/2
+    of the route whose descriptor is x, so f_h < 0 is a failure.  What is ours: the initial routes are drawn from the
+    bank instead of a Latin hypercube (pyDOE stubbed), the kernel is an isotropic RBF (+ constant, + white noise)
+    because the paper's per-dimension length scales are a 2-d choice, and the SR estimate is 1 - failure probability.
+    The official discrete branch passes the grid INDEX to the acquisition; the wrapper resolves it to the grid row.
+    The official loop may re-select an already executed route (nothing excludes it); such repeats are counted in the
+    budget and reported."""
+    import warnings
+    for path in (str(Path(__file__).resolve().parent / 'official' / 'mfgp_shim'), str(MFGP)):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    from core import AcqIVR_FP, DiscreteInputs, OptimalDesign, failure_probability      # the official package
+    from sklearn.gaussian_process import GaussianProcessRegressor
+    from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
+    warnings.filterwarnings('ignore')
+    X = standardise(feats)
+    N, d = X.shape
+    key = lambda x: tuple(np.round(np.asarray(x, float), 6))
+    lut = {key(X[i]): i for i in range(N)}
+    assert len(lut) == N, 'descriptor rows must be unique for the official lookup'
+
+    def f_h(x):
+        x = np.asarray(x, float)
+        if x.ndim == 2:
+            return np.array([f_h(r) for r in x])
+        return float(y[lut[key(x)]] - delta)
+
+    class BankInputs(DiscreteInputs):                      # LHS -> a random draw of bank routes
+        def sampling(self, num, criterion=None):
+            return X[np.random.default_rng(seed).permutation(N)[:num]].copy()
+
+    class AcqBank(AcqIVR_FP):                              # the official discrete branch hands compute_value the grid
+        def compute_value(self, x):                        # INDEX (optimaldesign.py, seq_sampling, discrete=True);
+            if np.ndim(x) == 0:                            # resolve it to the grid row, then the official value
+                x = self.grid[int(x)]
+            return super().compute_value(x)
+
+    inputs = BankInputs(np.array([[X[:, j].min(), X[:, j].max()] for j in range(d)]), d)
+    inputs.set_pdf(X.copy(), np.ones(N) / N)
+    kernel = C(1.0, (1e-2, 1e2)) * RBF(np.sqrt(d), (1e-1, 1e2)) + WhiteKernel(1e-1, (1e-3, 1e0))
+    sgp = GaussianProcessRegressor(kernel, normalize_y=False, n_restarts_optimizer=2, random_state=seed)
+    np.random.seed(seed)
+    opt = OptimalDesign(f_h, inputs)
+    opt.init_sampling(GP_NINIT)
+    models = opt.seq_sampling(max(BGRID) - GP_NINIT, AcqBank(inputs), sgp, n_jobs=1, discrete=True, verbose=False)
+    pf = failure_probability(models, inputs)               # model k = fit on the first GP_NINIT + k samples
+    items = [lut[key(r)] for r in opt.DX]
+    out = {}
+    for B in BGRID:
+        sel = items[:B]
+        out[B] = {'est': float(1.0 - pf[B - GP_NINIT]), 'items': sel,
+                  'note': f'{B - len(set(sel))} repeated route(s) in the first {B} samples'}
+    return out
+
+
 # ------------------------------------------------------------------ driver --------------------------------------
 def run(methods, seeds, out_path):
     recs = json.load(open(out_path)) if out_path.exists() else []
@@ -289,8 +355,9 @@ def run(methods, seeds, out_path):
                         continue
                     t0 = time.time()
                     feats = scene_feats(bi) if name.endswith('scene') else fill(R).T
-                    est = run_fst(R, y, feats, cell_seed(seed, Kc, slot)) if name.startswith('fst') \
-                        else run_gp(y, feats, cell_seed(seed, Kc, slot))
+                    cs = cell_seed(seed, Kc, slot)
+                    est = run_fst(R, y, feats, cs) if name.startswith('fst') else \
+                        run_gp_official(y, feats, cs) if name.startswith('gpo') else run_gp(y, feats, cs)
                     rec = {'seed': seed, 'K': Kc, 'slot': slot, 'method': name, 'SR': SR, 'n_bank': len(bi),
                            'fit_s': time.time() - t0,
                            'budgets': {str(B): {'est': v['est'], 'err': abs(v['est'] - SR), 'n_items': len(v['items']),

@@ -240,10 +240,13 @@ code, whose SR-MAE is the closest to ATDrive's in Table 1-official, orders at
 
 ## Table 1 — AV-testing baselines re-implemented from their papers (`run_av_baselines.py`)
 
-Two efficient-testing methods of the driving literature, neither with public
-code, ported to the Table 1 protocol: the same 16 draws, K_cal subsamples,
-banks and budgets, every cell paired with the ATDrive cell of
-`up_frontier.json`. 64 evaluations per cell, `results/up_avbase.json`; * =
+Two efficient-testing methods of the driving literature on the Table 1
+protocol: the same 16 draws, K_cal subsamples, banks and budgets, every cell
+paired with the ATDrive cell of `up_frontier.json`. FST has no public code (a
+sweep of the paper texts, the authors' GitHub accounts and the Feng group's
+release organisation found none) and is ported from the paper; the GP method
+has official code (github.com/umbrellagong/MFGPreliability, named in the paper
+itself) and is run both through that code and as our port. 64 evaluations per cell, `results/up_avbase.json`; * =
 the paired cluster bootstrap over the evaluation planners (as in Table 1)
 excludes zero against ATDrive.
 
@@ -292,6 +295,7 @@ SR-MAE (mean seconds per cell: FST 11-13, GP 4-10):
 | FST, response profile | .0986* | .0673* | .0337* | .0155* | .0651* | .0399 | .0292* | .0182* | .0700* | .0493* | .0234* | .0169* | .0529 |
 | GP adaptive, scene descriptor (faithful) | .0536 | .0410 | .0254 | .0120 | .0466 | .0397 | .0254 | .0108 | .0495 | .0455* | .0241* | .0116* | .0390 |
 | GP adaptive, response profile | .0848* | .0680* | .0443* | .0188* | .0614* | .0534* | .0294* | .0177* | .0591 | .0457* | .0287* | .0171* | .0527 |
+| GP adaptive, OFFICIAL code, scene descriptor | .1542* | .1244* | .0977* | .0924* | .1354* | .1133* | .1005* | .0917* | .1340* | .1165* | .0933* | .0832* | .1188 |
 | **ATDrive** (Table 1) | **.0450** | **.0332** | **.0223** | **.0116** | **.0448** | **.0337** | **.0202** | **.0082** | **.0477** | **.0231** | **.0160** | **.0081** | **.0318** |
 
 Paired delta against ATDrive, GP adaptive with the scene descriptor: K4
@@ -303,7 +307,25 @@ the scene descriptor: +.0406 [+.0236, +.0596] at K4 B30 down to +.0052 at K4
 B165, +.0164 / +.0112 / +.0064 / +.0054 at K8, +.0140 [-.0007, +.0304] /
 +.0173 / +.0083 / +.0064 at K12. Pairwise ranking accuracy (the Table 1
 companion metric, mean over the nine cells): FST .940 / .935, GP .962 / .941
-(scene / response), ATDrive .969.
+(scene / response), the official GP code .868, ATDrive .969.
+
+The official code (`run_gp_official`: `DiscreteInputs` over the bank with
+weights 1/N, `AcqIVR_FP`, `OptimalDesign.seq_sampling(discrete=True)` and its
+`failure_probability` readout, unmodified; the wrapper only draws the initial
+routes from the bank, resolves the grid index the discrete branch hands to the
+acquisition, and uses an isotropic RBF + constant + white kernel) is far behind
+our port of the same algorithm (.1188 vs .0390, every cell's interval excluding
+zero, +.075 to +.109 against ATDrive). Two behaviours of the released code
+account for it, neither of which matters on its own continuous, noise-free
+cut-in problem: its readout thresholds the posterior MEAN at the limit (a route
+is a failure iff its predicted mean is below 0) without substituting the
+observed outcome of an executed route, so with the white-noise term the
+executed outcomes are shrunk toward the constant mean; and nothing excludes an
+executed route from re-selection, so 3-4 of the first 30 and 31-45 of the 165
+selections are repeats (budget spent on routes already run). Our port is the
+paper's algorithm with the predictive success probability, the observed
+outcome for executed routes and the unexecuted-route candidate set, and is the
+number the comparison rests on.
 
 Reading. The GP method on the route descriptor is the strongest of the four
 (macro .0390 over the nine Table 1 cells; ATDrive .0318, the random references

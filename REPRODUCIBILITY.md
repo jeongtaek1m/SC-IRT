@@ -46,7 +46,7 @@ past a failed anchor.
 | `run_ups.py` | Table 3B: representative MAE cells per policy under the lane-free prior of record (tol .003), and the Delta-R1 MAE + per-cell NLL cells of all three priors (lane-free, the lane-carrying control, the speed-ablated control) |
 | `run_ups_full.py --merge` | the scene prior's identity (npz name + content md5, checked before any anchor); 12 full-SR cells (incl. the scene-free acquisition arm), 5 Table 3B cells, 2 AUROC cells; the null: scene-prior deltas include 0 and are < .003 in the readout and in the acquisition |
 | `run_up_official.py --merge` | the official-code Table 1: 12 cells x 7 methods, their best own readouts, the pairwise ranking accuracy of each cell (`rank_acc`), the ATLAS stopping rule, and the 2 recorded ATLAS failures |
-| `run_av_baselines.py --merge` | the FST and GP-adaptive re-implementations on the Table 1 protocol (`results/up_avbase.json`): SR-MAE, the paired delta against ATDrive and the pairwise ranking accuracy of every cell; no anchors (re-implementations from the papers, no code of record) |
+| `run_av_baselines.py --merge` | the FST port, the GP-adaptive port and the official-code GP run on the Table 1 protocol (`results/up_avbase.json`): SR-MAE, the paired delta against ATDrive and the pairwise ranking accuracy of every cell; no anchors |
 | `run_nuplan_zeroshot.py` | panel constants, oracle point estimates, arm means, the permutation-fixed T_null with the count of null per-permutation means at or above each arm and the verdicts, the whole-panel Spearman of the three arms (NLe, C0e, A2e) and their null counts |
 | `run_model_adequacy.py` | held-out NLL of 1PL / 2PL / 3PL and the split-half reliability of log a on the UP bank |
 | `run_readout_dropin.py` | the drop-in cells (incl. AnchorPoints K12 B55 / B110) |
@@ -185,6 +185,7 @@ for lo in 0 4 8 12; do python experiments/run_up_frontier.py --seeds $lo $((lo+4
 python experiments/run_up_frontier.py --merge          # Table 1, anchors OK
 for lo in 0 4 8 12; do python experiments/run_av_baselines.py --methods fst_scene fst_resp --seeds $lo $((lo+4)) & done; wait
 for lo in 0 2 4 6 8 10 12 14; do OMP_NUM_THREADS=2 python experiments/run_av_baselines.py --methods gp_scene gp_resp --seeds $lo $((lo+2)) & done; wait
+for lo in 0 2 4 6 8 10 12 14; do OMP_NUM_THREADS=2 python experiments/run_av_baselines.py --methods gpo_scene --seeds $lo $((lo+2)) & done; wait   # official MFGPreliability code (ATDRIVE_MFGP = its checkout)
 python experiments/run_av_baselines.py --merge          # FST / GP-adaptive re-implementations, paired with Table 1 (no anchors)
 for lo in 0 2 4 6 8 10 12 14; do python experiments/run_tau_calibration.py --seeds $lo $((lo+2)) & done; wait
 python experiments/run_tau_calibration.py --merge      # risk scale c (+ matched-cost tau_hat)
