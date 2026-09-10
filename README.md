@@ -98,7 +98,7 @@ python experiments/run_ranking_quality.py            # ranking quality of the co
 python experiments/run_route_discrimination.py --merge  # route-level discrimination (after Table 1)
 python experiments/run_readout_dropin.py             # readout drop-in (GPU)
 python experiments/run_us.py                         # Table 3A + 3A(b) (GPU)
-python experiments/run_ups.py                        # Table 3B + the two control priors (GPU)
+python experiments/run_ups.py                        # Table 3B + the four control priors (GPU, ~2 h)
 python experiments/run_ups_full.py --merge           # UPS retargeted to the full 220-route SR
 python experiments/run_nuplan_zeroshot.py            # nuPlan val14 zero-shot retrieval
 python experiments/run_av_baselines.py --merge       # FST / GP-adaptive (AV-testing) re-implementations on the Table 1 protocol
