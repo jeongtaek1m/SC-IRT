@@ -375,9 +375,8 @@ setting never touches (it uses the calibration responses only), and at 165 of
 about 215 routes every method converges (.011-.019).
 
 Kernel test case sampling (.0803) is behind UNIFORM random sampling with the
-plain mean at every budget below 165 (.115-.118 vs 0.0623 at B = 30,
-.075-.084 vs 0.0397 at B = 55, .044-.046 vs 0.0245 at B = 110) and level with
-it at B = 165 (0.0144). Two reasons, both structural: the alignment weights
+plain mean at every budget (.115-.118 vs .0623 at B = 30, .075-.084 vs .0397
+at B = 55, .044-.046 vs .0245 at B = 110, .022-.023 vs .0144 at B = 165). Two reasons, both structural: the alignment weights
 lambda concentrate the estimate on the few routes that stand for the
 descriptor distribution, which with binary outcomes cuts the effective sample
 far below M; and representativeness in descriptor space is not
