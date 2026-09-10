@@ -108,7 +108,10 @@ mean +- SD, never an averaged prediction.
   `eval_min_ttc.npz`, `eval_edrf.npz`, `eval_agentjepa_bestval.npz` /
   `eval_agentjepa_official.npz` and `eval_smart_ent_catk.npz`
   (`experiments/us_official/`, provenance in `results/us_official_provenance/`;
-  RESULTS.md, "Provenance chain of every baseline row"). They are computed from a fixed probe rollout
+  RESULTS.md, "Provenance chain of every baseline row"); `eval_jepa_official.npz` /
+  `eval_jepa_official_3d.npz` are the official minDrive-JEPA model retrained on
+  the bank's rollouts (`experiments/us_official/jepa_official_b2d.py`, its
+  config `jepa_official_b2d.yaml`; the checkout is read from `ATDRIVE_JEPA_OFFICIAL`). They are computed from a fixed probe rollout
   per route, so they are probe-conditioned but contain nothing from the
   evaluated planners' rollouts. The scenario-definition parameters
   (scenparamz) that earlier versions used were removed: they are the

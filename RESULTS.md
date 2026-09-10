@@ -354,7 +354,7 @@ SR-MAE (mean seconds per cell: FST 11-13, GP 4-10, official GP 19, KTCS 7, DICE-
 | GP adaptive, response profile | .0848* | .0680* | .0443* | .0188* | .0614* | .0534* | .0294* | .0177* | .0591 | .0457* | .0287* | .0171* | .0527 |
 | GP adaptive, OFFICIAL code, scene descriptor | .1542* | .1244* | .0977* | .0924* | .1354* | .1133* | .1005* | .0917* | .1340* | .1165* | .0933* | .0832* | .1188 |
 | Kernel test case sampling, scene descriptor | .1182* | .0800* | .0457* | .0225* | .1149* | .0835* | .0441* | .0219* | .1170* | .0751* | .0440* | .0226* | .0803 |
-| DICE, re-implemented end to end (MAE + head + Algorithm 2) | .0831* | .0527* | .0289* | .0158* | .0808* | .0518* | .0297* | .0147* | .0775* | .0519* | .0279* | .0163* | .0538 |
+| DICE, re-implemented end to end (MAE + head + Algorithm 2) | .0877* | .0548* | .0293* | .0168* | .0835* | .0519* | .0297* | .0164* | .0849* | .0565* | .0301* | .0162* | .0565 |
 | DICE, head replaced by the surrogate failure rate | .0857* | .0552* | .0307* | .0172* | .0772* | .0522* | .0288* | .0159* | .0808* | .0561* | .0283* | .0150* | .0550 |
 | DICE, ... and the embedding by the route descriptor | .0851* | .0522* | .0296* | .0164* | .0815* | .0526* | .0279* | .0149* | .0853* | .0529* | .0249* | .0137* | .0547 |
 | **ATDrive** (Table 1) | **.0450** | **.0332** | **.0223** | **.0116** | **.0448** | **.0337** | **.0202** | **.0082** | **.0477** | **.0231** | **.0160** | **.0081** | **.0318** |
@@ -369,7 +369,7 @@ B165, +.0164 / +.0112 / +.0064 / +.0054 at K8, +.0140 [-.0007, +.0304] /
 +.0173 / +.0083 / +.0064 at K12. Pairwise ranking accuracy (the Table 1
 companion metric, mean over the nine cells): FST .940 / .935, GP .962 / .941
 (scene / response), the official GP code .868, kernel test case sampling .945,
-DICE .973 (end to end; .965 / .970 for the two ablations), ATDrive .969.
+DICE .971 (end to end; .965 / .970 for the two ablations), ATDrive .969.
 
 The official code (`run_gp_official`: `DiscreteInputs` over the bank with
 weights 1/N, `AcqIVR_FP`, `OptimalDesign.seq_sampling(discrete=True)` and its
@@ -409,6 +409,15 @@ comparison: both ports use a route descriptor that ATDrive's planner-evaluation
 setting never touches (it uses the calibration responses only), and at 165 of
 about 215 routes every method converges (.011-.019).
 
+Every method of this section is one wrapper file under `experiments/official/`
+(`fst.py`, `gp_port.py`, `mfgp.py`, `ktcs.py`, `dice.py`, sharing
+`av_common.py`) with the fit / estimate / stop contract of the official
+wrappers and a self-test (`selftest_<name>.py`: budget, leak, determinism,
+prefix); `run_av_baselines.py` only drives them. The DICE head is pinned to one
+BLAS thread so that its clustering does not depend on the machine's thread
+count (the earlier end-to-end number, .0538, was a two-thread run of the same
+code).
+
 Kernel test case sampling (.0803) is behind UNIFORM random sampling with the
 plain mean at every budget (.115-.118 vs .0623 at B = 30, .075-.084 vs .0397
 at B = 55, .044-.046 vs .0245 at B = 110, .022-.023 vs .0144 at B = 165). Two reasons, both structural: the alignment weights
@@ -422,9 +431,9 @@ uniform draw does. The method is built for a 300,000-case naturalistic pool
 where a representative 118 is the point; on a 220-route benchmark whose SR is
 the target it has nothing to add.
 
-DICE (.0538 end to end; .0550 / .0547 for the ablations) is also behind
-uniform random sampling at every budget (.078-.086 vs .0623 at B = 30,
-.052-.056 vs .0397 at B = 55, .028-.031 vs .0245 at B = 110, .015-.017 vs
+DICE (.0565 end to end; .0550 / .0547 for the ablations) is also behind
+uniform random sampling at every budget (.078-.088 vs .0623 at B = 30,
+.052-.057 vs .0397 at B = 55, .028-.031 vs .0245 at B = 110, .015-.017 vs
 .0144 at B = 165), and the three variants give the same number: the head
 reproduces the calibration planners' failure rate it is trained on (Spearman
 .96-.99 with it in every cell), so the end-to-end pipeline and its ablations
@@ -433,7 +442,7 @@ exposure to hard clusters by design: the difficulty tilt (at most 2 x between
 clusters at K_0 = 1) buys nothing for an SR of .4-.9, while the stratified
 count over ten k-means clusters, several of them a handful of routes, has a
 larger variance than the plain mean of a uniform draw. Its pairwise ranking
-accuracy is nevertheless as high as ATDrive's (.973 vs .969): the
+accuracy is nevertheless as high as ATDrive's (.971 vs .969): the
 stratified estimate is noisy but unbiased, and an unbiased noise of .05
 rarely crosses the .1-.2 gaps between planners. As a difficulty signal the
 bank-trained MAE embedding is real but weaker than the hand-crafted
@@ -481,17 +490,16 @@ Ridge readout, which is ours):
 |---|---|---|---|---|
 | Min-TTC | reference rollout (O, data) | TTC per Hayward 1972 / Westhofen 2023 Sec. 5.2.1, min over time and actors per their Sec. 5.2 (P; O impl. from the definition) | Ridge -> difficulty (O) | literature computation + our readout |
 | EDRF-based risk field | rollout; the single realised future replaces the multimodal predictor (O, substitution of the model's input) | DRP / EDRF / IR / F equations and constants (P; O impl., no code); six route statistics (O) | Ridge (O) | EDRF-based features, not EDRF |
-| Agent-JEPA | Bench2Drive expert clips at the 0.5 s grid (O, data) | Sec. 3 model and loss (P; O impl.; official code found, rerun pending); surprise = latent L2 (P); route aggregation (O) | Ridge (O) | literature method + our readout |
+| Agent-JEPA | the bank's 10 Hz rollouts in 5 s windows (O, data) | the official minDrive-JEPA tokenizer, trainer and surprise score, retrained (P, C); route aggregation = mean over windows (O); a re-implementation on expert clips kept as a second row (O impl.) | Ridge (O) | literature method through its code + our readout |
 | Traffic entropy | rollout converted to the model's format (O) | SMART model through the official CAT-K code and checkpoint (C); the entropy as a difficulty descriptor (O) | Ridge (O) | our construct on a released model: not a literature baseline |
 | in-house rows | rollout | ours | Ridge (O) | ours |
 | ATDrive encoder | rollout | ours (Section Method) | — | ours |
 
-Pending rows under the same rule: Agent-JEPA through the official code
-(minDrive-JEPA, retrained on our rollouts with its own tokenizer and
-trainer; route aggregation ours) and REEval's amortized calibration (Truong
-et al. 2025: z = w . e + b fitted with the Rasch likelihood by their
-notebook, with our route features as the content embedding) — both Table 3A
-rows, neither a Table 1 row.
+Pending row under the same rule: REEval's amortized calibration (Truong et
+al. 2025: z = w . e + b fitted with the Rasch likelihood by their notebook,
+with our route features as the content embedding;
+`experiments/us_official/reeval_amortized.py`) — a Table 3A row, not a Table 1
+row.
 
 ## Route-level discrimination at fixed budget (`run_route_discrimination.py`)
 
@@ -1093,11 +1101,14 @@ differs is where the descriptor itself comes from; `experiments/us_official/`,
   rollout); EDRF-based risk field (the equations and constants of Jiang et al.
   2024, with the single realised future of the rollout in place of the
   multimodal predictor — a substitution of the model's core input, so the row
-  is "EDRF-based features", not EDRF; six route statistics); Agent-JEPA (our
-  re-implementation of Jaiswal 2026 Sec. 3 on Bench2Drive expert clips, the
-  paper-literal best-validation checkpoint and the full 50-epoch schedule;
-  official code exists — github.com/hellojais/mindrive-jepa — and a run
-  through it is pending).
+  is "EDRF-based features", not EDRF; six route statistics); Agent-JEPA through the
+  OFFICIAL code (minDrive-JEPA, github.com/hellojais/mindrive-jepa, unmodified:
+  its tokenizer on our 10 Hz rollouts cut into 5 s windows, its trainer with the
+  default config on one GPU, best.pt by its best-validation rule, its surprise =
+  latent L2; `experiments/us_official/jepa_official_b2d.py`; a route = the mean
+  surprise over its windows, ours) and our earlier re-implementation of Sec. 3
+  on Bench2Drive expert clips (the paper-literal best-validation checkpoint and
+  the full 50-epoch schedule).
 - *our descriptors*: Traffic entropy (the mean next-token entropy of the SMART
   traffic model run through the official CAT-K code and checkpoint; neither
   paper proposes any quantity of the model as a difficulty measure, so the
@@ -1110,7 +1121,13 @@ differs is where the descriptor itself comes from; `experiments/us_official/`,
 The earlier shipped rows (Min-TTC .692 from the in-house ssm_min_ttc column,
 Risk field .705 = the in-house stack, Traffic entropy .706 from a
 mismatched-vocabulary SMART load, Agent-JEPA .696 from an epoch-0
-checkpoint) are superseded by the rebuilt rows below.
+checkpoint) are superseded by the rebuilt rows below. The official JEPA
+model, retrained on the bank's 5,445 windows (best validation loss at epoch
+6 of 50, then rising), ranks the routes at the null level (AUROC .699,
+rho +.005): its surprise carries no planner-difficulty signal on this bank,
+which is also what the fully trained re-implementation found; the +.151 of
+the re-implementation's epoch-1 checkpoint is the route-length artefact
+documented in `results/us_official_provenance/`, not a JEPA signal.
 
 THE ENCODER OF RECORD HAS NO LANE GRAPH. It is RelGraph R2-noLane: the same
 R2Net with the whole map side of the graph removed before any tensor is built
@@ -1123,8 +1140,10 @@ a control and heads the control block below.
 |---|---|---|---|
 | Min-TTC (Hayward 1972 / Westhofen 2023; 1-d) | .713 | .213 (+0.2%) | +.217 |
 | EDRF-based risk field (Jiang 2024; single realised future; 6-d) | .695 | .217 (-1.6%) | +.099 |
-| Agent-JEPA (Jaiswal 2026, re-impl.; best-val ckpt) | .711 | .205 (+4.1%) | +.151 |
-| Agent-JEPA (re-impl.; full 50-epoch schedule) | .699 | .216 (-1.0%) | -.003 |
+| Agent-JEPA, OFFICIAL code retrained on the bank (mean surprise) | .699 | .215 (-0.5%) | +.005 |
+| Agent-JEPA, official code ([mean, max, p90] over windows) | .697 | .216 (-1.0%) | -.019 |
+| Agent-JEPA (our re-impl.; paper-literal best-val ckpt) | .711 | .205 (+4.1%) | +.151 |
+| Agent-JEPA (our re-impl.; full 50-epoch schedule) | .699 | .216 (-1.0%) | -.003 |
 | Traffic entropy (ours, on SMART / CAT-K) | .704 | .213 (+0.2%) | +.072 |
 | Route geometry (ours) | .719 | .201 (+6.1%) | +.268 |
 | Agent density + kin. (ours) | .715 | .212 (+0.9%) | +.220 |

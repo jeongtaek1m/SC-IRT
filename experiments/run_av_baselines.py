@@ -1,48 +1,22 @@
 #!/usr/bin/env python3
-"""Four AV-testing baselines on the Table 1 protocol: FST (no public code), the GP adaptive sampling of Gong et al.
-(through its official code, gpo_scene, and as our port, gp_*), kernel test case sampling (ktcs_scene, from the
-paper's Methods; see run_ktcs) and DICE of Farid et al. re-implemented end to end at the bank's scale (dice_full:
-experiments/dice_mae.py backbone, dice_head, run_dice; dice_mae / dice_desc are ablations of the port).
+"""The AV-testing baselines on the Table 1 protocol, one wrapper file per method under experiments/official/
+(each file's docstring is its provenance chain: what is the paper's, what is the released code's, what is ours):
 
-fst_*   Few-Shot Testing (Li, He, Yang, Hu, Zhang, Feng; IEEE T-ITS 2025, arXiv 2409.14369).  A FIXED test set of
-        n = B routes and aggregation weights, chosen before the new planner is seen, from the K_cal calibration
-        planners used as the surrogate vehicle set: cross-attention similarity network (MLP features, reciprocal
-        L2 attention, softmax over the selected scenarios for every scenario of the space), weight of a selected
-        route = the similarity mass of the whole bank it collects (Eq. 13-16), loss = the max over surrogates of
-        |weighted estimate - true mean| (Eq. 17 / 20) plus the fluctuation term of Eq. 22-24 with w_M = 1 (the
-        value used in the paper's experiments; under the query-wise normalisation of Eq. 14 that term equals the
-        surrogate's own error, so it is the mean surrogate error here), training sets drawn from k-means clusters
-        of the surrogate performance (the paper's critical distribution P_c), one network per cell shared by all
-        budgets (as the paper reuses one network for n = 5, 10, 20), then the set optimised per budget.
-        Deviation: the paper optimises continuous scenario coordinates by gradient descent; a route bank is
-        discrete, so the set is optimised by best-improvement swap search under the same loss from the best of
-        32 P_c draws.  fst_scene feeds the network the route descriptor (the paper's scenario state: the 25-d
-        kinematics + 48-d risk descriptors of the US baselines), fst_resp the surrogates' response profile.
-gp_*    Adaptive sampling with a Gaussian-process surrogate (Gong, Feng, Pan; IEEE T-ITS 2023, arXiv 2210.14114),
-        single-fidelity method: GP regression on the new planner's outcomes over a route feature space, next
-        route = argmax of the benefit B = U(D) - U(D, z~) (Eq. 8-12: the reduction of the variance bound of the
-        accident rate when a hypothetical sample at the current mean is added), RBF kernel with hyperparameters
-        by marginal likelihood at every step, n_init random routes first, then sequential selection.
-        Deviations: the outcome is binary (regression on {0, 1} with delta = 0.5 and a constant prior mean),
-        so an unexecuted route's success probability is that of its predictive outcome (latent + noise
-        variance; the latent alone would call a constant-plus-noise fit certain); the candidates are the
-        unexecuted routes (argmax instead of continuous optimisation); executed routes enter the estimate with
-        their observed outcome and drop out of the variance bound (the paper's f is noise-free, where the two
-        coincide).
-        gp_scene uses the route descriptor, gp_resp the surrogates' response profile.
+    official/fst.py      FST (Li et al., T-ITS 2025), re-implemented from the paper (no code)      fst_scene, fst_resp
+    official/gp_port.py  GP adaptive sampling (Gong et al., T-ITS 2023), our port                   gp_scene, gp_resp
+    official/mfgp.py     the same method through its OFFICIAL code (MFGPreliability)               gpo_scene
+    official/ktcs.py     kernel test case sampling (Qian et al., Nat. Comm. 2026), from the Methods ktcs_scene
+    official/dice.py     DICE (Farid et al., ICRA 2025), re-implemented end to end                  dice_desc, dice_mae, dice_full
 
-gpo_scene  the OFFICIAL code of Gong et al. (github.com/umbrellagong/MFGPreliability, commit 604bfce; see
-        run_gp_official) on the route descriptor, unmodified: its discrete-grid acquisition, its GP and its readout.
-
-Same draws, K_cal subsamples, banks and budgets as run_up_frontier.py (experiments/official/data.py), so every
-cell is paired with the ATDrive cell; --merge prints SR-MAE, the paired delta against ATDrive and the pairwise
-ranking accuracy of every cell and writes results/up_avbase.json.
+Every wrapper follows the run_up_official.py contract (fit / estimate / stop) with the bank rows `bi` as an
+extra argument of fit, and passes the checks of official/av_common.selftest (official/selftest_<name>.py).
+Same draws, K_cal subsamples, banks and budgets as run_up_frontier.py (official/data.py), so every cell is
+paired with the ATDrive cell; --merge prints SR-MAE, the paired delta against ATDrive and the pairwise ranking
+accuracy of every cell and writes results/up_avbase.json. A method whose estimate carries per-draw estimates
+('ests': the random-order rows) is scored by the error averaged over the draws, as the random rows of Table 1.
 
     $P experiments/run_av_baselines.py --methods fst_scene fst_resp --seeds 0 4     # shard
-    $P experiments/run_av_baselines.py --methods gp_scene gp_resp --seeds 0 4
     OMP_NUM_THREADS=2 $P experiments/run_av_baselines.py --methods gpo_scene --seeds 0 2   # official code, CPU
-    $P experiments/run_av_baselines.py --methods ktcs_scene --seeds 0 2
-    CUDA_VISIBLE_DEVICES=1 $P experiments/dice_mae.py && $P experiments/run_av_baselines.py --methods dice_desc dice_mae --seeds 0 2
     $P experiments/run_av_baselines.py --merge
 """
 import argparse
@@ -54,424 +28,19 @@ import time
 from pathlib import Path
 
 import numpy as np
-import torch
-import torch.nn as nn
-from scipy.optimize import minimize
-from scipy.special import ndtr
-from sklearn.cluster import KMeans
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from official.data import BGRID, KCALS, NDRAWS, protocol_cell, draw, panel     # noqa: E402
-from atdrive.b2d import load_features                                          # noqa: E402
+from official.av_common import cell_seed                                       # noqa: E402
+from official import fst, gp_port, mfgp, ktcs, dice                            # noqa: E402
 from atdrive.splits import up_split                                            # noqa: E402
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-ALL_METHODS = ['fst_scene', 'fst_resp', 'gp_scene', 'gp_resp', 'gpo_scene', 'ktcs_scene', 'dice_desc', 'dice_mae', 'dice_full']
-MFGP = Path(os.environ.get('ATDRIVE_MFGP', '/data2/jeongtae/official_baselines/MFGPreliability/MFGPreliability'))
-DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
-GP_NINIT = 10
+METHODS = {**fst.METHODS, **gp_port.METHODS, **mfgp.METHODS, **ktcs.METHODS, **dice.METHODS}
+ALL_METHODS = list(METHODS)
 
 
-def cell_seed(seed, Kc, slot):
-    return 100000 + 1000 * seed + 10 * Kc + slot                 # = run_up_official.cell_seed
-
-
-def fill(R):
-    """Surrogate response matrix (K_cal x bank), a missing cell filled with that surrogate's mean."""
-    Rf = R.copy()
-    for k in range(R.shape[0]):
-        m = np.nanmean(R[k])
-        Rf[k, np.isnan(Rf[k])] = m
-    return Rf
-
-
-_SCENE = {}
-
-
-def scene_feats(bi, name='desc'):
-    """Route features of the bank rows: 'desc' = the 25-d kinematics + 48-d risk descriptors the US baselines use,
-    'mae' = the 64-d masked-autoencoder embedding of experiments/dice_mae.py (data/features/eval_dice_mae.npz)."""
-    if name not in _SCENE:
-        _, _, calR = draw(0)                                     # the 220-route bank (no held-out types in UP)
-        if name == 'desc':
-            ck, gt = load_features('eval_cmdkin_stats'), load_features('eval_gtrisk')
-            _SCENE[name] = np.stack([np.concatenate([ck[r], gt[r]]) for r in calR])
-        else:
-            f = load_features('eval_dice_mae' if name == 'mae' else 'eval_dice_mae_pooled')
-            _SCENE[name] = np.stack([f[r] for r in calR])
-    return _SCENE[name][bi]
-
-
-def standardise(F):
-    return (F - F.mean(0)) / (F.std(0) + 1e-6)
-
-
-# ------------------------------------------------------------------ FST ----------------------------------------
-class SimNet(nn.Module):
-    def __init__(self, d_in, d=32):
-        super().__init__()
-        self.enc = nn.Sequential(nn.Linear(d_in, 64), nn.ReLU(), nn.Linear(64, d))
-
-    def weights(self, Z, sets):
-        """Z (N, d_in) every scenario; sets (C, n) selected indices -> W (C, n): Eq. 15-16 with d = 1 / L2 and the
-        softmax over the n selected scenarios for every scenario of the space, W = S p with p = 1 / N."""
-        E = self.enc(Z)
-        Q = E[sets]                                              # (C, n, d)
-        dist = torch.cdist(Q, E.unsqueeze(0).expand(sets.shape[0], -1, -1))   # (C, n, N)
-        S = torch.softmax(1.0 / (dist + 1e-3), dim=1)
-        return S.mean(-1)
-
-
-def fst_loss(net, Z, P, mu, sets):
-    """max over surrogates of |mu~ - mu| (Eq. 20) + the fluctuation term with w_M = 1 (Eq. 24), which under
-    Eq. 14 equals the surrogate's own error and is taken as the mean over the surrogates."""
-    W = net.weights(Z, sets)                                     # (C, n)
-    Ps = P[:, sets]                                              # (s, C, n): the surrogates' outcomes on the sets
-    est = torch.einsum('cn,scn->cs', W, Ps)                      # (C, s)
-    err = (est - mu[None, :]).abs()
-    return err.max(1).values + err.mean(1)
-
-
-def pc_sample(rng, labels, n):
-    """The paper's critical distribution: scenarios drawn from k-means clusters of the surrogate performance,
-    round-robin over the clusters, uniformly inside a cluster."""
-    byc = {}
-    for i, c in enumerate(labels):
-        byc.setdefault(int(c), []).append(i)
-    pools = [list(rng.permutation(v)) for v in byc.values()]
-    out, k = [], 0
-    while len(out) < n:
-        for pl in pools:
-            if k < len(pl) and len(out) < n:
-                out.append(int(pl[k]))
-        k += 1
-    return out
-
-
-def fst_fit(R, feats, seed, steps=300, batch=16):
-    """One similarity network per cell, trained on P_c sets of every budget (Eq. 19)."""
-    torch.manual_seed(seed)
-    rng = np.random.default_rng(seed)
-    P = torch.tensor(1.0 - fill(R), dtype=torch.float32, device=DEV)          # failure indicator per surrogate
-    mu = P.mean(1)
-    Z = torch.tensor(standardise(feats), dtype=torch.float32, device=DEV)
-    N = Z.shape[0]
-    prof = fill(R).T                                                           # bank x surrogates
-    labels = {}
-    for n in BGRID:
-        k = min(n, 32, len(np.unique(prof, axis=0)))
-        labels[n] = KMeans(k, n_init=4, random_state=seed).fit(prof).labels_
-    net = SimNet(Z.shape[1]).to(DEV)
-    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
-    for it in range(steps):
-        n = BGRID[it % len(BGRID)]
-        sets = torch.tensor([pc_sample(rng, labels[n], n) for _ in range(batch)], device=DEV)
-        loss = fst_loss(net, Z, P, mu, sets).mean()
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-    net.eval()
-    return {'net': net, 'Z': Z, 'P': P, 'mu': mu, 'labels': labels, 'rng': rng, 'N': N}
-
-
-@torch.no_grad()
-def fst_select(model, n, chunk=1024):
-    """Best of 32 P_c draws, then best-improvement swap search under the trained loss (Eq. 20 / 24)."""
-    net, Z, P, mu, N = model['net'], model['Z'], model['P'], model['mu'], model['N']
-    rng = model['rng']
-
-    def loss_of(sets):
-        out = []
-        for i in range(0, len(sets), chunk):
-            out.append(fst_loss(net, Z, P, mu, torch.tensor(sets[i:i + chunk], device=DEV)))
-        return torch.cat(out).cpu().numpy()
-
-    cands = [pc_sample(rng, model['labels'][n], n) for _ in range(32)]
-    L = loss_of(cands)
-    cur, best = list(cands[int(np.argmin(L))]), float(L.min())
-    for _ in range(60):
-        others = [j for j in range(N) if j not in set(cur)]
-        swaps = [(i, j) for i in range(n) for j in others]
-        sets = []
-        for i, j in swaps:
-            s = list(cur)
-            s[i] = j
-            sets.append(s)
-        L = loss_of(sets)
-        k = int(np.argmin(L))
-        if L[k] < best - 1e-7:
-            best = float(L[k])
-            cur = sets[k]
-        else:
-            break
-    W = net.weights(Z, torch.tensor([cur], device=DEV))[0].cpu().numpy()
-    return cur, W, best
-
-
-def run_fst(R, y, feats, seed):
-    model = fst_fit(R, feats, seed)
-    out = {}
-    for B in BGRID:
-        sel, W, L = fst_select(model, B)
-        out[B] = {'est': float((W * y[sel]).sum() / W.sum()), 'items': sel, 'note': f'train loss {L:.4f}'}
-    return out
-
-
-# ------------------------------------------------------------------ GP -----------------------------------------
-def rbf(A, Bm, ell, tau):
-    d2 = ((A[:, None, :] - Bm[None, :, :]) ** 2).sum(-1)
-    return tau ** 2 * np.exp(-0.5 * d2 / ell ** 2)
-
-
-def gp_fit(X, y, hp0):
-    """Hyperparameters (log ell, log tau, log sigma_n) by marginal likelihood (L-BFGS-B), constant prior mean."""
-    m = y.mean()
-    yc = y - m
-
-    def nll(h):
-        ell, tau, sn = np.exp(h)
-        K = rbf(X, X, ell, tau) + (sn ** 2 + 1e-6) * np.eye(len(X))
-        try:
-            L = np.linalg.cholesky(K)
-        except np.linalg.LinAlgError:
-            return 1e6
-        a = np.linalg.solve(L.T, np.linalg.solve(L, yc))
-        return 0.5 * yc @ a + np.log(np.diag(L)).sum()
-
-    r = minimize(nll, hp0, method='L-BFGS-B', bounds=[(-3, 4), (-4, 2), (-4, 1)], options={'maxiter': 40})
-    return r.x, m
-
-
-def gp_posterior(X, y, Xall, hp, m):
-    ell, tau, sn = np.exp(hp)
-    K = rbf(X, X, ell, tau) + (sn ** 2 + 1e-6) * np.eye(len(X))
-    Ks = rbf(Xall, X, ell, tau)
-    Kss = rbf(Xall, Xall, ell, tau)
-    L = np.linalg.cholesky(K)
-    alpha = np.linalg.solve(L.T, np.linalg.solve(L, y - m))
-    V = np.linalg.solve(L, Ks.T)
-    mean = m + Ks @ alpha
-    cov = Kss - V.T @ V
-    return mean, cov, sn ** 2
-
-
-def run_gp(y, feats, seed, delta=0.5):
-    """Algorithm 1 of Gong et al. on the bank: n_init random routes, then the benefit-maximising route."""
-    rng = np.random.default_rng(seed)
-    X = standardise(feats)
-    N = len(y)
-    S = list(rng.permutation(N)[:GP_NINIT])
-    d2 = ((X[:, None, :] - X[None, :, :]) ** 2).sum(-1)
-    hp = np.array([np.log(np.sqrt(np.median(d2[d2 > 0]))), np.log(0.5), np.log(0.3)])
-    out = {}
-    for t in range(GP_NINIT, max(BGRID) + 1):
-        hp, m = gp_fit(X[S], y[S], hp)
-        mean, cov, sn2 = gp_posterior(X[S], y[S], X, hp, m)
-        var = np.clip(np.diag(cov), 1e-12, None)
-        un = np.array([i for i in range(N) if i not in set(S)])
-        # a binary outcome: the indicator probability of an unexecuted route is that of its predictive outcome
-        # y* ~ N(mean, var + sigma_n^2) (the latent alone would call a constant-plus-noise fit certain)
-        p_un = ndtr((mean[un] - delta) / np.sqrt(var[un] + sn2))                # P(success) of every unexecuted route
-        if t in BGRID:
-            out[t] = {'est': float((y[S].sum() + p_un.sum()) / N), 'items': [int(i) for i in S]}
-        if t == max(BGRID):
-            break
-        # Eq. 8-13 on the bank: U = sum over the unexecuted routes of sqrt(p (1 - p)) / N; a hypothetical sample at
-        # x~ removes x~'s own term (its outcome becomes known) and shrinks the others' variance by Eq. 11 with the
-        # mean unchanged (Eq. 10); the next route maximises the reduction.
-        var_new = var[un][None, :] - cov[np.ix_(un, un)] ** 2 / (var[un] + sn2)[:, None]
-        a = (mean[un][None, :] - delta) / np.sqrt(np.clip(var_new, 1e-12, None) + sn2)
-        pn = ndtr(a)
-        bern = np.sqrt(np.clip(pn * (1 - pn), 0, None))
-        np.fill_diagonal(bern, 0.0)                                             # the candidate's own term vanishes
-        U1 = bern.sum(1) / N
-        S.append(int(un[int(np.argmin(U1))]))                                   # argmax of U0 - U1
-    return out
-
-
-# ------------------------------------------------------------------ GP, official code -------------------------------
-def run_gp_official(y, feats, seed, delta=0.5):
-    """Gong, Feng, Pan's own single-fidelity code (github.com/umbrellagong/MFGPreliability, commit 604bfce), unmodified:
-    DiscreteInputs over the bank (grid = the route descriptors, weights = 1/N), AcqIVR_FP, OptimalDesign.seq_sampling
-    with discrete=True (the acquisition is evaluated on every grid route and the argmin taken) and its
-    failure_probability readout (weighted share of routes whose posterior MEAN is below the limit 0).  f_h(x) = y - 1/2
-    of the route whose descriptor is x, so f_h < 0 is a failure.  What is ours: the initial routes are drawn from the
-    bank instead of a Latin hypercube (pyDOE stubbed), the kernel is an isotropic RBF (+ constant, + white noise)
-    because the paper's per-dimension length scales are a 2-d choice, and the SR estimate is 1 - failure probability.
-    The official discrete branch passes the grid INDEX to the acquisition; the wrapper resolves it to the grid row.
-    The official loop may re-select an already executed route (nothing excludes it); such repeats are counted in the
-    budget and reported."""
-    import warnings
-    for path in (str(Path(__file__).resolve().parent / 'official' / 'mfgp_shim'), str(MFGP)):
-        if path not in sys.path:
-            sys.path.insert(0, path)
-    from core import AcqIVR_FP, DiscreteInputs, OptimalDesign, failure_probability      # the official package
-    from sklearn.gaussian_process import GaussianProcessRegressor
-    from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
-    warnings.filterwarnings('ignore')
-    X = standardise(feats)
-    N, d = X.shape
-    key = lambda x: tuple(np.round(np.asarray(x, float), 6))
-    lut = {key(X[i]): i for i in range(N)}
-    assert len(lut) == N, 'descriptor rows must be unique for the official lookup'
-
-    def f_h(x):
-        x = np.asarray(x, float)
-        if x.ndim == 2:
-            return np.array([f_h(r) for r in x])
-        return float(y[lut[key(x)]] - delta)
-
-    class BankInputs(DiscreteInputs):                      # LHS -> a random draw of bank routes
-        def sampling(self, num, criterion=None):
-            return X[np.random.default_rng(seed).permutation(N)[:num]].copy()
-
-    class AcqBank(AcqIVR_FP):                              # the official discrete branch hands compute_value the grid
-        def compute_value(self, x):                        # INDEX (optimaldesign.py, seq_sampling, discrete=True);
-            if np.ndim(x) == 0:                            # resolve it to the grid row, then the official value
-                x = self.grid[int(x)]
-            return super().compute_value(x)
-
-    inputs = BankInputs(np.array([[X[:, j].min(), X[:, j].max()] for j in range(d)]), d)
-    inputs.set_pdf(X.copy(), np.ones(N) / N)
-    kernel = C(1.0, (1e-2, 1e2)) * RBF(np.sqrt(d), (1e-1, 1e2)) + WhiteKernel(1e-1, (1e-3, 1e0))
-    sgp = GaussianProcessRegressor(kernel, normalize_y=False, n_restarts_optimizer=2, random_state=seed)
-    np.random.seed(seed)
-    opt = OptimalDesign(f_h, inputs)
-    opt.init_sampling(GP_NINIT)
-    models = opt.seq_sampling(max(BGRID) - GP_NINIT, AcqBank(inputs), sgp, n_jobs=1, discrete=True, verbose=False)
-    pf = failure_probability(models, inputs)               # model k = fit on the first GP_NINIT + k samples
-    items = [lut[key(r)] for r in opt.DX]
-    out = {}
-    for B in BGRID:
-        sel = items[:B]
-        out[B] = {'est': float(1.0 - pf[B - GP_NINIT]), 'items': sel,
-                  'note': f'{B - len(set(sel))} repeated route(s) in the first {B} samples'}
-    return out
-
-
-# ------------------------------------------------------------------ Kernel test case sampling -----------------------
-def run_ktcs(y, feats, seed, steps=500, nrep=5):
-    """Kernel Test Case Sampling (Qian, Xu, Xing, Guo, Nature Communications 17:3114, 2026), from the paper's Methods
-    (its Code Ocean capsule was not reachable): a FIXED subset of M = B routes chosen from the route descriptors alone,
-    no surrogate planner.  Step 1, coverage: importance weights w_theta(x) = softmax over the cases of a one-layer
-    network, trained to minimise the information potential sum_{i != j} w_i w_j K(x_i, x_j); then Pareto-order
-    sampling, U_i ~ U(0, 1), Q_i = U_i / (1 - U_i) * (1 - w_i) / w_i, the M smallest Q selected (nested over the
-    budgets for one draw of U; nrep draws, the error averaged over draws like the random rows).  Step 2,
-    representativeness: distribution-alignment weights lambda = argmin 1/2 lambda' K_zz lambda - lambda' Kbar,
-    Kbar = (1/N) 1' K_xz, sum lambda = 1, lambda >= 0 (a convex QP, solved by SLSQP).  Readout = sum_j lambda_j y_j
-    (the paper's accident-rate estimate with unit exposure and no correction factors).  RBF kernel; the paper does not
-    state its bandwidth, the median pairwise distance is used."""
-    from scipy.optimize import minimize
-    X = standardise(feats)
-    N = len(y)
-    d2 = ((X[:, None, :] - X[None, :, :]) ** 2).sum(-1)
-    sig2 = np.median(d2[np.triu_indices(N, 1)])
-    K = np.exp(-d2 / (2 * sig2))
-    torch.manual_seed(seed)
-    Kt = torch.tensor(K, dtype=torch.float32, device=DEV)
-    Xt = torch.tensor(X, dtype=torch.float32, device=DEV)
-    lin = nn.Linear(X.shape[1], 1).to(DEV)
-    opt = torch.optim.Adam(lin.parameters(), lr=1e-2)
-    off = 1.0 - torch.eye(N, device=DEV)
-    for _ in range(steps):                                   # Step 1: information potential of the weighted pool
-        w = torch.softmax(lin(Xt).squeeze(-1), 0)
-        loss = (w[:, None] * w[None, :] * Kt * off).sum()
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-    w = torch.softmax(lin(Xt).squeeze(-1), 0).detach().cpu().numpy().astype(float)
-    Kbar_all = K.mean(0)                                     # (1/N) 1' K_xz for every candidate z
-    rng = np.random.default_rng(seed)
-    out = {B: {'ests': [], 'items': None} for B in BGRID}
-    for rep in range(nrep):
-        U = rng.uniform(1e-9, 1 - 1e-9, N)
-        Q = U / (1 - U) * (1 - w) / np.clip(w, 1e-12, None)   # Pareto-order sampling
-        order = np.argsort(Q)
-        for B in BGRID:
-            sel = order[:B]
-            Kzz, Kbar = K[np.ix_(sel, sel)], Kbar_all[sel]
-            lam0 = np.ones(B) / B                            # Step 2: distribution-alignment weights (convex QP)
-            res = minimize(lambda l: 0.5 * l @ Kzz @ l - l @ Kbar, lam0, jac=lambda l: Kzz @ l - Kbar, method='SLSQP',
-                           bounds=[(0, 1)] * B, constraints=[{'type': 'eq', 'fun': lambda l: l.sum() - 1, 'jac': lambda l: np.ones(B)}],
-                           options={'maxiter': 300, 'ftol': 1e-10})
-            lam = np.clip(res.x, 0, None)
-            lam /= lam.sum()
-            out[B]['ests'].append(float(lam @ y[sel]))
-            if rep == 0:
-                out[B]['items'] = [int(i) for i in sel]
-    return {B: {'est': float(np.mean(v['ests'])), 'ests': v['ests'], 'items': v['items'],
-                'note': f'{nrep} Pareto-order draws; est = mean of the per-draw estimates, err averaged per draw at merge'} for B, v in out.items()}
-
-
-# ------------------------------------------------------------------ DICE-style sampling ----------------------------
-def dice_head(R, pooled, seed, epochs=300):
-    """The paper's difficulty head (Sec. IV-B / VI-A): backbone frozen, the pooled ego / track / road embeddings
-    concatenated, an MLP to a scalar, binary cross-entropy on the simulation outcomes of previous software
-    versions — here every (route, calibration planner) cell with a response is one example (the paper adds a log
-    once per software version with identical inputs), trained per cell on the K_cal calibration planners only.
-    Returns the head's collision probability of every bank route (Sec. IV-C)."""
-    torch.manual_seed(seed)
-    X = torch.tensor(standardise(pooled), dtype=torch.float32)
-    rows, labels = np.where(~np.isnan(R.T))                       # (route, planner) examples
-    yb = torch.tensor(1.0 - R.T[rows, labels], dtype=torch.float32)  # 1 = failure
-    Xb = X[torch.tensor(rows)]
-    net = nn.Sequential(nn.Linear(X.shape[1], 64), nn.ReLU(), nn.Linear(64, 1))
-    opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
-    for _ in range(epochs):
-        loss = nn.functional.binary_cross_entropy_with_logits(net(Xb).squeeze(-1), yb)
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-    with torch.no_grad():
-        return torch.sigmoid(net(X).squeeze(-1)).numpy().astype(float)
-
-
-def run_dice(R, y, feats, seed, M=10, K0=1.0, nrep=5, d=None):
-    """DICE-style sampling (Farid, Schleede, Huang, Heckman, "Foundation models for rapid autonomy validation", ICRA
-    2025, Algorithm 2).  dice_full is the paper's pipeline end to end at the bank's scale: the masked-autoencoder
-    backbone of experiments/dice_mae.py, its difficulty head (dice_head) trained on the calibration planners'
-    outcomes, and this sampling scheme; dice_mae replaces the head by the calibration planners' failure rate,
-    dice_desc additionally replaces the embedding by the route descriptor.  The paper's own model and data are
-    proprietary and unreleased, so every variant is a re-implementation at Bench2Drive scale.  concat(z, d) is clustered into M groups by
-    k-means (the paper leaves the weight of d and M open: z standardised, d standardised and scaled to the variance
-    of the whole z block, M = 10); a cluster is drawn with probability proportional to K0 + mean(d) (K0 = 1, the value
-    the paper discusses), a route uniformly inside it without replacement; the sequence is nested over the budgets,
-    nrep draws, the error averaged per draw as for the random rows.  Readout = the paper's stratified count: the
-    failures found in a cluster scaled by the inverse of the sampled share of that cluster (an unsampled cluster
-    contributes none), SR = 1 - failures / N."""
-    Z = standardise(feats)
-    N = len(y)
-    if d is None:
-        d = 1.0 - fill(R).mean(0)                            # surrogate failure rate = the difficulty score
-    dz = (d - d.mean()) / (d.std() + 1e-9) * np.sqrt(Z.shape[1])
-    lab = KMeans(M, n_init=10, random_state=seed).fit(np.hstack([Z, dz[:, None]])).labels_
-    sizes = np.bincount(lab, minlength=M)
-    w = np.array([K0 + d[lab == c].mean() if sizes[c] else 0.0 for c in range(M)])
-    rng = np.random.default_rng(seed)
-    out = {B: {'ests': [], 'items': None} for B in BGRID}
-    for rep in range(nrep):
-        pools = {c: list(rng.permutation(np.where(lab == c)[0])) for c in range(M)}
-        S = []
-        while len(S) < max(BGRID):
-            c = rng.choice(M, p=w / w.sum())
-            if pools[c]:
-                S.append(int(pools[c].pop()))
-        for B in BGRID:
-            sel = np.array(S[:B])
-            fails = 0.0
-            for c in range(M):
-                sc = sel[lab[sel] == c]
-                if len(sc):
-                    fails += (1.0 - y[sc]).sum() * sizes[c] / len(sc)
-            out[B]['ests'].append(float(1.0 - fails / N))
-            if rep == 0:
-                out[B]['items'] = [int(i) for i in sel]
-    return {B: {'est': float(np.mean(v['ests'])), 'ests': v['ests'], 'items': v['items'],
-                'note': f'{nrep} draws, M={M}, K0={K0}, cluster sizes {sizes.tolist()}'} for B, v in out.items()}
-
-
-# ------------------------------------------------------------------ driver --------------------------------------
 def run(methods, seeds, out_path):
     recs = json.load(open(out_path)) if out_path.exists() else []
     done = {(r['seed'], r['K'], r['slot'], r['method']) for r in recs}
@@ -483,13 +52,9 @@ def run(methods, seeds, out_path):
                     if (seed, Kc, slot, name) in done:
                         continue
                     t0 = time.time()
-                    feats = scene_feats(bi, 'mae') if name in ('dice_mae', 'dice_full') else scene_feats(bi) if (name.endswith('scene') or name == 'dice_desc') else fill(R).T
                     cs = cell_seed(seed, Kc, slot)
-                    est = run_fst(R, y, feats, cs) if name.startswith('fst') else \
-                        run_gp_official(y, feats, cs) if name.startswith('gpo') else \
-                        run_ktcs(y, feats, cs) if name.startswith('ktcs') else \
-                        run_dice(R, y, feats, cs, d=dice_head(R, scene_feats(bi, 'pooled'), cs)) if name == 'dice_full' else \
-                        run_dice(R, y, feats, cs) if name.startswith('dice') else run_gp(y, feats, cs)
+                    m = METHODS[name]
+                    est = m.estimate(m.fit(R, cs, None, bi), y, list(BGRID), cs)
                     rec = {'seed': seed, 'K': Kc, 'slot': slot, 'method': name, 'SR': SR, 'n_bank': len(bi),
                            'fit_s': time.time() - t0,
                            'budgets': {str(B): {'est': v['est'], 'err': float(np.mean([abs(e - SR) for e in v['ests']])) if 'ests' in v else abs(v['est'] - SR),

@@ -83,15 +83,19 @@ def load_descriptor_arms():
     #                        rollout (eval_min_ttc.npz; the earlier row was the in-house ssm_min_ttc column)
     #   EDRF-based           the risk-field equations of Jiang et al. 2024 with the single realised future in place of
     #                        the multimodal predictor, 6 route statistics (eval_edrf.npz)
-    #   Agent-JEPA           our re-implementation of Jaiswal 2026, Sec. 3: the paper-literal best-validation checkpoint
-    #                        and the full 50-epoch schedule (official code exists, github.com/hellojais/mindrive-jepa;
-    #                        a run through it is pending)
+    #   Agent-JEPA           (a) the OFFICIAL code (github.com/hellojais/mindrive-jepa) retrained on the bank's 10 Hz rollouts
+    #                        with its own tokenizer / trainer / surprise score (experiments/us_official/jepa_official_b2d.py;
+    #                        best.pt = the paper's best-validation rule), a route = the mean surprise over its 5 s
+    #                        windows (1-d) or [mean, max, p90] (3-d); (b) our earlier re-implementation of Sec. 3:
+    #                        the paper-literal best-validation checkpoint and the full 50-epoch schedule
     #   Traffic entropy      OUR descriptor: mean next-token entropy of the SMART traffic model run through the official
     #                        CAT-K code and checkpoint (eval_smart_ent_catk.npz); neither paper proposes it
     #   in-house rows        Route geometry, Agent density + kin., Kinematics (cmdkin), Hand-crafted risk (cmdkin+gtrisk),
     #                        and the traffic risk stack of traffic_features_220.csv (the earlier "Risk field" row)
     # Every row goes through the same two-stage Ridge readout below; that readout is ours for every row.
     return {'Min-TTC': load_features('eval_min_ttc'),
+            'Agent-JEPA (official code, mean surprise)': load_features('eval_jepa_official'),
+            'Agent-JEPA (official code, [mean,max,p90])': load_features('eval_jepa_official_3d'),
             'EDRF-based risk field': load_features('eval_edrf'),
             'Agent-JEPA (best-val ckpt)': load_features('eval_agentjepa_bestval'),
             'Agent-JEPA (full schedule)': load_features('eval_agentjepa_official'),

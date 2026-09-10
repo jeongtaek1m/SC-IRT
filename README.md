@@ -213,7 +213,7 @@ tests/          fast invariants
   .0803 and DICE of Farid et al. (ICRA 2025; its model and data are
   proprietary, so the pipeline — masked-autoencoder pre-training, difficulty
   head, cluster-weighted sampling — is re-implemented at the bank's scale)
-  .0538, against ATDrive's .0318 — ATDrive is lower in every cell, with the paired interval
+  .0565, against ATDrive's .0318 — ATDrive is lower in every cell, with the paired interval
   excluding zero only at K_cal = 12, B >= 55 for the ported GP method. The adaptive importance sampling of O'Kelly et al. is cited, not run:
   a fixed benchmark with SR .4-.9 has neither the generative scenario model nor
   the rare event it needs (RESULTS.md, "AV-testing baselines re-implemented
