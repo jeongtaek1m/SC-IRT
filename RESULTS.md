@@ -1314,6 +1314,31 @@ candidates. On UPS (Table 3B, control priors 3 and 4) they behave like the
 other control priors: block-SR MAE unchanged, per-cell NLL .008 (lambda = 0.1)
 and .002-.004 (lambda = 1) better than the record.
 
+### Initialisation control — track-SSL pre-training of the encoder of record (`--ssl`)
+
+The one remaining "does self-supervision help" question, asked on the record's
+own encoder rather than on frozen features: before the IRT loss, the encoder is
+pre-trained on the stage's TRAINING routes to reconstruct hidden agent-track
+segments (30% of the live agents per window, a contiguous 4-step segment of
+[dx, dy, cos, sin, v], decoded from [agent embedding ; window vector ; step
+embedding], MSE; every encoder module trains, the head gets no gradient; the
+epoch is chosen by the reconstruction loss on an inner 10% validation split of
+the training routes, max 120, patience 6 — chosen epochs 41-118), then the
+same 30-epoch IRT recipe as the record with the same seeds and batch order. The
+only difference from the record is therefore the initialisation.
+
+| initialisation | AUROC | scene-MAE | rho | paired delta vs record (3 runs) |
+|---|---|---|---|---|
+| random (record) | .761 +- .006 | .181 +- .007 | +.545 +- .024 | — |
+| track-SSL | .756 +- .009 | .183 +- .009 | +.528 +- .036 | AUROC -.006 +- .003 (3 of 3 lower), MAE +.002 +- .002, rho -.017 +- .013 (2 of 3 lower) |
+
+No gain: the SSL-initialised encoder is inside the seed spread on scene-MAE and
+slightly below the record on AUROC in every run. On 180 training routes the
+reconstruction pretext does not find a representation the response likelihood
+would not find itself. Together with the block below it closes the question for
+this bank: neither frozen foundation features nor self-supervised initialisation
+of the track encoder improves on training it on the responses.
+
 ### Foundation-model encoder ablation — frozen DINOv3 / SMART features with a light head (`run_us.py` control block)
 
 Asked whether the route encoder could be replaced by frozen foundation-model
