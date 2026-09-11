@@ -1020,8 +1020,12 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     hide a contiguous segment of `seg` steps of a random `mask_frac` of the live agents (>= 8 valid steps) of every
     window, encode the window with those cells masked, and reconstruct the hidden cells' standardised
     [dx, dy, cos, sin, v] from [the agent's embedding h_k ; the window vector z_w ; a learned step embedding]
-    with a small decoder (MSE over the masked cells). Every module of the encoder trains; the difficulty head
-    receives no gradient and keeps its initial weights. The epoch is chosen by the reconstruction loss on an
+    with a small decoder (MSE over the masked cells). The pretext runs through `encode()` only, so it trains the
+    WINDOW encoder (agent MLP, window ego query, readout attention, z_out; 51,456 parameters of the lane-free
+    model); the route-level ego branch `phi` and the difficulty head are not on that path, receive no
+    gradient and keep their initial weights (the inert lane-side modules receive zero gradients and only
+    the optimiser's decoupled weight decay, which cannot change any output). The epoch is chosen by the
+    reconstruction loss on an
     inner validation split (10% of the training routes, by route), max `max_epochs`, `patience`; the decoder is
     discarded. Returns (best epoch, best inner-val loss)."""
     import copy

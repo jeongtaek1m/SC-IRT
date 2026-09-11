@@ -1321,9 +1321,13 @@ own encoder rather than on frozen features: before the IRT loss, the encoder is
 pre-trained on the stage's TRAINING routes to reconstruct hidden agent-track
 segments (30% of the live agents per window, a contiguous 4-step segment of
 [dx, dy, cos, sin, v], decoded from [agent embedding ; window vector ; step
-embedding], MSE; every encoder module trains, the head gets no gradient; the
-epoch is chosen by the reconstruction loss on an inner 10% validation split of
-the training routes, max 120, patience 6 — chosen epochs 41-118), then the
+embedding], MSE). The pretext runs through the window encoder only, so it
+pre-trains that path (agent MLP, window ego query, readout attention, z_out;
+51,456 of the model's 90,177 parameters); the route-level ego branch and the
+difficulty head are not in the pretext's graph and keep their initial weights;
+the epoch is chosen by the reconstruction loss on an inner 10% validation split
+of the training routes (max 120, patience 6; chosen epochs 41-118, mean 77),
+then the
 same 30-epoch IRT recipe as the record with the same seeds and batch order. The
 only difference from the record is therefore the initialisation.
 
