@@ -126,7 +126,7 @@ def merge():
             if c in held:
                 continue
             st, se = np.sign(T[js] - T[c]), np.sign(est - T[c])
-            out.append(0.5 if (st == 0 or se == 0) else float(st == se))
+            out.append(float(st == se))                      # Kocmi et al. 2021 pairwise accuracy: sign agreement, sgn(0) = 0 (a tie on one side only scores 0)
         return float(np.mean(out))
     table = {}
     for r in recs:

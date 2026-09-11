@@ -158,7 +158,7 @@ def report(recs):
                 if c in held:
                     continue
                 st, se = np.sign(T[js] - T[c]), np.sign(e - T[c])
-                out.append(0.5 if (st == 0 or se == 0) else float(st == se))
+                out.append(float(st == se))                      # Kocmi et al. 2021 pairwise accuracy: sign agreement, sgn(0) = 0 (a tie on one side only scores 0)
             return float(np.mean(out))
         A = {K: {m: {B: [float(np.mean([acc(r['seed'], r['js'], e) for e in np.atleast_1d(r['est'][m][str(B)])]))
                          for r in recs if r['K'] == K] for B in BGRID} for m in METHODS} for K in KCALS}
