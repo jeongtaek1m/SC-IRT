@@ -7,13 +7,15 @@
     official/mfgp.py     the same method through its OFFICIAL code (MFGPreliability)               gpo_scene
     official/ktcs.py     kernel test case sampling (Qian et al., Nat. Comm. 2026), from the Methods ktcs_scene
     official/dice.py     DICE (Farid et al., ICRA 2025), re-implemented end to end                  dice_desc, dice_mae, dice_full
+    official/sim2val.py  Sim2Val (Luo et al., CoRL 2025) through its OFFICIAL package (NVlabs/sim2val) s2v_mean, s2v_vec
 
 Every wrapper follows the run_up_official.py contract (fit / estimate / stop) with the bank rows `bi` as an
 extra argument of fit, and passes the checks of official/av_common.selftest (official/selftest_<name>.py).
 Same draws, K_cal subsamples, banks and budgets as run_up_frontier.py (official/data.py), so every cell is
 paired with the ATDrive cell; --merge prints SR-MAE, the paired delta against ATDrive and the pairwise ranking
 accuracy of every cell and writes results/up_avbase.json. A method whose estimate carries per-draw estimates
-('ests': the random-order rows) is scored by the error averaged over the draws, as the random rows of Table 1.
+('ests': the random-order rows) is scored by the error AND the ranking accuracy averaged over the draws, as the
+random rows of Table 1 (never by the mean of the draws' estimates, which would be an ensemble).
 
     $P experiments/run_av_baselines.py --methods fst_scene fst_resp --seeds 0 4     # shard
     OMP_NUM_THREADS=2 $P experiments/run_av_baselines.py --methods gpo_scene --seeds 0 2   # official code, CPU
@@ -33,11 +35,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from official.data import BGRID, KCALS, NDRAWS, protocol_cell, draw, panel     # noqa: E402
 from official.av_common import cell_seed                                       # noqa: E402
-from official import fst, gp_port, mfgp, ktcs, dice                            # noqa: E402
+from official import fst, gp_port, mfgp, ktcs, dice, sim2val                   # noqa: E402
 from atdrive.splits import up_split                                            # noqa: E402
 
 OUT = Path(os.environ.get('ATDRIVE_RESULTS_DIR', Path(__file__).resolve().parents[1] / 'results'))
-METHODS = {**fst.METHODS, **gp_port.METHODS, **mfgp.METHODS, **ktcs.METHODS, **dice.METHODS}
+METHODS = {**fst.METHODS, **gp_port.METHODS, **mfgp.METHODS, **ktcs.METHODS, **dice.METHODS, **sim2val.METHODS}
 ALL_METHODS = list(METHODS)
 
 
@@ -94,7 +96,8 @@ def merge():
             t = table.setdefault(r['method'], {}).setdefault((r['K'], int(B)), {'err': [], 'd': [], 'acc': []})
             t['err'].append(v['err'])
             t['d'].append(v['err'] - ref[(r['seed'], r['K'], js)]['err']['ATDrive'][B])
-            t['acc'].append(rank_acc(r['seed'], js, v['est']))
+            t['acc'].append(float(np.mean([rank_acc(r['seed'], js, e) for e in v['ests']])) if 'ests' in v   # random-draw rows:
+                            else rank_acc(r['seed'], js, v['est']))                                  # per draw, then mean (no ensemble)
     out = {'methods': {}}
     print(f"{'method':10}{'K':>3}{'B':>5}{'n_eval':>7}{'SR-MAE':>8}{'RankAcc':>8}{'d vs ATDrive':>14}")
     for mname, Tm in table.items():

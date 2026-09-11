@@ -240,7 +240,7 @@ code, whose SR-MAE is the closest to ATDrive's in Table 1-official, orders at
 
 ## Table 1 — AV-testing baselines re-implemented from their papers (`run_av_baselines.py`)
 
-Four efficient-testing methods of the driving literature on the Table 1
+Five efficient-testing methods of the driving literature on the Table 1
 protocol: the same 16 draws, K_cal subsamples, banks and budgets, every cell
 paired with the ATDrive cell of `up_frontier.json`. FST has no public code (a
 sweep of the paper texts, the authors' GitHub accounts and the Feng group's
@@ -333,6 +333,26 @@ excludes zero against ATDrive.
   route descriptor (`dice_desc`). The paper reports no estimation error — its
   metric is the share of collisions found on its own data — so there is no
   number of its own to reproduce.
+- **Sim2Val** (Luo, Yang, Watson, Sharma, Veer, Schmerling, Pavone, "Sim2Val:
+  leveraging correlation across test platforms for variance-reduced metric
+  estimation", CoRL 2025), through its OFFICIAL package (github.com/NVlabs/sim2val,
+  `control_variates_estimator`, unmodified; `experiments/official/sim2val.py`):
+  control variates. With n paired samples (the costly metric F and a cheap
+  surrogate G of it) and k unpaired surrogate samples, mu = mean_paired(F -
+  beta G) + beta mean_unpaired(G), beta = k / (k + n) Var(G)^-1 Cov(G, F), plus
+  their variance estimate. In the protocol the costly platform is the new
+  planner's execution and the cheap platform the historical response panel:
+  G_i = the K_cal calibration planners' mean success on route i (`s2v_mean`)
+  or their K_cal individual responses, a missing cell filled by that
+  planner's mean (`s2v_vec`, the official matrix version) — the surrogate
+  definition is ours, the paper's surrogates are nuPlan open-loop metrics or a
+  trained metric correlator. Routes are drawn i.i.d. (the paper's assumption:
+  a random order nested over the budgets, five draws, the error and the
+  ranking accuracy averaged per draw); the method has no adaptive selection
+  and no stopping. The estimate is clipped to [0, 1] (4 of 3,840 draw-budget
+  estimates of the matrix version, none of the scalar one) and the plain mean
+  replaces it when the official code raises (a singular Var(G): 1 of 3,840,
+  matrix version only).
 - **Not run: adaptive importance sampling** (O'Kelly, Sinha, Namkoong, Duchi,
   Tedrake, NeurIPS 2018). Its substance is a generative traffic model whose
   proposal distribution the cross-entropy method tilts toward failures, with new
@@ -344,7 +364,7 @@ excludes zero against ATDrive.
   with a Horvitz-Thompson correction — a survey-sampling estimator, not the
   method. It is cited, not compared.
 
-SR-MAE (mean seconds per cell: FST 11-13, GP 4-10, official GP 19, KTCS 7, DICE-style < 1):
+SR-MAE (mean seconds per cell: FST 11-13, GP 4-10, official GP 19, KTCS 7, DICE-style < 1, Sim2Val < 1):
 
 | method | K4 B30 | K4 B55 | K4 B110 | K4 B165 | K8 B30 | K8 B55 | K8 B110 | K8 B165 | K12 B30 | K12 B55 | K12 B110 | K12 B165 | macro (9) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -356,7 +376,8 @@ SR-MAE (mean seconds per cell: FST 11-13, GP 4-10, official GP 19, KTCS 7, DICE-
 | Kernel test case sampling, scene descriptor | .1182* | .0800* | .0457* | .0225* | .1149* | .0835* | .0441* | .0219* | .1170* | .0751* | .0440* | .0226* | .0803 |
 | DICE, re-implemented end to end (MAE + head + Algorithm 2) | .0877* | .0548* | .0293* | .0168* | .0835* | .0519* | .0297* | .0164* | .0849* | .0565* | .0301* | .0162* | .0565 |
 | DICE, head replaced by the surrogate failure rate | .0857* | .0552* | .0307* | .0172* | .0772* | .0522* | .0288* | .0159* | .0808* | .0561* | .0283* | .0150* | .0550 |
-| DICE, ... and the embedding by the route descriptor | .0851* | .0522* | .0296* | .0164* | .0815* | .0526* | .0279* | .0149* | .0853* | .0529* | .0249* | .0137* | .0547 |
+| Sim2Val, OFFICIAL code, surrogate = calibration mean success | .0579 | .0378 | .0226 | .0131 | .0571 | .0419 | .0217 | .0118 | .0551 | .0382 | .0209 | .0126 | .0392 |
+| Sim2Val, OFFICIAL code, surrogate = the K_cal response vector | .0631 | .0386 | .0225 | .0132 | .0693 | .0435 | .0224 | .0123 | .0778 | .0439 | .0223 | .0126 | .0448 |
 | **ATDrive** (Table 1) | **.0450** | **.0332** | **.0223** | **.0116** | **.0448** | **.0337** | **.0202** | **.0082** | **.0477** | **.0231** | **.0160** | **.0081** | **.0318** |
 
 Paired delta against ATDrive, GP adaptive with the scene descriptor: K4
@@ -366,10 +387,18 @@ Paired delta against ATDrive, GP adaptive with the scene descriptor: K4
 [+.0117, +.0334] / +.0081 [+.0007, +.0162] / +.0035 [+.0002, +.0066]. FST with
 the scene descriptor: +.0406 [+.0236, +.0596] at K4 B30 down to +.0052 at K4
 B165, +.0164 / +.0112 / +.0064 / +.0054 at K8, +.0140 [-.0007, +.0304] /
-+.0173 / +.0083 / +.0064 at K12. Pairwise ranking accuracy (the Table 1
-companion metric, mean over the nine cells): FST .940 / .935, GP .962 / .941
-(scene / response), the official GP code .868, kernel test case sampling .945,
-DICE .971 (end to end; .965 / .970 for the two ablations), ATDrive .969.
++.0173 / +.0083 / +.0064 at K12. Sim2Val with the mean-success surrogate: +.0129
+/ +.0047 / +.0003 / +.0014 at K4, +.0123 / +.0082 / +.0015 / +.0037 at K8, +.0074
+/ +.0152 / +.0049 / +.0044 at K12 (ATDrive lower in all twelve cells). Pairwise
+ranking accuracy (the Table 1 companion metric, mean over the nine cells; for
+the random-draw rows the accuracy of EACH draw averaged, never the accuracy of
+the draws' mean estimate, which would be an ensemble): FST 0.940 / 0.935, GP
+0.962 / 0.941 (scene / response), the official GP code 0.868, kernel test
+case sampling 0.905, DICE 0.933 (end to end; 0.931 / 0.935 for the two
+ablations), Sim2Val 0.954 / 0.946, ATDrive .969. (An earlier revision scored the
+random-draw rows on the mean of their five estimates — DICE .971, KTCS .945 —
+which is an ensemble and overstated them; the per-draw numbers above replace
+it.)
 
 The official code (`run_gp_official`: `DiscreteInputs` over the bank with
 weights 1/N, `AcqIVR_FP`, `OptimalDesign.seq_sampling(discrete=True)` and its
@@ -389,9 +418,15 @@ paper's algorithm with the predictive success probability, the observed
 outcome for executed routes and the unexecuted-route candidate set, and is the
 number the comparison rests on.
 
-Reading. The GP method on the route descriptor is the strongest of the four
-(macro .0390 over the nine Table 1 cells; ATDrive .0318, the random references
-.0371-.0422, tinyBenchmarks' own code .0419): ATDrive is lower in all twelve
+Reading. The GP method on the route descriptor and Sim2Val's official control
+variates on the calibration mean are the strongest of the five (macro .0390
+and .0392 over the nine Table 1 cells; ATDrive .0318, the random references
+.0371-.0422, tinyBenchmarks' own code .0419). Sim2Val is what a random order
+plus an unbiased variance-reduced readout gives: it beats the IRT-free random
+mean (.0422) by the control variate alone, matches our GP port without any
+adaptive selection, and is behind ATDrive in every cell — by .0003-.0015 at
+B = 110 and by .007-.015 at B = 30 / 55, i.e. the adaptive choice of routes is
+what ATDrive adds on top of a good readout. On the GP method: ATDrive is lower in all twelve
 cells, but the paired interval excludes zero only at K_cal = 12 with B >= 55;
 at K_cal = 4 and 8 the two are within noise. That method sees the same route
 descriptor the ATDrive encoder uses only for NEW routes, and no calibration
@@ -410,7 +445,7 @@ setting never touches (it uses the calibration responses only), and at 165 of
 about 215 routes every method converges (.011-.019).
 
 Every method of this section is one wrapper file under `experiments/official/`
-(`fst.py`, `gp_port.py`, `mfgp.py`, `ktcs.py`, `dice.py`, sharing
+(`fst.py`, `gp_port.py`, `mfgp.py`, `ktcs.py`, `dice.py`, `sim2val.py`, sharing
 `av_common.py`) with the fit / estimate / stop contract of the official
 wrappers and a self-test (`selftest_<name>.py`: budget, leak, determinism,
 prefix); `run_av_baselines.py` only drives them. The DICE head is pinned to one
@@ -480,6 +515,7 @@ Planner evaluation (Table 1; every row on the same 16 draws x K_cal x B):
 | FST | surrogates = the K_cal calibration planners (P role); route descriptor as the scenario state (O) | cross-attention similarity net, min-max surrogate loss, P_c draws (P; O impl., no code) | fixed set by discrete swap search (O; the paper: gradient descent on continuous coordinates) | weighted observed outcomes (P) | performance index = SR (P) | re-implemented |
 | KTCS | route descriptor (O) | information-potential weights, Pareto-order sampling, QP alignment weights (P; O impl., capsule unreachable) | fixed set (P) | lambda-weighted outcomes, unit exposure (P; O: exposure) | accident rate -> SR (P role) | re-implemented |
 | DICE | our route tensors (O, data) | masked autoencoder with the paper's recipe at our scale; their head on calibration outcomes (P; O impl., no code) | Algorithm 2, M = 10 and K_0 = 1 (P; M, K_0 O) | their stratified count (P, mentioned but not evaluated by the paper) | collision rate -> SR | re-implemented |
+| Sim2Val | new-planner outcomes on i.i.d. random routes (P: i.i.d.); surrogate = the calibration planners' mean success or response vector (O) | none (P) | random order, 5 draws (P: i.i.d.; O: draws) | their control_variates_estimator, official package (P, C); clipped to [0, 1] (O) | mean of the costly metric = SR (P) | adapted: surrogate |
 | Random references | — | ATDrive's own calibration (O) | random / type-stratified (O) | plain mean or ATDrive's readout (O) | SR | ours |
 | catR (static MFI order) | — | — | — | — | — | our construct: excluded (a library, not a published method; the same object is the Fisher ablation) |
 
