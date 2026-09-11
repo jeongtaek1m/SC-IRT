@@ -1779,6 +1779,19 @@ Full-benchmark SR-MAE:
 | Delta-R1 on full I | trueC + sceneT | .0160 | .0158 | .0168 |
 | Delta-R1 on full I | calC + trueT | .0333 | .0190 | .0105 |
 
+Encoder-run stability of these cells (the table above and the paper's Table IV use
+encoder run s0; `ATDRIVE_ENC_RUN=1,2` repeats the 64 evaluations with runs s1 and
+s2, `results/ups_full_enc{1,2}/`): full-benchmark SR-MAE of the canonical arm
+.0448 / .0464 / .0447 at B = 30 (mean .0453 +- .0009), .0300 / .0299 / .0298 at
+B = 55 (.0299 +- .0001), .0209 / .0193 / .0195 at B = 110 (.0199 +- .0009); the
+common-prior arm .0459 +- .0006 / .0328 +- .0008 / .0204 +- .0004 (its probe order
+is ATDrive's, so it moves with the encoder too); the naive arm is encoder-free
+(.0698 / .0455 / .0273 in every run). AUROC on the new-route cells: .744 / .756 /
+.766 at B = 30 (.755 +- .011), .748 / .758 / .767 at B = 55 (.758 +- .009), .747 /
+.758 / .767 at B = 110 (.757 +- .010) against the common prior's .709 / .707 /
+.706 (+- .001). Run s0, the one in the paper, is the lowest of the three on
+AUROC and in the middle on SR-MAE.
+
 What the scene encoder buys (+ = the scene prior is worse; paired
 planner-cluster bootstrap):
 
