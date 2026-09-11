@@ -177,12 +177,14 @@ Method-level findings the official code exposes, which our re-implementations hi
 
 ### Pairwise ranking accuracy at fixed budgets — the Table 1 companion (`run_up_frontier.py --merge`, `run_up_official.py --merge`)
 
-The paper's Eq. 10: for each new planner, the fraction of the 12
-calibration-pool planners of its draw that the estimated SR orders correctly
-against their true SR (over their recorded routes); a tie in either comparison
-scores 1/2. No true SR is tied on this panel, so the tie rule fires only when
-an estimate equals a pool SR exactly (AnchorPoints' anchor-weighted readout
-does, a handful of times; +.001 on its K4 B30 cell). 64 evaluations per cell
+The paper's Eq. 10 = the pairwise accuracy of Kocmi et al. (WMT 2021): for each
+new planner, the fraction of the 12 calibration-pool planners of its draw for
+which sgn(SR_hat - SR_j) = sgn(SR_true - SR_j), the true SR over the recorded
+routes; sgn(0) = 0, so a tie on one side only scores 0 (an earlier revision
+gave such ties 1/2). No true SR is tied on this panel, so the rule matters only
+when an estimate equals a pool SR exactly: the IRT-free random mean (189 of
+its 46,080 pairs) and AnchorPoints' anchor-weighted readout (19 of 9,216), which
+lose .001-.005 per cell; every other row has no tie. 64 evaluations per cell
 (ATLAS at K_cal = 4: 62). The estimates are exactly the ones Table 1 scores —
 `est` in `up_frontier.json` (stored since this run; the errors are unchanged
 to the last digit and the anchors hold) and the official shards' `est` —
@@ -196,11 +198,11 @@ re-implementations; the random references; ATDrive):
 
 | method | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Random (IRT-free) | .924 | .951 | .968 | .986 | .924 | .951 | .968 | .986 | .924 | .951 | .968 | .986 | .957 |
+| Random (IRT-free) | .919 | .951 | .965 | .986 | .919 | .951 | .965 | .986 | .919 | .951 | .965 | .986 | .955 |
 | Random + IRT | .934 | .953 | .970 | .986 | .936 | .952 | .971 | .987 | .932 | .952 | .971 | .988 | .961 |
 | Random-strat + IRT | .915 | .953 | .973 | .986 | .923 | .957 | .977 | .988 | .922 | .957 | .976 | .988 | .959 |
 | DISCO | .953 | .957 | .977 | .991 | .949 | .958 | .969 | .990 | .938 | .967 | .974 | .995 | .968 |
-| AnchorPoints | .869 | .869 | .869 | .869 | .941 | .952 | .959 | .959 | .921 | .946 | .966 | .984 | .925 |
+| AnchorPoints | .868 | .868 | .868 | .868 | .940 | .952 | .957 | .957 | .921 | .945 | .964 | .983 | .924 |
 | Total-Fisher | .947 | .943 | .973 | .979 | .927 | .952 | .974 | .992 | .938 | .944 | .973 | .988 | .961 |
 | Marginal-Fisher | .938 | .930 | .964 | .979 | .917 | .941 | .965 | .993 | .936 | .948 | .967 | .988 | .956 |
 | tinyBenchmarks | .935 | .953 | .977 | .984 | .936 | .954 | .984 | .992 | .927 | .965 | .977 | .993 | .965 |
@@ -213,7 +215,7 @@ as in the Table 1-official section):
 
 | method (own code) | K4 B30 | B55 | B110 | B165 | K8 B30 | B55 | B110 | B165 | K12 B30 | B55 | B110 | B165 | macro |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| AnchorPoints | .830 | .885 | .859 | .861 | .914 | .936 | .941 | .965 | .894 | .937 | .954 | .977 | .913 |
+| AnchorPoints | .829 | .884 | .858 | .861 | .914 | .935 | .940 | .965 | .893 | .936 | .954 | .977 | .912 |
 | DISCO | .811 | .822 | .794 | .792 | .826 | .833 | .836 | .879 | .848 | .867 | .895 | .888 | .841 |
 | tinyBenchmarks | .923 | .941 | .961 | .986 | .947 | .954 | .969 | .975 | .948 | .948 | .958 | .979 | .957 |
 | metabench | .724 | .773 | .741 | .841 | .833 | .844 | .891 | .863 | .897 | .883 | .884 | .896 | .839 |
