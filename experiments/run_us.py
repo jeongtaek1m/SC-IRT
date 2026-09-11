@@ -48,14 +48,74 @@ CONTROLS = {'lane': 'R2, lane graph kept', 'noroute': 'R2 w/o route relation',  
             'sroute': 'R2, route correspondence shuffled', 'sa2l': 'R2, agent-lane correspondence shuffled',
             'nospeed': 'R2, speed channel removed', 'nlnospeed': 'R2-noLane, speed channel removed',
             'match0.1': 'R2-noLane + difficulty-matching term, lambda .1 (ablation arm)',
-            'match1': 'R2-noLane + difficulty-matching term, lambda 1 (ablation arm)'}
+            'match1': 'R2-noLane + difficulty-matching term, lambda 1 (ablation arm)',
+            'vis': 'R2-noLane tracks + frozen DINOv3 visual branch (two-branch arm)',
+            'visonly': 'frozen DINOv3 visual branch only, without the R2 track branch (two-branch arm)',
+            'vis_pca32': 'tracks + DINOv3-L visual, PCA-32 projection (two-branch arm)',
+            'visonly_pca32': 'DINOv3-L visual only, PCA-32 projection (two-branch arm)',
+            'viswin_pca32': 'window-level fusion: DINOv3-L frames (PCA-32) + Transformer + z_w (visual-window arm)',
+            'viswind64l1_pca32': 'window-level fusion, small Transformer (64-d, 1 layer), PCA-32 (visual-window arm)',
+            'vis_S': 'tracks + DINOv3-S visual (two-branch arm)',
+            'visonly_S': 'DINOv3-S visual only (two-branch arm)',
+            'viswin_pca32_S': 'window-level fusion with DINOv3-S frames, PCA-32 (visual-window arm)',
+            'vis_pca32_S': 'tracks + DINOv3-S visual, PCA-32 (two-branch arm)',
+            'visonly_pca32_S': 'DINOv3-S visual only, PCA-32 (two-branch arm)',
+            'viswin_S': 'window-level fusion with DINOv3-S frames, full 1152-d projection (visual-window arm)',
+            'viswind64l1_pca32_S': 'window-level fusion, small Transformer (64-d, 1 layer), DINOv3-S PCA-32 (visual-window arm)',
+            'viswind32l1_pca32_S': 'window-level fusion, smallest Transformer (32-d, 1 layer), DINOv3-S PCA-32 (visual-window arm)',
+            'vis_vpool_S': 'tracks + DINOv3-S visual, cameras mean-pooled to 384-d (two-branch arm)',
+            'visonly_vpool_S': 'DINOv3-S visual only, cameras mean-pooled to 384-d (two-branch arm)',
+            'viswin_vpool_S': 'window-level fusion, DINOv3-S frames mean-pooled over cameras (visual-window arm)',
+            'viswind64l1_vpool_S': 'window-level fusion, small Transformer (64-d, 1 layer), cameras mean-pooled (visual-window arm)',
+            'vis_vpoolc8_S': 'tracks + DINOv3-S visual, cameras mean-pooled + 8-channel average-pool to 48-d (two-branch arm)',
+            'visonly_vpoolc8_S': 'DINOv3-S visual only, cameras mean-pooled + 8-channel average-pool to 48-d (two-branch arm)',
+            'match0.1_vis_vpool_S': 'tracks + DINOv3-S visual (camera-pooled) + matching term lambda .1 (ablation)',
+            'match0.1_viswin_vpool_S': 'window-level fusion (camera-pooled) + matching term lambda .1 (ablation)',
+            'visonly_vpool_ego_S': 'DINOv3-S visual (camera-pooled) + ego status, no agents (two-branch arm)',
+            'vismfm_ego_S': 'DINOv3-S visual + SMART/CAT-K motion + ego status, without the R2 track branch (foundation-model arm)',
+            'mfmonly_ego': 'SMART/CAT-K motion + ego status, without the R2 track branch (foundation-model arm)',
+            'vis_front_S': 'tracks + DINOv3-S front camera (two-branch arm)',
+            'visonly_front_S': 'DINOv3-S front camera only (two-branch arm)',
+            'visonly_front_ego_S': 'DINOv3-S front camera + ego status, no agents (foundation-model arm)',
+            'viswin_front_S': 'window-level fusion: DINOv3-S front frames + Transformer + z_w (visual-window arm)',
+            'viswind64l1_front_S': 'window-level fusion, small Transformer (64-d, 1 layer), front frames (visual-window arm)',
+            'viswind128l0_front_S': 'window-level fusion, NO temporal Transformer (P + e_t + GELU, mean), front frames: the temporal ablation of viswin_front_S',
+            'ssl': 'R2-noLane, track-SSL initialisation (masked agent-track reconstruction on the training routes, epoch by inner validation) then the same IRT loss (initialisation ablation)',
+            'fusewin_vt_front_S': 'token fusion per window: [front visual, track z_w] + 1-layer fusion Transformer, record pooling + ego branch (fusion arm)',
+            'fusewin_vs_front_ego_S': 'token fusion per window: [front visual, SMART/CAT-K] + fusion Transformer, record pooling + ego branch, without the R2 track branch (fusion arm)',
+            'fusewin_vts_front_S': 'token fusion per window: [front visual, track z_w, SMART/CAT-K] + fusion Transformer, record pooling + ego branch (fusion arm)',
+            'vismfm_front_ego_S': 'DINOv3-S front camera + SMART/CAT-K motion + ego status, without the R2 track branch (foundation-model arm)',
+            'vismfm_front_S': 'DINOv3-S front camera + SMART/CAT-K motion, without the R2 track branch (foundation-model arm)',
+            'match0.1_vis_front_S': 'tracks + front camera + matching term lambda .1 (ablation)',
+            'match0.1_viswin_front_S': 'window-level fusion (front) + matching term lambda .1 (ablation)',
+            'match0.1_vismfm_front_ego_S': 'front camera + SMART/CAT-K + ego + matching term lambda .1 (ablation)',
+            'match0.1_viswin_pca32_S': 'window-level fusion DINOv3-S PCA-32 + matching term lambda .1 (ablation)',
+            'match0.1_vis_pca32_S': 'tracks + DINOv3-S PCA-32 + matching term lambda .1 (ablation)',
+            'mfmonly': 'frozen SMART/CAT-K features (agent tracks + map through the frozen model), without the R2 track branch (foundation-model arm)',
+            'vismfm': 'frozen DINOv3 visual + frozen SMART/CAT-K motion, without the R2 track branch (foundation-model arm)',
+            'vismfmtrk': 'tracks + frozen DINOv3 visual + frozen SMART/CAT-K motion (three-branch arm)',
+            # the same five branch arms with the harness's difficulty-matching term (--match 0.1)
+            'match0.1_vis': 'R2-noLane tracks + frozen DINOv3 visual branch (two-branch arm) + matching term lambda .1 (ablation)',
+            'match0.1_visonly': 'frozen DINOv3 visual branch only, without the R2 track branch (two-branch arm) + matching term lambda .1 (ablation)',
+            'match0.1_mfmonly': 'frozen SMART/CAT-K motion branch only, without the R2 track branch (foundation-model arm) + matching term lambda .1 (ablation)',
+            'match0.1_vismfm': 'frozen DINOv3 visual + frozen SMART/CAT-K motion, without the R2 track branch (foundation-model arm) + matching term lambda .1 (ablation)',
+            'match0.1_vismfmtrk': 'tracks + frozen DINOv3 visual + frozen SMART/CAT-K motion (three-branch arm) + matching term lambda .1 (ablation)',
+            # the small vision backbone (DINOv3 ViT-S/16, --arm-suffix S) paired with the frozen motion model
+            'vismfm_S': 'DINOv3-S visual + frozen SMART/CAT-K motion, without the R2 track branch (foundation-model arm)',
+            'vismfmtrk_S': 'tracks + DINOv3-S visual + frozen SMART/CAT-K motion (three-branch arm)',
+            'match0.1_vismfm_S': 'DINOv3-S visual + frozen SMART/CAT-K motion, no tracks + matching term lambda .1 (ablation)',
+            'match0.1_vismfmtrk_S': 'tracks + DINOv3-S visual + frozen SMART/CAT-K motion + matching term lambda .1 (ablation)',
+            # front camera only (--visual-views front) + the frozen motion model ('vismfm_front_S' is above)
+            'vismfmtrk_front_S': 'tracks + DINOv3-S front camera + SMART/CAT-K motion (three-branch arm)',
+            'match0.1_vismfm_front_S': 'DINOv3-S front camera + SMART/CAT-K motion, no tracks + matching term lambda .1 (ablation)',
+            'match0.1_vismfmtrk_front_S': 'tracks + DINOv3-S front camera + SMART/CAT-K motion + matching term lambda .1 (ablation)'}
 
 
 def ctrl_npz(c, s):
     """The control npz of run s: the lane-carrying model keeps its own file name."""
     if c == 'nlnospeed':                                   # the speed ablation of the encoder of record
         return DATA / 'encoder' / f'relgraph_r2nolane_nospeed_s{s}.npz'
-    if c.startswith('match'):                              # the difficulty-matching ablation arms (--match of the harness)
+    if c.startswith(('match', 'vis', 'mfm', 'fusewin', 'ssl')):        # --match, --visual, --motion-fm and --fuse-window arms
         return DATA / 'encoder' / f'relgraph_r2nolane_{c}_s{s}.npz'
     return DATA / 'encoder' / (f'relgraph_r2_s{s}.npz' if c == 'lane' else f'relgraph_r2_{c}_s{s}.npz')
 
@@ -129,6 +189,7 @@ def main():
             for c in CONTROLS if all(ctrl_npz(c, s_).exists() for s_ in RUNS)}
     ROWS = list(arms) + ['Oracle (resp-calibrated C)'] + [f'RelGraph R2-noLane s{s_}' for s_ in RUNS] \
         + [f'{CONTROLS[c]} s{s_}' for c in CTRL for s_ in RUNS]
+    CROW = {f'{CONTROLS[c]} s{s_}': c for c in CTRL for s_ in RUNS}
     POOL = {a: {'p': [], 'y': [], 'rp': [], 'ro': [], 'bt': [], 'fl': []} for a in ROWS}
     NULLP = {'p': [], 'y': [], 'rp': [], 'ro': []}
     for seed in range(R_DRAWS):
@@ -152,8 +213,8 @@ def main():
         for name in ROWS:
             if name.startswith('Oracle'):
                 bte = bC
-            elif name.startswith('RelGraph') or name.startswith('R2'):
-                pz = RELG[int(name[-1])] if name.startswith('RelGraph') else CTRL[next(c for c in CTRL if name.startswith(CONTROLS[c]))][int(name[-1])]
+            elif name.startswith('RelGraph') or name in CROW:
+                pz = RELG[int(name[-1])] if name.startswith('RelGraph') else CTRL[CROW[name]][int(name[-1])]
                 rt = [str(x) for x in pz[f'draw{seed}_rt']]
                 lut = {rt[k]: float(pz[f'draw{seed}_bt'][k]) for k in range(len(rt))}
                 bte = np.array([lut[allr[i]] for i in te])

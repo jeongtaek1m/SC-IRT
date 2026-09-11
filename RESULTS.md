@@ -1312,6 +1312,110 @@ candidates. On UPS (Table 3B, control priors 3 and 4) they behave like the
 other control priors: block-SR MAE unchanged, per-cell NLL .008 (lambda = 0.1)
 and .002-.004 (lambda = 1) better than the record.
 
+### Foundation-model encoder ablation — frozen DINOv3 / SMART features with a light head (`run_us.py` control block)
+
+Asked whether the route encoder could be replaced by frozen foundation-model
+features, two frozen sources were attached to the harness with the SAME loss,
+draws, seeds, standardisation rule (training routes only) and 30-epoch recipe as
+the encoder of record, and scored on the unified split (Table 3A metrics):
+- visual: DINOv3 ViT-S/16 (timm `vit_small_patch16_dinov3.lvd1689m`, frozen,
+  256 x 256) on every 5th 10-Hz frame of the PDM-Lite reference rollout's
+  rgb_front camera (`experiments/visual_features.py`; a first run used ViT-L
+  and the three cameras), the CLS token (384-d per frame, 1024-d for ViT-L);
+- motion: the SMART-tiny traffic model with CAT-K's WOMD pre-training checkpoint
+  (the frozen model of the traffic-entropy row, official code, strict load) run
+  over 9.1-s windows every 2 s of the same rollout; per window the agent hidden
+  state feeding its next-token head, pooled [mean over valid (agent, step) cells
+  ; the ego agent's mean] (256-d; `experiments/motion_fm_features.py`). The model
+  reads agent tracks AND the map; its features here are a difficulty input of
+  OUR predictor, not a difficulty method of that paper.
+Branches (`--visual`, `--motion-fm`): per frame / window a shared MLP (in -> 64 ->
+64) then the record's [mean, max, softmin, std] route pooling, concatenated to
+the head; `--visual-only` drops the R2-noLane track branch; `--ego` adds the
+record's route-level ego branch (speed, acceleration, yaw rate, command) to a
+no-track arm. Window-level variants: `--visual-window` (per track window its 12
+frames -> projection + learned positions -> bidirectional Transformer -> mean,
+fused with z_w, [mean, max] over windows, own head; a 0-layer version is the
+temporal ablation) and `--fuse-window` (per window one 64-d token per source +
+modality embeddings -> 1-layer 4-head fusion Transformer -> mean -> the record's
+route pooling). Three seeds each; Delta rho paired by seed. Planner-only null
+AUROC .0.699 / scene-MAE .0.214; kinematics-only Ridge .752 / .180 / +.497.
+
+| arm (front camera, ViT-S unless stated) | AUROC | scene-MAE | rho | Delta rho vs record |
+|---|---|---|---|---|
+| **encoder of record: RelGraph R2-noLane (tracks, trained)** | **.761 +- .006** | **.181 +- .007** | **+.545 +- .024** | — |
+| tracks + front-camera visual | .750 +- .005 | .187 +- .004 | +.477 +- .015 | -.068 +- .012 |
+| tracks + front visual + SMART/CAT-K (three branches) | .742 +- .004 | .189 +- .004 | +.445 +- .017 | -.099 +- .019 |
+| front visual + SMART/CAT-K + ego status, no track branch | .745 +- .003 | .188 +- .001 | +.445 +- .005 | -.100 +- .029 |
+| SMART/CAT-K + ego status, no track branch | .736 +- .003 | .197 +- .003 | +.441 +- .015 | -.104 +- .038 |
+| front visual + ego status, no track branch | .741 +- .002 | .194 +- .000 | +.430 +- .014 | -.115 +- .010 |
+| front visual + SMART/CAT-K, no track branch, no ego | .713 +- .003 | .213 +- .003 | +.321 +- .017 | -.224 +- .010 |
+| front visual only | .702 +- .011 | .225 +- .010 | +.268 +- .036 | -.276 +- .028 |
+| SMART/CAT-K only | .689 +- .004 | .228 +- .003 | +.222 +- .016 | -.323 +- .034 |
+| window token fusion [visual, track] | .745 +- .005 | .190 +- .002 | +.452 +- .012 | -.093 +- .012 |
+| window token fusion [visual, track, SMART] | .736 +- .003 | .195 +- .001 | +.434 +- .022 | -.111 +- .021 |
+| window token fusion [visual, SMART] + ego status, no track branch | .727 +- .004 | .203 +- .002 | +.388 +- .020 | -.157 +- .027 |
+| window-level visual-temporal fusion (2-layer Transformer, 128-d) | .691 +- .001 | .229 +- .002 | +.178 +- .009 | -.367 +- .029 |
+| window-level fusion, 1-layer 64-d Transformer | .692 +- .008 | .227 +- .006 | +.212 +- .032 | -.332 +- .013 |
+| window-level fusion, no Transformer (temporal ablation) | .694 +- .007 | .228 +- .004 | +.205 +- .037 | -.340 +- .057 |
+| tracks + three-camera DINOv3 ViT-L visual (first run) | .732 +- .005 | .202 +- .004 | +.402 +- .017 | -.143 +- .008 |
+| three-camera DINOv3 ViT-L visual only (first run) | .707 +- .009 | .219 +- .007 | +.284 +- .042 | -.261 +- .022 |
+
+The same arms with the difficulty-matching term (lambda = 0.1) added to the loss:
+
+| arm + matching term | AUROC | scene-MAE | rho | Delta rho vs record |
+|---|---|---|---|---|
+| tracks + front visual | .756 +- .003 | .180 +- .003 | +.481 +- .010 | -.064 +- .016 |
+| three branches | .752 +- .004 | .181 +- .005 | +.462 +- .020 | -.083 +- .026 |
+| front visual + SMART + ego | .750 +- .000 | .182 +- .002 | +.445 +- .007 | -.100 +- .025 |
+| SMART/CAT-K only | .701 +- .003 | .218 +- .002 | +.231 +- .013 | -.314 +- .022 |
+| front visual + SMART, no ego | .723 +- .005 | .201 +- .004 | +.315 +- .024 | -.230 +- .007 |
+| window-level visual-temporal | .701 +- .003 | .219 +- .002 | +.175 +- .016 | -.370 +- .027 |
+| tracks + three-camera ViT-L (first run) | .746 +- .005 | .188 +- .003 | +.421 +- .025 | -.124 +- .010 |
+| three-camera ViT-L only (first run) | .722 +- .007 | .205 +- .005 | +.285 +- .041 | -.260 +- .019 |
+
+Reading. No frozen-feature arm reaches the trained track encoder: the best
+(tracks + front visual) is .011 AUROC and .07 rho below the record, and every
+arm without the track branch sits between the null and the kinematics-only
+Ridge. Frozen features alone are at the null (visual .702, SMART .689); adding
+the explicit ego status lifts them to .736-.745, which is the ego signal, not
+the features (ego kinematics through a Ridge reach .752 with no encoder).
+Attaching a frozen branch to the trained encoder lowers it (.761 -> .750 ->
+.742): on 180 training routes a 384-d (let alone 3072-d) frozen input adds
+dimensions the likelihood cannot select against. The window-level fusion fails
+independently of its temporal Transformer (.691 with two layers, .694 with
+none), so the structure, not the Transformer, is what does not fit; the
+two-token fusion is a bounded loss (.745) but still below the route-level
+concatenation of the same sources. The matching term repeats what it did on the
+record: +.00-.02 AUROC, no change of order. The encoder of record stays; this
+block is the evidence that a learned track encoder is not replaceable here by
+frozen foundation features plus a light head, and that what those features
+carried was mostly the ego state.
+Feature caches: `/data2/jeongtae/visual_feats/dinov3s_2hz` (and `dinov3_2hz` for ViT-L),
+`/data2/jeongtae/motion_feats/smart_catk_2s`; the harness records the cache's model
+/ checkpoint identity in every output npz (`feature_provenance`) and refuses a
+mixed cache. Earlier three-camera, camera-pooled and PCA variants (single seeds)
+were superseded by the front-camera ViT-S runs and are not kept.
+
+### Attention maps of the encoder of record (`experiments/viz_encoder_attention.py`)
+
+The lane-free encoder has one attention: per window the ego-motion + command
+query over the agent embeddings (Section Method). `r2_graph.py --dump-attn`
+retrains one draw with the record recipe (predictions bitwise identical to the
+record file) and saves, for the held-out routes, that attention per window and
+the saliency ||d f_phi / d z_w|| of every window; `fig_encoder_attention.py`
+draws the peak-saliency window of chosen routes (BEV, agents coloured by
+attention), `pick_attention_examples.py` ranks candidates. Over the 490
+held-out windows of draw 0 the attention is diffuse: median entropy 94% of
+uniform, median top weight .26 over a median of 9 live agents. The four routes
+of `results/figs/fig_encoder_attention.pdf` are cherry-picked (candidates in
+`results/figs/encoder_attention_candidates.txt`): in those the attended agents
+are the scenario's actors (the flow vehicles at a merge, the cross traffic of a
+left turn, the crossing pedestrians, the cyclist on a right-turn corner).
+`results/figs/encoder_architecture.pdf` and `encoder_learning_example.png`
+(the per-route likelihood, the learned Gaussian and the objective as a function
+of its mean, on real routes) document the model and its training.
+
 ## nuPlan val14 zero-shot retrieval (`run_nuplan_zeroshot.py`)
 
 A scene encoder trained on Bench2Drive difficulty ranks 584 nuPlan val14

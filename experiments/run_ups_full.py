@@ -90,7 +90,7 @@ DEV = os.environ.get('ATDRIVE_DEVICE', 'cpu')
 BP = (30, 55, 110)
 TMAX = max(BP)
 K_CAL = 12
-ENC_RUN = 0                                     # RelGraph R2-noLane run s0 (canonical)
+ENC_RUN = int(os.environ.get('ATDRIVE_ENC_RUN', 0))   # RelGraph R2-noLane run s0 (canonical); ATDRIVE_ENC_RUN=1,2 for the across-run SD
 ENC_NPZ = DATA / 'encoder' / f'relgraph_r2nolane_s{ENC_RUN}.npz'
 POL = ('Random', 'Delta-R1 on D', 'Delta-R1 on D (scene-free)', 'Delta-R1 on full I')
 CANP = 'Delta-R1 on D'                          # the probe rule of record (run_ups.py)
@@ -301,6 +301,8 @@ def main():
     E, ET, AU = report(recs)
     assert len(recs) == 64, len(recs)
     JS = [r['js'] for r in sorted(recs, key=lambda r: (r['seed'], r['js']))]
+    if ENC_RUN != 0:                                # the anchors are pinned on run s0; other runs report, not assert
+        print(f'encoder run s{ENC_RUN}: anchors skipped (pinned on s0)'); return
     for (p, a, B, ref) in ANCHORS_T:                # these reproduce Table 3B (results/ups.json)
         assert abs(np.mean(ET(p, B, a)) - ref) < .003, (p, a, B, np.mean(ET(p, B, a)))
     for (p, a, B, ref) in ANCHORS_FULL:

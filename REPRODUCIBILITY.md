@@ -234,6 +234,15 @@ python experiments/run_policy_matrix.py                # adaptive policies under
 for lo in 0 4 8 12; do python experiments/run_route_discrimination.py --seeds $lo $((lo+4)) & done; wait
 python experiments/run_route_discrimination.py --merge # route-level discrimination (reads up_frontier.json, adaptive.json)
 python experiments/run_us.py                           # Table 3A + 3A(b) (+ the difficulty-matching arms)
+# foundation-model encoder ablation (frozen DINOv3 / SMART features; RESULTS.md 'Foundation-model encoder ablation'):
+HF_HUB_OFFLINE=1 python experiments/visual_features.py --model vit_small_patch16_dinov3.lvd1689m --out /data2/jeongtae/visual_feats/dinov3s_2hz
+python experiments/motion_fm_features.py --out /data2/jeongtae/motion_feats/smart_catk_2s      # env smart, official catk + pre_bc_E31
+cd encoder/harness && python r2_graph.py --domain b2d --gpu G --seed S --ablate-lane --visual /data2/jeongtae/visual_feats/dinov3s_2hz --visual-views front --arm-suffix S   # + --visual-only, --ego, --motion-fm DIR, --visual-window DIR, --fuse-window DIR --fuse-tokens vis,track, --match 0.1
+python experiments/build_data.py-style export (build_data.export_relgraph) to data/encoder/relgraph_r2nolane_<arm>_s{0,1,2}.npz, then run_us.py scores every arm with three seeds
+# attention maps of the encoder of record:
+cd encoder/harness && python r2_graph.py --domain b2d --gpu G --seed 0 --ablate-lane --dump-attn <dir>/attn_s0.npz   # one file per draw
+python experiments/pick_attention_examples.py --dumps <dir>/attn_s0_draw*.npz; python experiments/fig_encoder_attention.py --dump-dir <dir> --examples 0:2201 0:26990 6:27515 8:3708 --out results/figs/fig_encoder_attention.pdf
+ATDRIVE_ENC_RUN=1 ATDRIVE_RESULTS_DIR=results/ups_full_enc1 python experiments/run_ups_full.py --seeds lo hi   # the encoder-run SD of the full-SR cells (anchors are pinned on run 0)
 CUDA_VISIBLE_DEVICES=3 python experiments/us_official/reeval_amortized.py   # the REEval row of Table 3A
 python experiments/run_ups.py                          # Table 3B (results/ups.json) + the four control priors (ups_lane.json, ups_nospeed.json, ups_match0.1.json, ups_match1.json)
 for lo in 0 2 4 6 8 10 12 14; do ATDRIVE_DEVICE=cpu python experiments/run_ups_full.py --seeds $lo $((lo+2)) & done; wait

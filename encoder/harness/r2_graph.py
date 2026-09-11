@@ -155,11 +155,13 @@ Usage:
 """
 import argparse, math, os, re, sys
 
+import json
 import numpy as np
 
 RG = '/data2/jeongtae/relgraph_e16sel'
 sys.path.insert(0, RG)
 import r0_ego                                     # reference harness — splits, gold, recipe
+from visual_window import build_visual_window, load_window_visual, check_feature_cache, build_window_fusion   # window arms (2026-09-12)
 import b2d_earlystop as es                        # the ONE B2D checkpoint-selection rule
 
 # ── frozen channel symbols (KEYS.md). NEVER a numeric index. ──────────────────
@@ -791,7 +793,8 @@ def dist_pool(torch, z, mask, tau, eps=0.0):
     return torch.cat([mean, mx, smin, (var + eps).sqrt()], -1)
 
 
-def build_r2(torch, nn, d=64, tau=0.5, heads=4):
+def build_r2(torch, nn, d=64, tau=0.5, heads=4, visual_dim=0, visual_only=False, motion_dim=0,
+             viswin_dim=0, viswin_dv=128, viswin_layers=2, ego_extra=False, fuse_dim=0, fuse_tokens=()):
     F = nn.functional
     dh = d // heads
 
@@ -853,9 +856,30 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4):
             self.typ = nn.Parameter(torch.zeros(2, d))
             self.Wk2, self.Wv3 = nn.Linear(d, d), nn.Linear(d, d)
             self.zout = mlp(2 * d, d)
-            # head: r0_ego's head shape, widened for [ego 4d | graph 4d]
-            self.head = nn.Sequential(nn.LayerNorm(d * 8), nn.Linear(d * 8, d), nn.SiLU(),
+            # head: r0_ego's head shape, widened for [ego 4d | graph 4d] (+ visual 4d / motion-FM 4d when those branches are attached)
+            self.visual_only = visual_only
+            self.ego_extra = ego_extra                       # --ego: the route-level ego branch added to a no-track arm
+            self.fuse_tokens = tuple(fuse_tokens)
+            fuse_no_track = bool(fuse_dim) and 'track' not in self.fuse_tokens      # fusion arm without the track token: no z_ego either
+            hin = (0 if visual_only else d * 8) + (d * 4 if visual_dim else 0) + (d * 4 if motion_dim else 0) + (d * 4 if (visual_only and ego_extra) else 0)
+            if fuse_dim:                                                                # fusion arm: [z_ego ; pooled fused windows]
+                hin = d * 8 if 'track' in self.fuse_tokens else d * 4 + (d * 4 if ego_extra else 0)
+            self.head = nn.Sequential(nn.LayerNorm(hin), nn.Linear(hin, d), nn.SiLU(),
                                       nn.Linear(d, 1))
+            # visual branch (2026-09-12): frozen pretrained per-frame features of the three cameras, concatenated
+            # per frame, a shared step MLP of phi's shape, then the same [mean, max, softmin, std] route pooling.
+            # Built LAST so that every module above keeps the initial weights of the encoder of record.
+            self.vphi = nn.Sequential(nn.Linear(visual_dim, d), nn.SiLU(), nn.Linear(d, d), nn.SiLU()) if visual_dim else None
+            # motion-FM branch (2026-09-12): frozen pretrained per-window features of the SMART/CAT-K traffic model
+            # (experiments/motion_fm_features.py), same step MLP and same route pooling as the visual branch.
+            # Built LAST, after vphi, for the same reason.
+            self.mphi = nn.Sequential(nn.Linear(motion_dim, d), nn.SiLU(), nn.Linear(d, d), nn.SiLU()) if motion_dim else None
+            # window-level visual-temporal arm (--visual-window, 2026-09-12): the frames of track window w -> P + e_t ->
+            # Transformer -> mean -> fused with z_w -> [mean, max] over windows -> its own head (visual_window.py).
+            self.viswin = build_visual_window(torch, nn, viswin_dim, d_v=viswin_dv, d_track=d, layers=viswin_layers) if viswin_dim else None
+            # token-fusion window arm (--fuse-window): [visual window token, track token z_w, SMART token] + modality
+            # embeddings -> 1-layer fusion Transformer -> mean -> 64-d window feature -> the record's route pooling
+            self.fusewin = build_window_fusion(torch, nn, fuse_dim, fuse_tokens, d=d, smart_dim=motion_dim or 256) if fuse_dim else None
 
         def encode(self, g, rows, st):
             """One window -> one d-vector.  The lane axis and the agent axis are both SETS: no
@@ -873,6 +897,9 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4):
 
             AGM = g.agent_mask[rows]
             AG = (g.agents[rows].float() - st['ag'][0]) / st['ag'][1]
+            if getattr(self, 'ssl_mask', None) is not None:     # --ssl pre-training: the masked (agent, step) cells are hidden
+                AGM = AGM & ~self.ssl_mask
+                AG = AG * AGM[..., None]
             a = self.astep(AG) * AGM[..., None]
             mt = AGM[..., None].float()
             amean = (a * mt).sum(2) / mt.sum(2).clamp(min=1)
@@ -898,6 +925,8 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4):
             ctx = (al[..., None] * vv).sum(2).reshape(n, A, d)
             has = AM.any(2)
             ha = self.ln_a(ha + self.Wo(ctx) * has[..., None]) * av[..., None]
+            if getattr(self, 'ssl_mask', None) is not None:
+                self._ha = ha                                 # per-agent embeddings for the SSL decoder
 
             off = (torch.arange(n, device=hl.device) * M)[:, None, None]
             gi = (J + off).reshape(-1)
@@ -924,6 +953,9 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4):
             lg2 = (q2 * kk2).sum(-1) / math.sqrt(dh)
             lg2 = lg2.masked_fill(~nmask[..., None], -1e9)
             at = torch.softmax(lg2, 1)
+            if getattr(self, 'capture', None) is not None:          # --dump-attn: readout attention over the
+                self.capture.append((rows.detach().cpu().numpy(),   # agent nodes, (n, A, heads); never on the
+                                     at[:, M:, :].detach().cpu().numpy()))   # record path (capture is None)
             rd = (at[..., None] * vv2).sum(1).reshape(n, d)
             # R2-noLane only: a window with no lanes AND no live agents has an empty node set,
             # where the -1e9 fill softmaxes to UNIFORM instead of zero.  x1.0 for every window
@@ -932,11 +964,41 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4):
             rd = rd * nmask.any(1)[:, None]
             nm = nmask[..., None].float()
             sm = (nodes * nm).sum(1) / nm.sum(1).clamp(min=1)
-            return self.zout(torch.cat([rd, sm], -1))
+            zw_ = self.zout(torch.cat([rd, sm], -1))
+            if getattr(self, 'ssl_mask', None) is not None:
+                self._zw = zw_
+            return zw_
 
-        def forward(self, x, xmask, g, rows, wb, ww, nW, st):
+        def forward(self, x, xmask, g, rows, wb, ww, nW, st, xv=None, xvmask=None, xm=None, xmmask=None):
             """x/xmask: r0's ego sequence for this batch. rows: the batch's window rows.
-            wb/ww: which (batch item, window slot) each row lands in."""
+            wb/ww: which (batch item, window slot) each row lands in. xv/xvmask: the batch's visual
+            feature sequences (B, Lv, visual_dim) when a visual branch is attached; xm/xmmask: the
+            batch's motion-FM sequences (B, Lm, motion_dim) when that branch is attached."""
+            if getattr(self, 'viswin', None) is not None:        # --visual-window: xv/xvmask are the window frames
+                r = self.viswin.window(xv, xvmask, self.encode(g, rows, st))
+                return self.viswin.route(r, wb, ww, x.shape[0], nW)
+            if getattr(self, 'fusewin', None) is not None:       # --fuse-window: xv/xvmask window frames, xm the SMART window rows
+                zw = self.encode(g, rows, st) if 'track' in self.fuse_tokens else None
+                r = self.fusewin(xv, xvmask, zw, xm)
+                B = x.shape[0]
+                buf = torch.zeros(B, nW, r.shape[-1], device=r.device, dtype=r.dtype)
+                bm = torch.zeros(B, nW, dtype=torch.bool, device=r.device)
+                buf[wb, ww] = r
+                bm[wb, ww] = True
+                zg = dist_pool(torch, buf, bm, self.tau, eps=1e-12)                   # the record's route pooling
+                if 'track' in self.fuse_tokens:
+                    return self.head(torch.cat([dist_pool(torch, self.phi(x), xmask, self.tau), zg], -1)).squeeze(-1)
+                parts = [zg] + ([dist_pool(torch, self.phi(x), xmask, self.tau)] if self.ego_extra else [])
+                return self.head(torch.cat(parts, -1)).squeeze(-1)
+            parts = []
+            if self.vphi is not None:
+                parts.append(dist_pool(torch, self.vphi(xv), xvmask, self.tau, eps=1e-12))
+            if self.mphi is not None:
+                parts.append(dist_pool(torch, self.mphi(xm), xmmask, self.tau, eps=1e-12))
+            if self.visual_only:
+                if self.ego_extra:                              # explicit ego status: phi over the route ego sequence, Pool
+                    parts.append(dist_pool(torch, self.phi(x), xmask, self.tau))
+                return self.head(torch.cat(parts, -1)).squeeze(-1)
             zego = dist_pool(torch, self.phi(x), xmask, self.tau)
             zw = self.encode(g, rows, st)
             B = x.shape[0]
@@ -944,10 +1006,80 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4):
             bm = torch.zeros(B, nW, dtype=torch.bool, device=zw.device)
             buf[wb, ww] = zw
             bm[wb, ww] = True
+            if getattr(self, 'capture', None) is not None and buf.requires_grad:   # --dump-attn: window saliency
+                buf.retain_grad(); self._buf = buf
             zg = dist_pool(torch, buf, bm, self.tau, eps=1e-12)
-            return self.head(torch.cat([zego, zg], -1)).squeeze(-1)
+            return self.head(torch.cat([zego, zg] + parts, -1)).squeeze(-1)
 
     return R2Net()
+
+
+def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_epochs=120, patience=6,
+                 mask_frac=0.3, seg=4, bs=64):
+    """Track SSL initialisation of the encoder (2026-09-12, user's design): on the stage's TRAINING routes only,
+    hide a contiguous segment of `seg` steps of a random `mask_frac` of the live agents (>= 8 valid steps) of every
+    window, encode the window with those cells masked, and reconstruct the hidden cells' standardised
+    [dx, dy, cos, sin, v] from [the agent's embedding h_k ; the window vector z_w ; a learned step embedding]
+    with a small decoder (MSE over the masked cells). Every module of the encoder trains; the difficulty head
+    receives no gradient and keeps its initial weights. The epoch is chosen by the reconstruction loss on an
+    inner validation split (10% of the training routes, by route), max `max_epochs`, `patience`; the decoder is
+    discarded. Returns (best epoch, best inner-val loss)."""
+    import copy
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(np.asarray(tr_routes))
+    nv = max(8, len(perm) // 10)
+    va, tr = perm[:nv], perm[nv:]
+    T = g.agents.shape[2]
+    d = m.phi[0].out_features
+    dec = nn.Sequential(nn.Linear(2 * d + 16, 128), nn.SiLU(), nn.Linear(128, 5)).to(dev)
+    step_emb = nn.Parameter(torch.zeros(T, 16, device=dev))
+    nn.init.normal_(step_emb, std=0.02)
+    opt = torch.optim.AdamW(list(m.parameters()) + list(dec.parameters()) + [step_emb], lr=1e-3, weight_decay=0.1)
+    gen = torch.Generator(device=dev)
+
+    def batch_loss(route_ids, g_seed):
+        rows = check_rows(np.concatenate([W[i] for i in route_ids]), 'ssl batch')
+        rt = torch.tensor(rows, device=dev)
+        AGM = g.agent_mask[rt]
+        n, A = AGM.shape[0], AGM.shape[1]
+        gen.manual_seed(int(g_seed))
+        live = AGM.sum(2) >= 8
+        pick = live & (torch.rand(n, A, device=dev, generator=gen) < mask_frac)
+        starts = torch.randint(0, T - seg + 1, (n, A), device=dev, generator=gen)
+        tidx = torch.arange(T, device=dev)[None, None, :]
+        M = pick[..., None] & (tidx >= starts[..., None]) & (tidx < starts[..., None] + seg) & AGM
+        m.ssl_mask = M
+        zw = m.encode(g, rt, st)
+        ha = m._ha
+        m.ssl_mask = None
+        AG = (g.agents[rt].float() - st['ag'][0]) / st['ag'][1]
+        b, k, t = M.nonzero(as_tuple=True)
+        if len(b) == 0:
+            return zw.sum() * 0.0
+        pred = dec(torch.cat([ha[b, k], zw[b], step_emb[t]], -1))
+        return ((pred - AG[b, k, t, :5]) ** 2).mean()
+
+    best = (float('inf'), None, -1)
+    bad = 0
+    for ep in range(max_epochs):
+        m.train(); dec.train()
+        order = rng.permutation(tr)
+        for i0 in range(0, len(order), bs):
+            loss = batch_loss(order[i0:i0 + bs], seed * 1000 + ep * 10 + i0)
+            opt.zero_grad(); loss.backward()
+            nn.utils.clip_grad_norm_(list(m.parameters()) + list(dec.parameters()), 1.0); opt.step()
+        m.eval(); dec.eval()
+        with torch.no_grad():
+            vl = float(np.mean([float(batch_loss(va[i0:i0 + bs], 777 + i0)) for i0 in range(0, len(va), bs)]))
+        if vl < best[0] - 1e-4:
+            best, bad = (vl, copy.deepcopy(m.state_dict()), ep), 0
+        else:
+            bad += 1
+            if bad >= patience:
+                break
+    m.load_state_dict(best[1])
+    m.ssl_mask = None
+    return best[2], best[0]
 
 
 # ── B2D ──────────────────────────────────────────────────────────────────────
@@ -977,6 +1109,46 @@ def run_b2d(a, tag):
         return
     W = route_windows(ids, routes)
     nW = max(len(w) for w in W)
+    XV = MKV = XM = MKM = XW = MW = None
+    FEAT_PROV = {}                                            # provenance of every frozen-feature cache read (saved in the npz)
+    if a.visual_window or a.fuse_window:                      # window-aligned frames for the window arms
+        vdir = a.visual_window or a.fuse_window
+        FEAT_PROV['visual_window'] = check_feature_cache(vdir, ('model', 'stride', 'views'))
+        XW, MW = load_window_visual(vdir, ids, a.visual_tokens, a.visual_views)
+        print(f'[b2d] visual-window arm: {a.visual_window}: {XW.shape[0]} windows x {XW.shape[1]} frames x {XW.shape[2]}-d, '
+              f'd_v {a.viswin_dim}, {a.viswin_layers} layer(s), PCA {a.visual_pca or "off"}', flush=True)
+    if a.visual:                                              # frozen visual features (experiments/visual_features.py)
+        FEAT_PROV['visual'] = check_feature_cache(a.visual, ('model', 'stride', 'views'))
+        seqs = []
+        for r in routes:
+            z = np.load(f'{a.visual}/route_{r}.npz')
+            vsel = slice(0, 1) if a.visual_views == 'front' else slice(None)     # --visual-views front: rgb_front only
+            parts = [z['cls'][:, vsel].astype(np.float32)] + ([z['patch'][:, vsel].astype(np.float32)] if a.visual_tokens == 'cls+patch' else [])
+            assert (z['frame'] == np.arange(len(z['frame'])) * int(z['stride'])).all(), f'route_{r}: visual frames are not every {int(z["stride"])}th frame'
+            seqs.append(np.concatenate(parts, -1).reshape(len(z['frame']), -1))   # (Lv, n_views x C) per 2-Hz frame
+        Lv = max(len(q) for q in seqs)
+        XV = np.zeros((len(routes), Lv, seqs[0].shape[1]), np.float32); MKV = np.zeros((len(routes), Lv), bool)
+        for i, q in enumerate(seqs):
+            XV[i, :len(q)] = q; MKV[i, :len(q)] = True
+        print(f'[b2d] visual branch: {a.visual} tokens {a.visual_tokens}: {XV.shape[2]}-d per frame, frames/route p50 '
+              f'{int(np.median([len(q) for q in seqs]))} max {Lv}' + (' (VISUAL ONLY: no track branch)' if a.visual_only else ''), flush=True)
+    if a.motion_fm:                                           # frozen motion-model features (experiments/motion_fm_features.py)
+        FEAT_PROV['motion_fm'] = check_feature_cache(a.motion_fm, ('ckpt', 'stride_frames', 'n_window_frames', 'hidden_dim'))
+        seqs = [np.load(f'{a.motion_fm}/route_{r}.npz')['feat'].astype(np.float32) for r in routes]
+        Lm = max(len(q) for q in seqs)
+        XM = np.zeros((len(routes), Lm, seqs[0].shape[1]), np.float32); MKM = np.zeros((len(routes), Lm), bool)
+        for i, q in enumerate(seqs):
+            XM[i, :len(q)] = q; MKM[i, :len(q)] = True
+        print(f'[b2d] motion-FM branch: {a.motion_fm}: {XM.shape[2]}-d per window, windows/route p50 '
+              f'{int(np.median([len(q) for q in seqs]))} max {Lm}' + (' (NO TRACK BRANCH)' if a.visual_only else ''), flush=True)
+    XS = None
+    if a.fuse_window and 'smart' in a.fuse_tokens.split(','):  # SMART window feature of every graph row: window w -> SMART
+        assert XM is not None, '--fuse-tokens smart needs --motion-fm'  # window starting at the same frame 20w (clamped)
+        ridx = {r: i for i, r in enumerate(routes)}
+        XS = np.zeros((len(ids), XM.shape[2]), np.float32)
+        for n_, s_ in enumerate(ids):
+            r_, w_ = re.match(r'route_(\d+)_(\d+)$', s_).groups()
+            i_ = ridx[r_]; XS[n_] = XM[i_, min(int(w_), int(MKM[i_].sum()) - 1)]
     print(f'[b2d] {len(routes)} routes -> {sum(len(w) for w in W)} window graphs, '
           f'windows/route p50 {int(np.median([len(w) for w in W]))} max {nW}', flush=True)
     R, J = len(routes), Y.shape[0]
@@ -991,6 +1163,7 @@ def run_b2d(a, tag):
     utypes = sorted(set(types))
     pred = np.full((R_DRAWS, R), np.nan)
     per_draw = []
+    ssl_log = []                                             # (draw, stage, best epoch, inner-val loss) of --ssl
     led = es.Ledger(R_DRAWS, a.epochs, a.early_stop)           # sigma / e* / curve / leak counts
 
     for draw in range(min(a.draws, R_DRAWS)):
@@ -1016,10 +1189,47 @@ def run_b2d(a, tag):
             plan.note_theta(stg, th_f)
             mu = X[trn][MK[trn]].mean(0); sd = X[trn][MK[trn]].std(0) + 1e-6
             Xn = ((X - mu) / sd) * MK[..., None]
+            def pool_reduce(Xf, mode, n_views=(3 if a.visual_views == 'all' else 1)):   # --visual-pool: mean over the cameras (+ channel average-pool)
+                if mode == 'none':
+                    return Xf
+                C = Xf.shape[-1] // n_views
+                Xp = Xf.reshape(*Xf.shape[:-1], n_views, C).mean(-2)           # (..., C): the 3 views averaged
+                if mode.startswith('view+ch'):
+                    k = int(mode[len('view+ch'):])
+                    Xp = Xp.reshape(*Xp.shape[:-1], C // k, k).mean(-1)         # (..., C/k): k adjacent channels averaged
+                return np.ascontiguousarray(Xp, dtype=np.float32)
+            def pca_reduce(Xf, Mf, fit_rows, K):               # --visual-pca: PCA fitted on the TRAINING frames only
+                Xf = pool_reduce(Xf, a.visual_pool)
+                if not K:
+                    return Xf
+                Ftr = Xf[fit_rows][Mf[fit_rows]]
+                mu_ = Ftr.mean(0)
+                _, _, Vt = np.linalg.svd(Ftr - mu_, full_matrices=False)
+                return ((Xf - mu_) @ Vt[:K].T * Mf[..., None]).astype(np.float32)
+            if XV is not None:                                # visual features: same rule, training routes only
+                XVp = pca_reduce(XV, MKV, np.where(trn)[0], a.visual_pca)
+                muv = XVp[trn][MKV[trn]].mean(0); sdv = XVp[trn][MKV[trn]].std(0) + 1e-6
+                XVd = torch.tensor(((XVp - muv) / sdv) * MKV[..., None], device=dev); MKVd = torch.tensor(MKV, device=dev)
+            if XW is not None:                                # window frames: PCA / standardisation on the training windows only
+                trw = np.concatenate([W[i] for i in np.where(trn)[0]])
+                XWp = pca_reduce(XW, MW, trw, a.visual_pca)
+                muw = XWp[trw][MW[trw]].mean(0); sdw = XWp[trw][MW[trw]].std(0) + 1e-6
+                XWd = torch.tensor(((XWp - muw) / sdw) * MW[..., None], device=dev); MWd = torch.tensor(MW, device=dev)
+            if XM is not None:                                # motion-FM features: same rule, training routes only
+                mum = XM[trn][MKM[trn]].mean(0); sdm = XM[trn][MKM[trn]].std(0) + 1e-6
+                XMd = torch.tensor(((XM - mum) / sdm) * MKM[..., None], device=dev); MKMd = torch.tensor(MKM, device=dev)
+            if XS is not None:                                # SMART window rows: standardised with the training windows
+                trw_ = np.concatenate([W[i] for i in np.where(trn)[0]])
+                mus = XS[trw_].mean(0); sds = XS[trw_].std(0) + 1e-6
+                XSd = torch.tensor((XS - mus) / sds, device=dev)
             # graph_stats follows the stage's training rows, exactly as theta and mu/sd do
             st = graph_stats(g, guard.rows(np.concatenate([W[i] for i in np.where(trn)[0]]),
                                            'graph_stats'), torch, dev)
-            m = build_r2(torch, nn, a.d).to(dev)
+            m = build_r2(torch, nn, a.d, visual_dim=(XVd.shape[2] if XV is not None else 0), visual_only=a.visual_only,
+                         motion_dim=(XM.shape[2] if XM is not None else 0),
+                         viswin_dim=(XWd.shape[2] if (XW is not None and a.visual_window) else 0), viswin_dv=a.viswin_dim, viswin_layers=a.viswin_layers,
+                         ego_extra=a.ego, fuse_dim=(XWd.shape[2] if (XW is not None and a.fuse_window) else 0),
+                         fuse_tokens=tuple(a.fuse_tokens.split(',')) if a.fuse_window else ()).to(dev)
             if draw == 0:
                 print(f'  [init] draw 0 s{stg.no} seed {a.seed} '
                       f'proper_init={a.proper_init} weight-hash {es.init_hash(m)}',
@@ -1027,6 +1237,11 @@ def run_b2d(a, tag):
             if draw == 0 and stg.no == 1:
                 print(f'[b2d] {tag} params {sum(p.numel() for p in m.parameters()):,}',
                       flush=True)
+            if a.ssl:                                     # --ssl: track-SSL initialisation, then the SAME IRT recipe below
+                ep_b, vl_b = ssl_pretrain(torch, nn, m, g, st, W, np.where(trn)[0], dev, a.seed * 100 + draw, guard.rows,
+                                          max_epochs=a.ssl_max_epochs, mask_frac=a.ssl_mask, seg=a.ssl_seg)
+                ssl_log.append((draw, stg.no, ep_b, vl_b))
+                print(f'  [b2d draw {draw}] s{stg.no} track-SSL init: best epoch {ep_b} inner-val recon {vl_b:.4f}', flush=True)
             ls = torch.tensor(-0.5, device=dev, requires_grad=True)
             opt = torch.optim.AdamW(list(m.parameters()) + [ls], lr=1e-3, weight_decay=0.1)
             THE = torch.tensor(th_f, dtype=torch.float32, device=dev)
@@ -1046,7 +1261,14 @@ def run_b2d(a, tag):
                 wb = torch.tensor(np.concatenate([np.full(len(W[i]), b)
                                                   for b, i in enumerate(sel)]), device=dev)
                 ww = torch.tensor(np.concatenate([np.arange(len(W[i])) for i in sel]), device=dev)
-                return m(Xd[s], Md_[s], g, torch.tensor(rows, device=dev), wb, ww, nW, st)
+                if XW is not None:                                # window-aligned frames of this batch's rows
+                    rt = torch.tensor(rows, device=dev)
+                    if a.fuse_window:
+                        return m(Xd[s], Md_[s], g, rt, wb, ww, nW, st, XWd[rt], MWd[rt], xm=(XSd[rt] if XS is not None else None))
+                    return m(Xd[s], Md_[s], g, rt, wb, ww, nW, st, XWd[rt], MWd[rt])
+                return m(Xd[s], Md_[s], g, torch.tensor(rows, device=dev), wb, ww, nW, st,
+                         *((XVd[s], MKVd[s]) if XV is not None else ()),
+                         **({'xm': XMd[s], 'xmmask': MKMd[s]} if XM is not None else {}))
 
             for ep in range(stg.epochs):
                 m.train(); np.random.shuffle(idx); tl = nb = 0
@@ -1090,6 +1312,31 @@ def run_b2d(a, tag):
             ii = guard.heldout(np.where(te)[0])
             pr = np.concatenate([fwd(ii[i:i + 32]).cpu().numpy() for i in range(0, len(ii), 32)])
             pred[draw, ii] = pr
+        if a.dump_attn and not a.visual_only and not a.fuse_window:    # visualisation only: same weights, same held-out routes.  Saved: the agent
+            m.capture = []                       # READOUT attention (not DINO patch / temporal attention) + window saliency
+            if m.viswin is not None:
+                m.viswin.capture_buf = True      # the window arm keeps its window tensor in viswin.route
+            sal = {}
+            for i in ii:                         # one route per pass: d f_phi / d z_w for every window w
+                out_i = fwd(np.array([i]))
+                out_i.sum().backward()
+                bufmod = m.viswin if m.viswin is not None else m
+                sal[int(i)] = bufmod._buf.grad[0, :len(W[i])].norm(dim=-1).cpu().numpy()
+            rows_c = np.concatenate([c[0] for c in m.capture]); at_c = np.concatenate([c[1] for c in m.capture])
+            m.capture = None
+            if m.viswin is not None:
+                m.viswin.capture_buf = False
+            tr_idx = np.where(trn)[0]                                       # in-sample f_phi of the training routes,
+            with torch.no_grad():                                           # with the draw's Rasch fit and sigma_r
+                pr_tr = np.concatenate([fwd(tr_idx[i:i + 32]).cpu().numpy() for i in range(0, len(tr_idx), 32)])
+            dump_path = a.dump_attn.replace('.npz', f'_draw{draw}.npz')       # one file per draw
+            np.savez(dump_path, draw=draw, heldout=ii, routes=np.array(routes), pred=pr,
+                     train_idx=tr_idx, pred_train=pr_tr, theta=th_f, b_hat=b_f, keepJ=keepJ,
+                     sigma=float(torch.exp(ls).detach()),
+                     rows=rows_c, attn=at_c.astype(np.float32),
+                     sal_route=np.array([int(i) for i in sal]), sal=np.array([sal[int(i)] for i in sal], dtype=object),
+                     window_rows=np.array([W[i] for i in ii], dtype=object), item_id=np.array(ids))
+            print(f'  [b2d draw {draw}] wrote attention dump {dump_path}: {len(rows_c)} windows, {len(sal)} routes', flush=True)
         led.record(draw, plan, guard)
         print(guard.leak_line(draw), flush=True)
         per_draw.append(spearmanr(pr, fail[te]).correlation)
@@ -1101,6 +1348,8 @@ def run_b2d(a, tag):
     np.savez(out, pred=pred, routes=routes, item_id=routes, types=types, Y=Y, fail=fail,
              b_ref=b_ref, static=static, per_draw=per_draw,
              arm=np.array(tag), ablate_lane=bool(a.ablate_lane),
+             config=np.array(json.dumps(vars(a), default=str)), feature_provenance=np.array(json.dumps(FEAT_PROV, default=str)),
+             ssl_log=np.array(ssl_log, dtype=float),
              ablate_route=bool(a.ablate_route), **led.fields())
     Pl, Fl, Bl, Sl = [], [], [], []
     for dd in range(R_DRAWS):
@@ -1333,6 +1582,61 @@ def run_full(a):
     tc.save(tc.out_path('r2', a), **out)
 
 
+def backbone_tag(feature_dir):
+    """Short tag of the frozen backbone a feature directory was written with (from its files' `model` / `ckpt`)."""
+    import glob
+    f = sorted(glob.glob(f'{feature_dir}/route_*.npz'))[0]
+    z = np.load(f)
+    name = str(z['model']) if 'model' in z.files else str(z['ckpt'])
+    known = {'vit_small_patch16_dinov3.lvd1689m': 'dS', 'vit_large_patch16_dinov3.lvd1689m': 'dL',
+             'vit_small_patch14_dinov2.lvd142m': 'd2S', 'vit_large_patch14_dinov2.lvd142m': 'd2L'}
+    if name in known:
+        return known[name]
+    import hashlib
+    return hashlib.md5(name.encode()).hexdigest()[:6]
+
+
+def arm_tag(a, tag):
+    """The output tag encodes EVERY setting that changes what the encoder reads or computes, so two different
+    configurations can never share a result file:
+      base arm  _vis / _visonly / _mfm / _mfmonly / _vismfm / _vismfmtrk, _viswin[d<dv>l<layers>]
+      + _cp (visual tokens cls+patch) + _front (rgb_front only) + _vpool[c<k>] + _pca<K> + _ego
+      + backbone: --arm-suffix if given, else derived from the feature files (dS / dL / ... for the visual dir)
+      (the motion-FM checkpoint is validated by check_feature_cache and recorded in the npz's feature_provenance)."""
+    if a.dump_attn:
+        tag = f'{tag}_attnviz'
+    if a.fuse_window:
+        pass                                         # the fusion tag below names its tokens (vis / track / smart)
+    elif a.visual and a.motion_fm:
+        tag = f'{tag}_{"vismfm" if a.visual_only else "vismfmtrk"}'
+    elif a.visual:
+        tag = f'{tag}_{"visonly" if a.visual_only else "vis"}'
+    elif a.motion_fm:
+        tag = f'{tag}_{"mfmonly" if a.visual_only else "mfm"}'
+    if a.visual_window:
+        tag = f'{tag}_viswin' + ('' if (a.viswin_dim, a.viswin_layers) == (128, 2) else f'd{a.viswin_dim}l{a.viswin_layers}')
+    if a.fuse_window:
+        tag = f'{tag}_fusewin_' + ''.join(t[0] for t in a.fuse_tokens.split(','))      # vt / vs / vts
+    if a.ssl:
+        tag = f'{tag}_ssl' + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
+    uses_visual = bool(a.visual or a.visual_window or a.fuse_window)
+    if uses_visual and a.visual_tokens != 'cls':
+        tag = f'{tag}_cp'
+    if uses_visual and a.visual_views == 'front':
+        tag = f'{tag}_front'
+    if uses_visual and a.visual_pool != 'none':
+        tag = f'{tag}_vpool' + ('' if a.visual_pool == 'view' else 'c' + a.visual_pool[len('view+ch'):])
+    if uses_visual and a.visual_pca:
+        tag = f'{tag}_pca{a.visual_pca}'
+    if a.ego and (a.visual_only or (a.fuse_window and 'track' not in a.fuse_tokens.split(','))):
+        tag = f'{tag}_ego'
+    if a.arm_suffix:
+        tag = f'{tag}_{a.arm_suffix}'
+    elif uses_visual:
+        tag = f'{tag}_{backbone_tag(a.visual or a.visual_window or a.fuse_window)}'
+    return tag                                   # the motion cache's checkpoint is validated and recorded (feature_provenance), not tagged
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--domain', required=True, choices=['b2d', 'navsim'])
@@ -1361,6 +1665,43 @@ def main():
                          'not rebuilt, so the parameter count and init_hash match the default '
                          'arm. Writes r2nolane_<domain>_s<seed>.npz with arm and ablate_lane '
                          'recorded in the file.')
+    ap.add_argument('--visual', default=None,
+                    help='two-branch arm (2026-09-12): directory of per-route frozen visual features written by\n'
+                         'experiments/visual_features.py; adds a visual branch to the head input. Tag <tag>_vis.')
+    ap.add_argument('--visual-only', action='store_true',
+                    help='with --visual and/or --motion-fm: DROP THE TRACK BRANCH, the head reads the frozen\n'
+                         'branches only (tags _visonly / _mfmonly / _vismfm)')
+    ap.add_argument('--visual-tokens', default='cls', choices=['cls', 'cls+patch'])
+    ap.add_argument('--visual-views', default='all', choices=['all', 'front'], help='cameras used by the visual branches: all three or rgb_front only (tag _front)')
+    ap.add_argument('--visual-pool', default='none', choices=['none', 'view', 'view+ch4', 'view+ch8'],
+                    help='parameter-free reduction of the frozen visual features before the projection: mean over the 3 cameras,\n'
+                         'optionally followed by an average-pool of k adjacent channels (tags _vpool, _vpoolc4, _vpoolc8)')
+    ap.add_argument('--visual-pca', type=int, default=0, help='reduce the frozen visual features to K dims by a PCA fitted per draw on the training frames (0 = off)')
+    ap.add_argument('--visual-window', default=None,
+                    help='window-level visual-temporal arm (2026-09-12): directory of per-route frozen visual features; the\n'
+                         '12 frames of each track window -> P + e_t -> Transformer -> mean, fused with z_w -> [mean, max] over\n'
+                         'windows -> head (encoder/harness/visual_window.py). Tag <tag>_viswin.')
+    ap.add_argument('--viswin-dim', type=int, default=128)
+    ap.add_argument('--ssl', action='store_true', help='track-SSL initialisation (masked agent-track reconstruction on the training routes, epoch by inner validation) before the IRT loss; tag _ssl')
+    ap.add_argument('--ssl-max-epochs', type=int, default=120)
+    ap.add_argument('--ssl-mask', type=float, default=0.3, help='share of live agents masked per window')
+    ap.add_argument('--ssl-seg', type=int, default=4, help='masked segment length in 2-Hz steps')
+    ap.add_argument('--fuse-window', default=None,
+                    help='token-fusion window arm (2026-09-12): directory of per-route frozen visual features; per window the\n'
+                         'tokens of --fuse-tokens (+ modality embeddings) go through a 1-layer fusion Transformer, the mean\n'
+                         'is the 64-d window feature and the record route pooling follows. Tag <tag>_fusewin_<tokens>.')
+    ap.add_argument('--fuse-tokens', default='vis,track', help='comma list of vis, track, smart (smart needs --motion-fm)')
+    ap.add_argument('--viswin-layers', type=int, default=2)
+    ap.add_argument('--ego', action='store_true', help='with --visual-only: add the route-level ego branch (speed, acc, yaw rate, command) to the frozen branches (tag _ego)')
+    ap.add_argument('--arm-suffix', default='', help='free text appended to the output tag (e.g. the visual backbone)')
+    ap.add_argument('--motion-fm', default=None,
+                    help='foundation-model arm (2026-09-12): directory of per-route frozen motion features written\n'
+                         'by experiments/motion_fm_features.py (frozen SMART/CAT-K); adds a motion branch to the\n'
+                         'head input. Tags <tag>_mfm / _mfmonly, and _vismfm / _vismfmtrk together with --visual.')
+    ap.add_argument('--dump-attn', default=None,
+                    help='visualisation (2026-09-11): after each draw, save the readout attention over the agent\n'
+                         'nodes and d f_phi / d z_w per window for the held-out routes to this npz. Output tag\n'
+                         '<tag>_attnviz; never the encoder of record.')
     ap.add_argument('--verify-only', action='store_true',
                     help='build the graph, print the control invariants, and stop')
     ap.add_argument('--early-stop', action='store_true',
@@ -1424,6 +1765,7 @@ def main():
         tag = 'r2nolane'
     if a.match > 0:
         tag = f'{tag}_match{a.match:g}'
+    tag = arm_tag(a, tag)
     if a.domain == 'b2d':
         a.epochs = a.epochs or 30; a.bs = a.bs or 64
         run_b2d(a, tag)
