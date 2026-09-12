@@ -1015,7 +1015,7 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4, visual_dim=0, visual_only=False,
 
 
 def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_epochs=120, patience=6,
-                 mask_frac=0.3, seg=4, bs=64, ego=None, ego_ctx=False):
+                 mask_frac=0.3, seg=4, bs=64, ego=None, ego_ctx=False, dump=None):
     """Track SSL initialisation of the encoder (2026-09-12, user's design): on the stage's TRAINING routes only,
     hide a contiguous segment of `seg` steps of a random `mask_frac` of the live agents (>= 8 valid steps) of every
     window, encode the window with those cells masked, and reconstruct the hidden cells' standardised
@@ -1044,6 +1044,7 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     losses (both MSE on standardised channels) are added with weight 1."""
     import copy
     rng = np.random.default_rng(seed)
+    curve = []                                             # (epoch, train, inner-val, track, ego) for --dump-ssl
     perm = rng.permutation(np.asarray(tr_routes))
     nv = max(8, len(perm) // 10)
     va, tr = perm[:nv], perm[nv:]
@@ -1054,7 +1055,8 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     nn.init.normal_(step_emb, std=0.02)
     extra = [step_emb]
     if ego is not None:                                    # --ssl-ego: the route-level ego half of the pretext
-        Xd_, Md__ = ego
+        Xd_, Md__ = ego[0], ego[1]
+        ego_mu, ego_sd = (ego[2], ego[3]) if len(ego) > 3 else (None, None)   # only for --dump-ssl
         L = Xd_.shape[1]
         if ego_ctx:                                        # a hidden step reads its neighbours, not a pooled route vector
             ctx = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, 2, 2 * d, dropout=0.0, batch_first=True,
@@ -1133,6 +1135,7 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
             if ego_ctx:
                 ctx.train()
         order = rng.permutation(tr)
+        tl, nb = 0.0, 0
         for i0 in range(0, len(order), bs):
             loss, _, _ = batch_loss(order[i0:i0 + bs], seed * 1000 + ep * 10 + i0)
             if not bool(torch.isfinite(loss)):            # a degenerate mask draw: skip, never poison the weights
@@ -1144,6 +1147,7 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
                 opt.zero_grad(); n_skip += 1
                 continue
             opt.step()
+            tl += float(loss); nb += 1
         m.eval(); dec.eval()
         if ego is not None:
             dec_e.eval()
@@ -1160,6 +1164,7 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
             vl = float(np.mean([float(x[0]) for x in fin]))
             vtr = float(np.mean([x[1] for x in fin]))
             veg = float(np.nanmean([x[2] for x in fin])) if any(np.isfinite(x[2]) for x in fin) else float('nan')
+        curve.append((ep, tl / max(nb, 1), vl, vtr, veg))
         if vl < best[0] - 1e-4:
             best, bad = (vl, copy.deepcopy(m.state_dict()), ep, vtr, veg), 0
         else:
@@ -1171,6 +1176,65 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     else:
         m.load_state_dict(best[1])
     m.ssl_mask = None
+    if dump is not None:                                   # --dump-ssl: the curve and one batch of reconstructions
+        m.eval(); dec.eval()
+        if ego is not None:
+            dec_e.eval()
+            if ego_ctx:
+                ctx.eval()
+        vb = va[:bs]
+        rows = check_rows(np.concatenate([W[i] for i in vb]), 'ssl dump')
+        rt = torch.tensor(rows, device=dev)
+        AGM = g.agent_mask[rt]
+        n, A = AGM.shape[0], AGM.shape[1]
+        gen.manual_seed(777)
+        live = AGM.sum(2) >= 8
+        pick = live & (torch.rand(n, A, device=dev, generator=gen) < mask_frac)
+        starts = torch.randint(0, T - seg + 1, (n, A), device=dev, generator=gen)
+        tidx = torch.arange(T, device=dev)[None, None, :]
+        M = pick[..., None] & (tidx >= starts[..., None]) & (tidx < starts[..., None] + seg) & AGM
+        with torch.no_grad():
+            m.ssl_mask = M
+            zw = m.encode(g, rt, st)
+            ha = m._ha
+            m.ssl_mask = None
+            AG = (g.agents[rt].float() - st['ag'][0]) / st['ag'][1]
+            b_, k_, t_ = M.nonzero(as_tuple=True)
+            pred = dec(torch.cat([ha[b_, k_], zw[b_], step_emb[t_]], -1))
+        np.savez(dump, curve=np.array(curve, dtype=float), rows=rows, best_epoch=best[2],
+                 mask=M.cpu().numpy(), agents_std=AG.cpu().numpy(), agent_mask=AGM.cpu().numpy(),
+                 cell_b=b_.cpu().numpy(), cell_k=k_.cpu().numpy(), cell_t=t_.cpu().numpy(),
+                 pred=pred.float().cpu().numpy(), ag_mean=st['ag'][0].cpu().numpy(), ag_sd=st['ag'][1].cpu().numpy(),
+                 mask_frac=mask_frac, seg=seg, routes_val=np.array(vb))
+        if ego is not None:                                # the ego half of the same dump
+            with torch.no_grad():
+                sel = torch.tensor(np.asarray(vb), device=dev)
+                xm = Md__[sel]
+                nR = xm.shape[0]
+                gen.manual_seed(777)
+                pick_e = xm & (torch.rand(nR, L, device=dev, generator=gen) < mask_frac / seg)
+                off = torch.arange(seg, device=dev)
+                idx_e = (pick_e.nonzero()[:, 1][:, None] + off[None, :]).clamp(max=L - 1)
+                rows_e = pick_e.nonzero()[:, 0][:, None].expand(-1, seg)
+                Me = torch.zeros_like(xm)
+                Me[rows_e.reshape(-1), idx_e.reshape(-1)] = True
+                Me = Me & xm
+                Me = Me & (xm & ~Me).any(1)[:, None]
+                h_e = m.phi(Xd_[sel] * (~Me)[..., None])
+                r_, t2_ = Me.nonzero(as_tuple=True)
+                if ego_ctx:
+                    out = ctx(h_e + step_emb_e[None, :L], src_key_padding_mask=~(xm & ~Me))
+                    pe = dec_e(out[r_, t2_])
+                else:
+                    z_ego = dist_pool(torch, h_e, xm & ~Me, m.tau)
+                    pe = dec_e(torch.cat([z_ego[r_], step_emb_e[t2_], (t2_.float() / max(L - 1, 1))[:, None]], -1))
+            d0 = dict(np.load(dump))
+            d0.update(ego_x=Xd_[sel].cpu().numpy(), ego_valid=xm.cpu().numpy(), ego_mask=Me.cpu().numpy(),
+                      ego_cell_r=r_.cpu().numpy(), ego_cell_t=t2_.cpu().numpy(), ego_pred=pe.float().cpu().numpy(),
+                      ego_mu=np.asarray(ego_mu), ego_sd=np.asarray(ego_sd), ego_ctx=bool(ego_ctx))
+            np.savez(dump, **d0)
+            print(f'  [ssl] ego half dumped: {len(r_)} masked steps of {nR} routes', flush=True)
+        print(f'  [ssl] wrote {dump}: {len(curve)} epochs, {len(b_)} masked cells of {len(rows)} windows', flush=True)
     return best[2], best[0], best[3], best[4], n_skip
 
 
@@ -1333,7 +1397,8 @@ def run_b2d(a, tag):
             if a.ssl:                                     # --ssl: track-SSL initialisation, then the SAME IRT recipe below
                 ep_b, vl_b, tr_b, eg_b, sk_b = ssl_pretrain(torch, nn, m, g, st, W, np.where(trn)[0], dev, a.seed * 100 + draw, guard.rows,
                                           max_epochs=a.ssl_max_epochs, mask_frac=a.ssl_mask, seg=a.ssl_seg,
-                                          ego=(Xd, Md_) if (a.ssl_ego or a.ssl_ego_ctx) else None, ego_ctx=a.ssl_ego_ctx)
+                                          ego=(Xd, Md_, mu, sd) if (a.ssl_ego or a.ssl_ego_ctx) else None, ego_ctx=a.ssl_ego_ctx,
+                                          dump=(a.dump_ssl.replace('.npz', f'_draw{draw}.npz') if a.dump_ssl else None))
                 ssl_log.append((draw, stg.no, ep_b, vl_b, tr_b, eg_b, sk_b))
                 print(f'  [b2d draw {draw}] s{stg.no} track-SSL init: best epoch {ep_b} inner-val recon {vl_b:.4f} '
                       f'(track {tr_b:.4f}' + (f', ego {eg_b:+.4f} vs the trivial predictor' if (a.ssl_ego or a.ssl_ego_ctx) else '')
@@ -1713,7 +1778,7 @@ def arm_tag(a, tag):
     if a.fuse_window:
         tag = f'{tag}_fusewin_' + ''.join(t[0] for t in a.fuse_tokens.split(','))      # vt / vs / vts
     if a.ssl:
-        tag = f'{tag}_ssl' + ('egoctx' if a.ssl_ego_ctx else 'ego' if a.ssl_ego else '') + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
+        tag = f'{tag}_ssl' + ('egoctx' if a.ssl_ego_ctx else 'ego' if a.ssl_ego else '') + ('dump' if a.dump_ssl else '') + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
     uses_visual = bool(a.visual or a.visual_window or a.fuse_window)
     if uses_visual and a.visual_tokens != 'cls':
         tag = f'{tag}_cp'
@@ -1781,6 +1846,7 @@ def main():
     ap.add_argument('--ssl-ego-ctx', action='store_true', help='with --ssl: the ego pretext with a real temporal context head (a hidden step reads its neighbours through a discarded 1-layer Transformer) instead of the pooled-vector head (tag _sslegoctx)')
     ap.add_argument('--ssl-ego', action='store_true', help='with --ssl: also mask and reconstruct the route-level ego steps, so the ego branch phi is pre-trained too (tag _sslego)')
     ap.add_argument('--ssl-max-epochs', type=int, default=120)
+    ap.add_argument('--dump-ssl', default=None, help='with --ssl: save the inner-validation curve and one batch of masked-cell reconstructions per draw (visualisation only; tag <tag>_ssldump)')
     ap.add_argument('--ssl-mask', type=float, default=0.3, help='share of live agents masked per window')
     ap.add_argument('--ssl-seg', type=int, default=4, help='masked segment length in 2-Hz steps')
     ap.add_argument('--fuse-window', default=None,

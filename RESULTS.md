@@ -1413,6 +1413,16 @@ zero) and the per-cell NLL is .009 WORSE (.6062 / .6040 / .6070 against .5974 /
 .5963 / .5985), the only control prior of Table 3B that is worse there, with
 twice the across-run SD (`results/ups_ssl.json`, `ATDRIVE_UPS_ARMS=',_ssl'`).
 
+`results/figs/ssl_reconstruction.pdf` shows the pretext on real inner-validation
+windows of draw 0 (`--dump-ssl` saves the mask, the reconstruction at the selected
+epoch and the inner-validation curve; `experiments/fig_ssl_reconstruction.py`
+draws them). The agent-track half is easy and is solved: over 3,419 hidden
+(agent, step) cells the reconstruction is 4.6 m RMSE in x, 2.5 m in y and
+1.46 m/s in speed, 98 / 97 / 83 per cent of those channels' variance. The ego
+half is not: the reconstructed speed sits near the route's average through the
+hidden segment (11-13 m/s where the ego is driving at 17-18), which is what the
+aggregate number said.
+
 Two numerical safeguards were needed and are in the code: a route whose every
 valid step falls inside the masked segments leaves the soft-minimum pool with an
 empty set (+inf), so at least one step per route is always kept; and a batch
