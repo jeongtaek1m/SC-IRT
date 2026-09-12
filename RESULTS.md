@@ -1125,7 +1125,10 @@ it uses is the benchmark's own scenario-type annotation, entered only as
 ## Table 3A — US: unseen scenes (`run_us.py`)
 
 Predict scene difficulty (and per-cell outcomes) for the 8 evaluation
-scenario types from the scene alone; pooled over 16 draws (640 route
+scenario types from the scene alone (the scene-MAE column IS the paper's
+MAE_FR: the mean over routes of |predicted failure rate - empirical failure
+rate| over the calibration planners, identical to the success-rate form used
+in the code); pooled over 16 draws (640 route
 evaluations). Descriptor rows are scored through a two-stage Ridge plug-in
 fitted on the calibration types; the encoder row is the out-of-fold
 prediction of the encoder of record (trained per draw on the 36 calibration
@@ -1337,13 +1340,24 @@ in 4-step segments, phi runs over the masked sequence, and the hidden steps'
 vector plus a step embedding and the normalised position. That half is weak by
 construction (the ego branch is a per-step MLP with order-invariant pooling, so
 a hidden step has no context path): it beats predicting the channel mean by
-only .19-.24 of the variance, against .90-.95 for the agent-track half.
+only .12-.24 of the variance, against .90-.95 for the agent-track half. A third
+variant (`--ssl-ego-ctx`) gives the ego pretext its own head instead of reusing
+the agent-side recipe: phi still runs per step, but a hidden step is read from a
+discarded 1-layer bidirectional Transformer in which it attends to the KEPT
+steps only, so the target comes from its neighbours' phi features rather than
+from a pooled route vector. That head does make the pretext work better (it
+beats the channel mean by .23-.25 of the variance in every run, and the
+selected epochs move from 55 to 27-60) and the encoder it initialises is the
+WORST of the three (rho -.038 +- .026 paired). Solving the pretext better does
+not transfer: predicting a step from its neighbours is a local-dynamics task,
+and the difficulty likelihood does not ask for that representation.
 
 | initialisation | AUROC | scene-MAE | rho | paired delta vs record (3 runs) |
 |---|---|---|---|---|
 | random (record) | .761 +- .006 | .181 +- .007 | +.545 +- .024 | — |
 | track-SSL | .756 +- .009 | .183 +- .009 | +.528 +- .036 | AUROC -.006 +- .003 (3 of 3 lower), MAE +.002 +- .002, rho -.017 +- .013 (2 of 3 lower) |
-| track + ego SSL | .755 +- .003 | .185 +- .004 | +.523 +- .006 | AUROC -.007 +- .007, MAE +.004 +- .006, rho -.022 +- .030 |
+| track + ego SSL, pooled ego head | .755 +- .003 | .185 +- .004 | +.523 +- .006 | AUROC -.007 +- .007, MAE +.004 +- .006, rho -.022 +- .030 |
+| track + ego SSL, context ego head | .755 +- .003 | .187 +- .002 | +.507 +- .008 | AUROC -.006 +- .004, MAE +.007 +- .005, rho -.038 +- .026 |
 
 No gain from either: the SSL-initialised encoder is inside the seed spread on
 scene-MAE and slightly below the record on AUROC in every run, and adding the
