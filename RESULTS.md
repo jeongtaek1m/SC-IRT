@@ -1317,6 +1317,32 @@ candidates. On UPS (Table 3B, control priors 3 and 4) they behave like the
 other control priors: block-SR MAE unchanged, per-cell NLL .008 (lambda = 0.1)
 and .002-.004 (lambda = 1) better than the record.
 
+### Does the weather belong in the scene representation? (checked, no)
+
+Bench2Drive assigns each route its own weather in the route definition
+(`bench2drive220_shard*.xml`), and it does vary: precipitation 0-100 on 107 of
+the 220 routes, cloudiness 5-100, sun altitude -90 (53 night routes) to 90. The
+question is whether a weather or "adverse condition" token would carry
+difficulty, as it would have to if the frozen camera features were to help
+through appearance. It does not, on this bank:
+
+| weather channel | rho vs route failure rate | rho vs the Rasch difficulty |
+|---|---|---|
+| precipitation / precipitation deposits | +.038 / +.052 | +.043 / +.060 |
+| cloudiness | +.047 | +.052 |
+| wetness / wind / fog | +.034 / +.035 / -.014 | +.037 / +.040 / -.008 |
+| sun altitude (night = -90) | +.022 | +.011 |
+
+Night routes fail slightly LESS often than day routes (.478 against .491) and
+rain routes slightly more (.501 against .476). A 5-fold cross-validated ridge on
+all nine weather channels predicts the calibrated difficulty at rho -.123 (R^2
+-.008, worse than the mean), and appending them to the 25-d kinematics
+descriptor changes nothing (rho +.596 both ways). Difficulty on this benchmark
+is carried by the scenario and the interaction, not by the conditions the
+cameras see, which is also the most likely reason the frozen DINOv3 features sit
+at the null: what dominates those images is exactly the weather and lighting
+that carry no difficulty here.
+
 ### Initialisation control — track-SSL pre-training of the encoder of record (`--ssl`)
 
 The one remaining "does self-supervision help" question, asked on the record's
