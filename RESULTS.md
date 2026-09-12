@@ -1378,14 +1378,29 @@ WORST of the three (rho -.038 +- .026 paired). Solving the pretext better does
 not transfer: predicting a step from its neighbours is a local-dynamics task,
 and the difficulty likelihood does not ask for that representation.
 
+The fourth variant changes the objective rather than the head: `--ssl-jepa` is
+the joint-embedding predictive objective (LeCun 2022; I-JEPA, Assran et al.
+CVPR 2023) in place of reconstruction. A target copy of the encoder, updated
+only as an exponential moving average (momentum .996, no gradient), encodes the
+UNMASKED window; the online encoder sees the masked one; a discarded predictor
+maps the online agent embedding, plus an embedding of which steps were hidden,
+to the target's embedding of the same agent; the loss is the smooth L1 between
+them. Nothing in the input space is reconstructed, so the objective cannot
+spend capacity on unpredictable coordinates. It does not collapse (the
+across-agent standard deviation of the target embeddings stays at 1.03 in every
+draw of every seed, against 1.0 at initialisation) and it trains to the epoch
+cap (mean selected epoch 100), and it is still no better: MAE_FR .188 +- .003
+and rho +.525 +- .014, paired +.007 and -.019 against the record.
+
 | initialisation | AUROC | scene-MAE | rho | paired delta vs record (3 runs) |
 |---|---|---|---|---|
 | random (record) | .761 +- .006 | .181 +- .007 | +.545 +- .024 | — |
 | track-SSL | .756 +- .009 | .183 +- .009 | +.528 +- .036 | AUROC -.006 +- .003 (3 of 3 lower), MAE +.002 +- .002, rho -.017 +- .013 (2 of 3 lower) |
 | track + ego SSL, pooled ego head | .755 +- .003 | .185 +- .004 | +.523 +- .006 | AUROC -.007 +- .007, MAE +.004 +- .006, rho -.022 +- .030 |
 | track + ego SSL, context ego head | .755 +- .003 | .187 +- .002 | +.507 +- .008 | AUROC -.006 +- .004, MAE +.007 +- .005, rho -.038 +- .026 |
+| JEPA (latent targets, EMA teacher) | .754 +- .002 | .188 +- .003 | +.525 +- .014 | AUROC -.007 +- .006, MAE +.007 +- .009, rho -.019 +- .038 |
 
-No gain from either: the SSL-initialised encoder is inside the seed spread on
+No gain from any of the four: the SSL-initialised encoder is inside the seed spread on
 scene-MAE and slightly below the record on AUROC in every run, and adding the
 ego half moves nothing (it only shortens the selected epoch, 55 on average
 against 77 for the track-only pretext). Its paired delta (-.006 +- .003)

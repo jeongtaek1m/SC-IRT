@@ -1015,7 +1015,7 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4, visual_dim=0, visual_only=False,
 
 
 def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_epochs=120, patience=6,
-                 mask_frac=0.3, seg=4, bs=64, ego=None, ego_ctx=False, dump=None):
+                 mask_frac=0.3, seg=4, bs=64, ego=None, ego_ctx=False, dump=None, jepa=False, ema=0.996):
     """Track SSL initialisation of the encoder (2026-09-12, user's design): on the stage's TRAINING routes only,
     hide a contiguous segment of `seg` steps of a random `mask_frac` of the live agents (>= 8 valid steps) of every
     window, encode the window with those cells masked, and reconstruct the hidden cells' standardised
@@ -1028,6 +1028,15 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     reconstruction loss on an
     inner validation split (10% of the training routes, by route), max `max_epochs`, `patience`; the decoders are
     discarded. Returns (best epoch, best inner-val loss).
+
+    `jepa` (--ssl-jepa) replaces the RECONSTRUCTION objective by the joint-embedding predictive one (LeCun 2022;
+    I-JEPA, Assran et al. CVPR 2023): nothing in the input space is reconstructed. A target copy of the encoder,
+    updated only as an exponential moving average of the online one (momentum `ema`, no gradient), encodes the
+    UNMASKED window; the online encoder sees the masked window; and a discarded predictor maps the online agent
+    embedding h_k (plus an embedding of which steps were hidden) to the target's h_k of the same agent. The loss
+    is the smooth L1 between them over the masked agents. The collapse this objective risks is monitored: the
+    across-agent standard deviation of the target embeddings is logged next to the loss, and a run whose target
+    std falls below a tenth of its starting value is reported as collapsed.
 
     `ego_ctx` (--ssl-ego-ctx) replaces that ego decoder by one with a real temporal context path, which the ego
     branch itself does not have: phi runs per step as always, but the pretext head is a 1-layer bidirectional
@@ -1050,10 +1059,20 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     va, tr = perm[:nv], perm[nv:]
     T = g.agents.shape[2]
     d = m.phi[0].out_features
+    if jepa:                                               # target encoder (EMA, no gradient) + predictor
+        import copy as _copy
+        tgt = _copy.deepcopy(m).to(dev)
+        for q in tgt.parameters():
+            q.requires_grad_(False)
+        pred_j = nn.Sequential(nn.Linear(d + 16, 128), nn.SiLU(), nn.Linear(128, d)).to(dev)
+        mask_emb = nn.Parameter(torch.zeros(T, 16, device=dev))
+        nn.init.normal_(mask_emb, std=0.02)
     dec = nn.Sequential(nn.Linear(2 * d + 16, 128), nn.SiLU(), nn.Linear(128, 5)).to(dev)
     step_emb = nn.Parameter(torch.zeros(T, 16, device=dev))
     nn.init.normal_(step_emb, std=0.02)
     extra = [step_emb]
+    if jepa:
+        extra += list(pred_j.parameters()) + [mask_emb]
     if ego is not None:                                    # --ssl-ego: the route-level ego half of the pretext
         Xd_, Md__ = ego[0], ego[1]
         ego_mu, ego_sd = (ego[2], ego[3]) if len(ego) > 3 else (None, None)   # only for --dump-ssl
@@ -1093,6 +1112,17 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
         if len(b) == 0:
             z0 = zw.sum() * 0.0
             return z0, 0.0, float('nan')
+        if jepa:                                           # predict the TARGET embedding, not the input
+            with torch.no_grad():
+                tgt.ssl_mask = torch.zeros_like(M)         # the target encoder sees the window unmasked
+                tgt.encode(g, rt, st)
+                ht = tgt._ha.detach()
+                tgt.ssl_mask = None
+            bk = M.any(2).nonzero(as_tuple=True)           # one prediction per masked agent
+            pat = (M[bk[0], bk[1]].float() @ mask_emb) / seg
+            ph = pred_j(torch.cat([ha[bk[0], bk[1]], pat], -1))
+            loss_j = nn.functional.smooth_l1_loss(ph, ht[bk[0], bk[1]])
+            return loss_j, float(loss_j), float(ht[M.any(2)].std())
         pred = dec(torch.cat([ha[b, k], zw[b], step_emb[t]], -1))
         loss = ((pred - AG[b, k, t, :5]) ** 2).mean()
         if ego is None:
@@ -1147,6 +1177,10 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
                 opt.zero_grad(); n_skip += 1
                 continue
             opt.step()
+            if jepa:                                       # EMA update of the target encoder
+                with torch.no_grad():
+                    for q, o in zip(tgt.parameters(), m.parameters()):
+                        q.data.mul_(ema).add_(o.data, alpha=1.0 - ema)
             tl += float(loss); nb += 1
         m.eval(); dec.eval()
         if ego is not None:
@@ -1398,10 +1432,12 @@ def run_b2d(a, tag):
                 ep_b, vl_b, tr_b, eg_b, sk_b = ssl_pretrain(torch, nn, m, g, st, W, np.where(trn)[0], dev, a.seed * 100 + draw, guard.rows,
                                           max_epochs=a.ssl_max_epochs, mask_frac=a.ssl_mask, seg=a.ssl_seg,
                                           ego=(Xd, Md_, mu, sd) if (a.ssl_ego or a.ssl_ego_ctx) else None, ego_ctx=a.ssl_ego_ctx,
-                                          dump=(a.dump_ssl.replace('.npz', f'_draw{draw}.npz') if a.dump_ssl else None))
+                                          dump=(a.dump_ssl.replace('.npz', f'_draw{draw}.npz') if a.dump_ssl else None),
+                                          jepa=a.ssl_jepa)
                 ssl_log.append((draw, stg.no, ep_b, vl_b, tr_b, eg_b, sk_b))
                 print(f'  [b2d draw {draw}] s{stg.no} track-SSL init: best epoch {ep_b} inner-val recon {vl_b:.4f} '
-                      f'(track {tr_b:.4f}' + (f', ego {eg_b:+.4f} vs the trivial predictor' if (a.ssl_ego or a.ssl_ego_ctx) else '')
+                      f'({"latent" if a.ssl_jepa else "track"} {tr_b:.4f}'
+                      + (f', target std {eg_b:.3f}' if a.ssl_jepa else f', ego {eg_b:+.4f} vs the trivial predictor' if (a.ssl_ego or a.ssl_ego_ctx) else '')
                       + f'){"" if sk_b == 0 else f", {sk_b} non-finite batches skipped"}', flush=True)
             ls = torch.tensor(-0.5, device=dev, requires_grad=True)
             opt = torch.optim.AdamW(list(m.parameters()) + [ls], lr=1e-3, weight_decay=0.1)
@@ -1778,7 +1814,7 @@ def arm_tag(a, tag):
     if a.fuse_window:
         tag = f'{tag}_fusewin_' + ''.join(t[0] for t in a.fuse_tokens.split(','))      # vt / vs / vts
     if a.ssl:
-        tag = f'{tag}_ssl' + ('egoctx' if a.ssl_ego_ctx else 'ego' if a.ssl_ego else '') + ('dump' if a.dump_ssl else '') + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
+        tag = f'{tag}_ssl' + ('jepa' if a.ssl_jepa else 'egoctx' if a.ssl_ego_ctx else 'ego' if a.ssl_ego else '') + ('dump' if a.dump_ssl else '') + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
     uses_visual = bool(a.visual or a.visual_window or a.fuse_window)
     if uses_visual and a.visual_tokens != 'cls':
         tag = f'{tag}_cp'
@@ -1845,6 +1881,7 @@ def main():
     ap.add_argument('--ssl', action='store_true', help='track-SSL initialisation (masked agent-track reconstruction on the training routes, epoch by inner validation) before the IRT loss; tag _ssl')
     ap.add_argument('--ssl-ego-ctx', action='store_true', help='with --ssl: the ego pretext with a real temporal context head (a hidden step reads its neighbours through a discarded 1-layer Transformer) instead of the pooled-vector head (tag _sslegoctx)')
     ap.add_argument('--ssl-ego', action='store_true', help='with --ssl: also mask and reconstruct the route-level ego steps, so the ego branch phi is pre-trained too (tag _sslego)')
+    ap.add_argument('--ssl-jepa', action='store_true', help='with --ssl: the joint-embedding predictive objective (EMA target encoder + predictor, latent targets) instead of input reconstruction (tag _ssljepa)')
     ap.add_argument('--ssl-max-epochs', type=int, default=120)
     ap.add_argument('--dump-ssl', default=None, help='with --ssl: save the inner-validation curve and one batch of masked-cell reconstructions per draw (visualisation only; tag <tag>_ssldump)')
     ap.add_argument('--ssl-mask', type=float, default=0.3, help='share of live agents masked per window')
