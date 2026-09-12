@@ -1337,11 +1337,15 @@ Night routes fail slightly LESS often than day routes (.478 against .491) and
 rain routes slightly more (.501 against .476). A 5-fold cross-validated ridge on
 all nine weather channels predicts the calibrated difficulty at rho -.123 (R^2
 -.008, worse than the mean), and appending them to the 25-d kinematics
-descriptor changes nothing (rho +.596 both ways). Difficulty on this benchmark
-is carried by the scenario and the interaction, not by the conditions the
-cameras see, which is also the most likely reason the frozen DINOv3 features sit
-at the null: what dominates those images is exactly the weather and lighting
-that carry no difficulty here.
+descriptor changes nothing (rho +.596 both ways). What this establishes is
+narrow: in these analyses, per-channel monotone association and a
+cross-validated LINEAR fit, the recorded conditions carry no usable difficulty
+signal. An interaction with the scenario type or the planner, or a non-linear
+effect, is not excluded by it. The conclusion drawn here is only that a weather
+or adverse-condition token is low on the list of inputs worth adding. (An
+earlier revision also offered the weather as the reason the frozen camera
+features sit at the null. There is no evidence for that link and it is
+withdrawn.)
 
 ### Initialisation control — track-SSL pre-training of the encoder of record (`--ssl`)
 
@@ -1371,26 +1375,42 @@ variant (`--ssl-ego-ctx`) gives the ego pretext its own head instead of reusing
 the agent-side recipe: phi still runs per step, but a hidden step is read from a
 discarded 1-layer bidirectional Transformer in which it attends to the KEPT
 steps only, so the target comes from its neighbours' phi features rather than
-from a pooled route vector. That head does make the pretext work better (it
-beats the channel mean by .23-.25 of the variance in every run, and the
-selected epochs move from 55 to 27-60) and the encoder it initialises is the
-WORST of the three (rho -.038 +- .026 paired). Solving the pretext better does
-not transfer: predicting a step from its neighbours is a local-dynamics task,
-and the difficulty likelihood does not ask for that representation.
+from a pooled route vector. That head does make the pretext
+work better (it beats the channel mean by .23-.25 of the variance in every run,
+against .12-.24 for the pooled head) and the encoder it initialises is the
+lowest of the three on rho (-.038 +- .026 paired). Pretext quality and
+downstream quality are separate questions and nothing here establishes a causal
+link between them; what the pair of results does show is that a better
+reconstruction of local dynamics did not produce a better difficulty prior.
 
 The fourth variant changes the objective rather than the head: `--ssl-jepa` is
-the joint-embedding predictive objective (LeCun 2022; I-JEPA, Assran et al.
-CVPR 2023) in place of reconstruction. A target copy of the encoder, updated
+a JEPA-style objective (LeCun 2022;
+I-JEPA, Assran et al. CVPR 2023) adapted to this encoder, in place of
+reconstruction. It is not I-JEPA: that paper predicts several target BLOCKS of
+an image from one context block and treats the masking design as the core of the
+method; what is borrowed here is the EMA target encoder and the latent target. A target copy of the encoder, updated
 only as an exponential moving average (momentum .996, no gradient), encodes the
 UNMASKED window; the online encoder sees the masked one; a discarded predictor
 maps the online agent embedding, plus an embedding of which steps were hidden,
 to the target's embedding of the same agent; the loss is the smooth L1 between
 them. Nothing in the input space is reconstructed, so the objective cannot
-spend capacity on unpredictable coordinates. It does not collapse (the
-across-agent standard deviation of the target embeddings stays at 1.03 in every
-draw of every seed, against 1.0 at initialisation) and it trains to the epoch
-cap (mean selected epoch 100), and it is still no better: MAE_FR .188 +- .003
+spend capacity on unpredictable coordinates. It trains to the epoch cap (mean
+selected epoch 100) and is still no better: MAE_FR .188 +- .003
 and rho +.525 +- .014, paired +.007 and -.019 against the record.
+Whether the representation collapses is NOT settled by the quantity that was
+logged during those runs: it pooled the agent axis and the channel axis, and
+after a LayerNorm such a number stays near 1 even if every input produced the
+same vector. The corrected diagnostics on a fixed validation sample, at
+initialisation and at the selected checkpoint, are in
+`results/figs/ssl_jepa_collapse.txt`. On a fixed validation sample of 2,971
+agent embeddings, from initialisation to the selected epoch the across-sample
+standard deviation rises .596 -> .692, the total variance 24.7 -> 32.7, the mean
+pairwise cosine of the uncentred embeddings falls +.613 -> +.542 and the
+effective rank rises 7.1 -> 8.2 (ceiling min(64, n - 1)). Nothing moves toward
+collapse. The effective rank is low in absolute terms already at initialisation,
+so that is a property of this encoder at this width rather than an effect of the
+objective. This is one draw of one seed and a diagnostic, not a check of every
+run.
 
 | initialisation | AUROC | scene-MAE | rho | paired delta vs record (3 runs) |
 |---|---|---|---|---|
@@ -1400,10 +1420,15 @@ and rho +.525 +- .014, paired +.007 and -.019 against the record.
 | track + ego SSL, context ego head | .755 +- .003 | .187 +- .002 | +.507 +- .008 | AUROC -.006 +- .004, MAE +.007 +- .005, rho -.038 +- .026 |
 | JEPA (latent targets, EMA teacher) | .754 +- .002 | .188 +- .003 | +.525 +- .014 | AUROC -.007 +- .006, MAE +.007 +- .009, rho -.019 +- .038 |
 
-No gain from any of the four: the SSL-initialised encoder is inside the seed spread on
-scene-MAE and slightly below the record on AUROC in every run, and adding the
-ego half moves nothing (it only shortens the selected epoch, 55 on average
-against 77 for the track-only pretext). Its paired delta (-.006 +- .003)
+What these four say, stated at the width the evidence supports: with the
+record's training recipe left exactly as it is, none of the tried SSL
+initialisations improved the encoder. The fine-tuning was not re-tuned for a
+pre-trained start (same optimiser, same 1e-3, same 30 epochs), so this is a
+statement about these initialisations under this recipe, not about
+self-supervision on this data in general. The SSL-initialised encoder is inside
+the seed spread on scene-MAE and slightly below the record on AUROC in every
+run; adding the ego half moves nothing and shortens the selected epoch (55 on
+average against 77 for the track-only pretext). Its paired delta (-.006 +- .003)
 sits between the null control of this table (removing the ego-speed channel,
 +.001 +- .004) and a change we do call harmful (keeping the lane graph,
 -.010 +- .006), and at three seeds it is not separable from either: the honest
@@ -1931,6 +1956,50 @@ is ATDrive's, so it moves with the encoder too); the naive arm is encoder-free
 .758 / .767 at B = 110 (.757 +- .010) against the common prior's .709 / .707 /
 .706 (+- .001). Run s0, the one in the paper, is the lowest of the three on
 AUROC and in the middle on SR-MAE.
+
+**Does the difficulty-matching term reach the extended SR estimate?**
+(`experiments/compare_match_extended.py`, `results/ups_full_match_enc{0,1,2}/`)
+The matching term lowers the intermediate metric on Y_C (MAE_FR .181 -> .177,
+three runs of three). Whether that reaches the estimate is a separate question,
+so the whole extended evaluation was repeated with the matching-term encoder,
+three encoder runs, the same 64 evaluations. The comparison is of the complete
+evaluation including selection: the canonical probe order is chosen with the
+scene prior, so the encoder changes which routes are executed as well as how the
+estimate is read. Before comparing, three things are checked: the two runs carry
+the same 64 (draw, planner) evaluations without duplicates; the truth each is
+scored against (n_C, n_T, SR_full, SR_C, SR_T) is identical; and the six
+(policy, readout) combinations that read no encoder quantity agree to the last
+bit. Which combinations those are was MEASURED, not assumed: under the canonical
+policy even the naive readout moves with the encoder (by up to .09 between the
+record's own three runs), because the probe order decides which outcomes are
+observed. The per-evaluation error difference is averaged over the three encoder
+runs first (they share the same evaluations and are not three independent
+tests), then bootstrapped over the evaluation planners.
+
+| quantity | B | record | + matching | paired delta [95%] | per-run deltas |
+|---|---|---|---|---|---|
+| extended benchmark SR-MAE | 30 | .0453 | .0456 | +.0003 [-.0003, +.0009] | -.0005 +.0004 +.0010 |
+| | 55 | .0299 | .0302 | +.0002 [-.0008, +.0013] | +.0001 +.0009 -.0002 |
+| | 110 | .0199 | .0197 | -.0003 [-.0008, +.0004] | -.0013 +.0007 -.0001 |
+| new-route block SR-MAE | 30 | .0907 | .0881 | -.0026 [-.0065, +.0016] | -.0038 -.0002 -.0039 |
+| | 55 | .0922 | .0895 | -.0027 [-.0064, +.0017] | -.0012 -.0010 -.0058 |
+| | 110 | .0940 | .0907 | -.0033 [-.0072, +.0010] | -.0009 -.0032 -.0059 |
+
+Reading. On the extended benchmark there is no clear evidence of a difference in
+either direction: the intervals contain zero and the per-run deltas change sign.
+On the new-route block alone the direction is consistent, all nine per-run
+deltas are negative and the point estimate improves by .003 at every budget, but
+every interval still contains zero, so this is a signal worth keeping rather
+than an established improvement. The two readings are compatible: the new routes
+are 40 of the 220 in the extended benchmark, so .0033 on that block is about
+.0006 on the full one, which is the size of the noise there. The comparison
+neither establishes that the Y_C gain propagates nor rules out a small gain
+confined to the new routes. Caveat on the coefficient: lambda = 0.1 was chosen
+between {0.1, 1} after seeing the US result, so this arm is exploratory; adopting
+it would require selecting lambda inside the training block (and, since the
+target is generalisation to unseen scenario types, by a type-level inner split
+rather than a route-level one) and re-evaluating the whole procedure.
+
 
 What the scene encoder buys (+ = the scene prior is worse; paired
 planner-cluster bootstrap):

@@ -1,0 +1,18 @@
+JEPA pre-training, collapse diagnostics of the TARGET embeddings
+draw 0, seed 0, r2_graph.py --ablate-lane --draws 1 --ssl --ssl-jepa; a FIXED validation sample (the same
+windows and the same live agents) evaluated at initialisation and at the selected epoch.
+Function: experiments/embedding_diagnostics.py (verified on identical / zero / rank-one / random inputs).
+
+  [ssl-jepa] collapse diagnostics of the target embeddings on a fixed validation sample
+    at initialisation      n  2971  across-sample std 0.5961  total var   24.748  mean pairwise cos +0.6130  effective rank   7.11 / 64
+    at the selected epoch  n  2971  across-sample std 0.6917  total var   32.749  mean pairwise cos +0.5419  effective rank   8.15 / 64
+  [b2d draw 0] s1 track-SSL init: best epoch 107 inner-val recon 0.0033 (latent 0.0033, target std 1.034)
+
+Reading: nothing moves toward collapse. The across-sample variance rises (24.7 -> 32.7), the mean
+pairwise cosine of the uncentred embeddings falls (+.613 -> +.542) and the effective rank rises
+(7.1 -> 8.2 of a ceiling of 64). The effective rank is low in absolute terms BEFORE any pre-training,
+so that is a property of this encoder at this width, not an effect of the objective. One draw of one
+seed: a diagnostic, not a check of every run.
+
+The quantity logged during the three scored runs ('target std 1.03') pooled the sample axis and the
+channel axis and cannot separate these cases; it is not evidence either way.

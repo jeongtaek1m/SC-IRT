@@ -90,8 +90,9 @@ DEV = os.environ.get('ATDRIVE_DEVICE', 'cpu')
 BP = (30, 55, 110)
 TMAX = max(BP)
 K_CAL = 12
-ENC_RUN = int(os.environ.get('ATDRIVE_ENC_RUN', 0))   # RelGraph R2-noLane run s0 (canonical); ATDRIVE_ENC_RUN=1,2 for the across-run SD
-ENC_NPZ = DATA / 'encoder' / f'relgraph_r2nolane_s{ENC_RUN}.npz'
+ENC_RUN = int(os.environ.get('ATDRIVE_ENC_RUN', 0))   # RelGraph R2-noLane run s0 (canonical); 1, 2 for the across-run SD
+ENC_ARM = os.environ.get('ATDRIVE_ENC_ARM', '')      # '' = the encoder of record; '_match0.1' = its difficulty-matching arm
+ENC_NPZ = DATA / 'encoder' / f'relgraph_r2nolane{ENC_ARM}_s{ENC_RUN}.npz'
 POL = ('Random', 'Delta-R1 on D', 'Delta-R1 on D (scene-free)', 'Delta-R1 on full I')
 CANP = 'Delta-R1 on D'                          # the probe rule of record (run_ups.py)
 ARM = ('naive', 'calC + priorT(marg)', 'calC + priorT(const)', 'calC + sceneT',
@@ -299,10 +300,16 @@ def main():
         f'{enc_id()}, found {seen}. Delete the stale shards / merged json and recompute '
         '(--seeds lo hi, then --merge).')
     E, ET, AU = report(recs)
+    # checks that must hold for EVERY encoder, before any anchor: the evaluation set itself
     assert len(recs) == 64, len(recs)
+    keys = [(r['seed'], r['js']) for r in recs]
+    assert len(set(keys)) == 64, f'duplicate or missing (draw, planner): {len(set(keys))} unique of {len(keys)}'
+    assert sorted({k[0] for k in keys}) == list(range(R_DRAWS)), 'not every draw is present'
+    json.dump({f"{r['seed']}|{r['js']}": [r['nC'], r['nT'], r['SR_full'], r['SR_C'], r['SR_T']] for r in recs},
+              open(OUT / 'ups_full_truth.json', 'w'))   # compared across encoders by the comparison script
     JS = [r['js'] for r in sorted(recs, key=lambda r: (r['seed'], r['js']))]
-    if ENC_RUN != 0:                                # the anchors are pinned on run s0; other runs report, not assert
-        print(f'encoder run s{ENC_RUN}: anchors skipped (pinned on s0)'); return
+    if ENC_RUN != 0 or ENC_ARM:                     # the anchors are pinned on the record run s0
+        print(f'encoder {ENC_NPZ.name}: checks passed, anchors skipped (pinned on the record run s0)'); return
     for (p, a, B, ref) in ANCHORS_T:                # these reproduce Table 3B (results/ups.json)
         assert abs(np.mean(ET(p, B, a)) - ref) < .003, (p, a, B, np.mean(ET(p, B, a)))
     for (p, a, B, ref) in ANCHORS_FULL:

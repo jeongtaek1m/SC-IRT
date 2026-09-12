@@ -162,6 +162,8 @@ RG = '/data2/jeongtae/relgraph_e16sel'
 sys.path.insert(0, RG)
 import r0_ego                                     # reference harness — splits, gold, recipe
 from visual_window import build_visual_window, load_window_visual, check_feature_cache, build_window_fusion   # window arms (2026-09-12)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'experiments'))
+from embedding_diagnostics import embedding_diagnostics   # collapse check of the JEPA targets
 import b2d_earlystop as es                        # the ONE B2D checkpoint-selection rule
 
 # ── frozen channel symbols (KEYS.md). NEVER a numeric index. ──────────────────
@@ -1067,6 +1069,19 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
         pred_j = nn.Sequential(nn.Linear(d + 16, 128), nn.SiLU(), nn.Linear(128, d)).to(dev)
         mask_emb = nn.Parameter(torch.zeros(T, 16, device=dev))
         nn.init.normal_(mask_emb, std=0.02)
+
+        def jepa_diag():
+            """Collapse diagnostics of the TARGET embeddings on a FIXED validation sample (the same windows and
+            the same agents at initialisation and at the selected checkpoint)."""
+            rows_d = check_rows(np.concatenate([W[i] for i in va[:bs]]), 'jepa collapse diagnostic')
+            rt_d = torch.tensor(rows_d, device=dev)
+            with torch.no_grad():
+                tgt.ssl_mask = torch.zeros((len(rows_d), g.agent_mask.shape[1], T), dtype=torch.bool, device=dev)
+                tgt.encode(g, rt_d, st)
+                H = tgt._ha.detach()
+                tgt.ssl_mask = None
+            live_d = g.agent_mask[rt_d].any(2)
+            return embedding_diagnostics(H[live_d].float().cpu().numpy())
     dec = nn.Sequential(nn.Linear(2 * d + 16, 128), nn.SiLU(), nn.Linear(128, 5)).to(dev)
     step_emb = nn.Parameter(torch.zeros(T, 16, device=dev))
     nn.init.normal_(step_emb, std=0.02)
@@ -1156,6 +1171,7 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
         triv = (Xd_[sel][r, t2, :5] ** 2).mean()                        # predicting 0 on standardised targets
         return loss + loss_e, float(loss), float(loss_e) - float(triv)  # the ego term RELATIVE to that trivial value
 
+    diag0 = jepa_diag() if jepa else None                  # before any pre-training step
     best = (float('inf'), None, -1, float('nan'), float('nan'))
     bad = n_skip = 0
     for ep in range(max_epochs):
@@ -1210,6 +1226,16 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     else:
         m.load_state_dict(best[1])
     m.ssl_mask = None
+    if jepa:                                               # same fixed sample, selected weights; the EMA target
+        with torch.no_grad():                              # is re-synced to the restored online encoder first
+            for q, o in zip(tgt.parameters(), m.parameters()):
+                q.data.copy_(o.data)
+        d1 = jepa_diag()
+        print('  [ssl-jepa] collapse diagnostics of the target embeddings on a fixed validation sample', flush=True)
+        for lab, dd in (('at initialisation', diag0), ('at the selected epoch', d1)):
+            print(f"    {lab:22s} n {dd['n']:5d}  across-sample std {dd['across_sample_std']:.4f}  "
+                  f"total var {dd['total_variance']:8.3f}  mean pairwise cos {dd['mean_pairwise_cosine']:+.4f}  "
+                  f"effective rank {dd['effective_rank']:6.2f} / {dd['max_possible_rank']}", flush=True)
     if dump is not None:                                   # --dump-ssl: the curve and one batch of reconstructions
         m.eval(); dec.eval()
         if ego is not None:
