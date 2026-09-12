@@ -1329,19 +1329,63 @@ the epoch is chosen by the reconstruction loss on an inner 10% validation split
 of the training routes (max 120, patience 6; chosen epochs 41-118, mean 77),
 then the
 same 30-epoch IRT recipe as the record with the same seeds and batch order. The
-only difference from the record is therefore the initialisation.
+only difference from the record is therefore the initialisation. A second
+variant (`--ssl-ego`) adds the ego half of the pretext, the only way to reach
+the route-level ego branch: the same share of the route's 2-Hz steps is hidden
+in 4-step segments, phi runs over the masked sequence, and the hidden steps'
+[v, a, yaw rate, |a|, |yaw rate|] are reconstructed from the pooled route
+vector plus a step embedding and the normalised position. That half is weak by
+construction (the ego branch is a per-step MLP with order-invariant pooling, so
+a hidden step has no context path): it beats predicting the channel mean by
+only .19-.24 of the variance, against .90-.95 for the agent-track half.
 
 | initialisation | AUROC | scene-MAE | rho | paired delta vs record (3 runs) |
 |---|---|---|---|---|
 | random (record) | .761 +- .006 | .181 +- .007 | +.545 +- .024 | — |
 | track-SSL | .756 +- .009 | .183 +- .009 | +.528 +- .036 | AUROC -.006 +- .003 (3 of 3 lower), MAE +.002 +- .002, rho -.017 +- .013 (2 of 3 lower) |
+| track + ego SSL | .755 +- .003 | .185 +- .004 | +.523 +- .006 | AUROC -.007 +- .007, MAE +.004 +- .006, rho -.022 +- .030 |
 
-No gain: the SSL-initialised encoder is inside the seed spread on scene-MAE and
-slightly below the record on AUROC in every run. On 180 training routes the
-reconstruction pretext does not find a representation the response likelihood
-would not find itself. Together with the block below it closes the question for
-this bank: neither frozen foundation features nor self-supervised initialisation
-of the track encoder improves on training it on the responses.
+No gain from either: the SSL-initialised encoder is inside the seed spread on
+scene-MAE and slightly below the record on AUROC in every run, and adding the
+ego half moves nothing (it only shortens the selected epoch, 55 on average
+against 77 for the track-only pretext). Its paired delta (-.006 +- .003)
+sits between the null control of this table (removing the ego-speed channel,
++.001 +- .004) and a change we do call harmful (keeping the lane graph,
+-.010 +- .006), and at three seeds it is not separable from either: the honest
+statement is no gain, not harm.
+
+The same two arms with the difficulty-matching term (lambda = 0.1, the IRT point
+difficulty b_hat of the same fit added to the encoder loss) show where the one
+reproducible gain of this whole section comes from:
+
+| arm | AUROC | scene-MAE | rho | paired delta vs record |
+|---|---|---|---|---|
+| matching term .1 | .763 +- .007 | .177 +- .008 | +.540 +- .032 | AUROC +.001 +- .001, MAE -.004 +- .001 (3 of 3), rho -.005 +- .009 |
+| track-SSL + matching .1 | .761 +- .007 | .176 +- .008 | +.537 +- .031 | AUROC -.001 +- .001, MAE -.005 +- .001 (3 of 3), rho -.008 +- .007 |
+
+Adding the matching term on top of the SSL initialisation restores the AUROC the
+SSL arm lost and gives the lowest scene-MAE measured on this bank (.176 against
+the record's .181), but the gain is the matching term's (it is the same -.004 to
+-.005 with or without SSL) and no arm improves the ranking metrics. UPS repeats
+the reading: with the SSL prior the block-D SR-MAE is within noise of the record
+(paired +.0027 / +.0014 / +.0043 at B = 30 / 55 / 110, every interval containing
+zero) and the per-cell NLL is .009 WORSE (.6062 / .6040 / .6070 against .5974 /
+.5963 / .5985), the only control prior of Table 3B that is worse there, with
+twice the across-run SD (`results/ups_ssl.json`, `ATDRIVE_UPS_ARMS=',_ssl'`).
+
+Two numerical safeguards were needed and are in the code: a route whose every
+valid step falls inside the masked segments leaves the soft-minimum pool with an
+empty set (+inf), so at least one step per route is always kept; and a batch
+whose loss or gradient is not finite is skipped instead of being clipped, since
+`clip_grad_norm_` scales every gradient by a NaN total norm and one such batch
+destroys the pre-trained weights. Before the second guard, 1 draw in 16 of two
+seeds ended with no improved epoch and fell back to the random initialisation;
+the numbers above are from runs where this never happens (0 warnings, 1-3
+skipped batches per draw, selected epochs 43-61).
+
+Together with the block below it closes the question for this bank: neither
+frozen foundation features nor self-supervised initialisation of the track
+encoder improves on training it on the responses.
 
 ### Foundation-model encoder ablation — frozen DINOv3 / SMART features with a light head (`run_us.py` control block)
 

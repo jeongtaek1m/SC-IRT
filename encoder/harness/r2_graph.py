@@ -1015,7 +1015,7 @@ def build_r2(torch, nn, d=64, tau=0.5, heads=4, visual_dim=0, visual_only=False,
 
 
 def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_epochs=120, patience=6,
-                 mask_frac=0.3, seg=4, bs=64):
+                 mask_frac=0.3, seg=4, bs=64, ego=None):
     """Track SSL initialisation of the encoder (2026-09-12, user's design): on the stage's TRAINING routes only,
     hide a contiguous segment of `seg` steps of a random `mask_frac` of the live agents (>= 8 valid steps) of every
     window, encode the window with those cells masked, and reconstruct the hidden cells' standardised
@@ -1026,8 +1026,15 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     gradient and keep their initial weights (the inert lane-side modules receive zero gradients and only
     the optimiser's decoupled weight decay, which cannot change any output). The epoch is chosen by the
     reconstruction loss on an
-    inner validation split (10% of the training routes, by route), max `max_epochs`, `patience`; the decoder is
-    discarded. Returns (best epoch, best inner-val loss)."""
+    inner validation split (10% of the training routes, by route), max `max_epochs`, `patience`; the decoders are
+    discarded. Returns (best epoch, best inner-val loss).
+
+    `ego` = (Xd, Md_) adds the EGO half of the pretext (--ssl-ego), the only way to reach the route-level ego
+    branch `phi`: the same `mask_frac` of the route's valid 2-Hz steps are hidden in contiguous `seg`-step
+    segments, phi runs over the masked sequence, the route vector z_ego = Pool[phi(x)] is taken over the kept
+    steps only, and the hidden steps' standardised [v, a, yaw rate, |a|, |yaw rate|] are reconstructed from
+    [z_ego ; a learned step embedding ; the step's normalised position t / L] by a second decoder. The two
+    losses (both MSE on standardised channels) are added with weight 1."""
     import copy
     rng = np.random.default_rng(seed)
     perm = rng.permutation(np.asarray(tr_routes))
@@ -1038,7 +1045,15 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
     dec = nn.Sequential(nn.Linear(2 * d + 16, 128), nn.SiLU(), nn.Linear(128, 5)).to(dev)
     step_emb = nn.Parameter(torch.zeros(T, 16, device=dev))
     nn.init.normal_(step_emb, std=0.02)
-    opt = torch.optim.AdamW(list(m.parameters()) + list(dec.parameters()) + [step_emb], lr=1e-3, weight_decay=0.1)
+    extra = [step_emb]
+    if ego is not None:                                    # --ssl-ego: the route-level ego half of the pretext
+        Xd_, Md__ = ego
+        L = Xd_.shape[1]
+        dec_e = nn.Sequential(nn.Linear(4 * d + 17, 128), nn.SiLU(), nn.Linear(128, 5)).to(dev)
+        step_emb_e = nn.Parameter(torch.zeros(L, 16, device=dev))
+        nn.init.normal_(step_emb_e, std=0.02)
+        extra += list(dec_e.parameters()) + [step_emb_e]
+    opt = torch.optim.AdamW(list(m.parameters()) + list(dec.parameters()) + extra, lr=1e-3, weight_decay=0.1)
     gen = torch.Generator(device=dev)
 
     def batch_loss(route_ids, g_seed):
@@ -1059,31 +1074,79 @@ def ssl_pretrain(torch, nn, m, g, st, W, tr_routes, dev, seed, check_rows, max_e
         AG = (g.agents[rt].float() - st['ag'][0]) / st['ag'][1]
         b, k, t = M.nonzero(as_tuple=True)
         if len(b) == 0:
-            return zw.sum() * 0.0
+            z0 = zw.sum() * 0.0
+            return z0, 0.0, float('nan')
         pred = dec(torch.cat([ha[b, k], zw[b], step_emb[t]], -1))
-        return ((pred - AG[b, k, t, :5]) ** 2).mean()
+        loss = ((pred - AG[b, k, t, :5]) ** 2).mean()
+        if ego is None:
+            return loss, float(loss), float('nan')
+        sel = torch.tensor(np.asarray(route_ids), device=dev)          # the ego half, same routes, same generator
+        xm = Md__[sel]
+        nR = xm.shape[0]
+        pick_e = xm & (torch.rand(nR, L, device=dev, generator=gen) < mask_frac / seg)
+        off = torch.arange(seg, device=dev)
+        idx_e = (pick_e.nonzero()[:, 1][:, None] + off[None, :]).clamp(max=L - 1)
+        rows_e = pick_e.nonzero()[:, 0][:, None].expand(-1, seg)
+        Me = torch.zeros_like(xm)
+        Me[rows_e.reshape(-1), idx_e.reshape(-1)] = True
+        Me = Me & xm
+        keep = (xm & ~Me).any(1)                                        # a route must keep at least one step:
+        Me = Me & keep[:, None]                                         # otherwise the pooled z_ego is +inf
+        if not bool(Me.any()):
+            return loss, float(loss), float('nan')
+        x_in = Xd_[sel] * (~Me)[..., None]                              # hidden steps zeroed and dropped from the pool
+        z_ego = dist_pool(torch, m.phi(x_in), xm & ~Me, m.tau)
+        r, t2 = Me.nonzero(as_tuple=True)
+        pos = (t2.float() / max(L - 1, 1))[:, None]
+        pred_e = dec_e(torch.cat([z_ego[r], step_emb_e[t2], pos], -1))
+        loss_e = ((pred_e - Xd_[sel][r, t2, :5]) ** 2).mean()
+        triv = (Xd_[sel][r, t2, :5] ** 2).mean()                        # predicting 0 on standardised targets
+        return loss + loss_e, float(loss), float(loss_e) - float(triv)  # the ego term RELATIVE to that trivial value
 
-    best = (float('inf'), None, -1)
-    bad = 0
+    best = (float('inf'), None, -1, float('nan'), float('nan'))
+    bad = n_skip = 0
     for ep in range(max_epochs):
         m.train(); dec.train()
+        if ego is not None:
+            dec_e.train()
         order = rng.permutation(tr)
         for i0 in range(0, len(order), bs):
-            loss = batch_loss(order[i0:i0 + bs], seed * 1000 + ep * 10 + i0)
+            loss, _, _ = batch_loss(order[i0:i0 + bs], seed * 1000 + ep * 10 + i0)
+            if not bool(torch.isfinite(loss)):            # a degenerate mask draw: skip, never poison the weights
+                n_skip += 1
+                continue
             opt.zero_grad(); loss.backward()
-            nn.utils.clip_grad_norm_(list(m.parameters()) + list(dec.parameters()), 1.0); opt.step()
+            gn = nn.utils.clip_grad_norm_(list(m.parameters()) + list(dec.parameters()) + extra, 1.0)
+            if not bool(torch.isfinite(gn)):              # non-finite gradient: never let it reach the weights
+                opt.zero_grad(); n_skip += 1
+                continue
+            opt.step()
         m.eval(); dec.eval()
+        if ego is not None:
+            dec_e.eval()
         with torch.no_grad():
-            vl = float(np.mean([float(batch_loss(va[i0:i0 + bs], 777 + i0)) for i0 in range(0, len(va), bs)]))
+            parts = [batch_loss(va[i0:i0 + bs], 777 + i0) for i0 in range(0, len(va), bs)]
+            fin = [x for x in parts if np.isfinite(float(x[0]))]
+            if not fin:
+                bad += 1
+                if bad >= patience:
+                    break
+                continue
+            vl = float(np.mean([float(x[0]) for x in fin]))
+            vtr = float(np.mean([x[1] for x in fin]))
+            veg = float(np.nanmean([x[2] for x in fin])) if any(np.isfinite(x[2]) for x in fin) else float('nan')
         if vl < best[0] - 1e-4:
-            best, bad = (vl, copy.deepcopy(m.state_dict()), ep), 0
+            best, bad = (vl, copy.deepcopy(m.state_dict()), ep, vtr, veg), 0
         else:
             bad += 1
             if bad >= patience:
                 break
-    m.load_state_dict(best[1])
+    if best[1] is None:                                                # no epoch improved (non-finite losses):
+        print('  [ssl] WARNING: no epoch improved, keeping the initial weights', flush=True)
+    else:
+        m.load_state_dict(best[1])
     m.ssl_mask = None
-    return best[2], best[0]
+    return best[2], best[0], best[3], best[4], n_skip
 
 
 # ── B2D ──────────────────────────────────────────────────────────────────────
@@ -1241,18 +1304,21 @@ def run_b2d(a, tag):
             if draw == 0 and stg.no == 1:
                 print(f'[b2d] {tag} params {sum(p.numel() for p in m.parameters()):,}',
                       flush=True)
+            Xd = torch.tensor(Xn, device=dev); Md_ = torch.tensor(MK, device=dev)   # (moved above --ssl: the ego pretext reads them)
             if a.ssl:                                     # --ssl: track-SSL initialisation, then the SAME IRT recipe below
-                ep_b, vl_b = ssl_pretrain(torch, nn, m, g, st, W, np.where(trn)[0], dev, a.seed * 100 + draw, guard.rows,
-                                          max_epochs=a.ssl_max_epochs, mask_frac=a.ssl_mask, seg=a.ssl_seg)
-                ssl_log.append((draw, stg.no, ep_b, vl_b))
-                print(f'  [b2d draw {draw}] s{stg.no} track-SSL init: best epoch {ep_b} inner-val recon {vl_b:.4f}', flush=True)
+                ep_b, vl_b, tr_b, eg_b, sk_b = ssl_pretrain(torch, nn, m, g, st, W, np.where(trn)[0], dev, a.seed * 100 + draw, guard.rows,
+                                          max_epochs=a.ssl_max_epochs, mask_frac=a.ssl_mask, seg=a.ssl_seg,
+                                          ego=(Xd, Md_) if a.ssl_ego else None)
+                ssl_log.append((draw, stg.no, ep_b, vl_b, tr_b, eg_b, sk_b))
+                print(f'  [b2d draw {draw}] s{stg.no} track-SSL init: best epoch {ep_b} inner-val recon {vl_b:.4f} '
+                      f'(track {tr_b:.4f}' + (f', ego {eg_b:+.4f} vs the trivial predictor' if a.ssl_ego else '')
+                      + f'){"" if sk_b == 0 else f", {sk_b} non-finite batches skipped"}', flush=True)
             ls = torch.tensor(-0.5, device=dev, requires_grad=True)
             opt = torch.optim.AdamW(list(m.parameters()) + [ls], lr=1e-3, weight_decay=0.1)
             THE = torch.tensor(th_f, dtype=torch.float32, device=dev)
             Yk = es.erase_heldout(Y[keepJ], te) if a.early_stop else Y[keepJ]
             Yd = torch.tensor(np.nan_to_num(Yk), dtype=torch.float32, device=dev)
             Md = torch.tensor((~np.isnan(Yk)).astype(np.float32), device=dev)
-            Xd = torch.tensor(Xn, device=dev); Md_ = torch.tensor(MK, device=dev)
             idx = guard.routes(np.where(trn)[0], f'{stg.name} train columns')
             iv_c = guard.routes(np.where(stg.iv)[0], f'{stg.name} inner-val columns')
             if a.early_stop:
@@ -1622,7 +1688,7 @@ def arm_tag(a, tag):
     if a.fuse_window:
         tag = f'{tag}_fusewin_' + ''.join(t[0] for t in a.fuse_tokens.split(','))      # vt / vs / vts
     if a.ssl:
-        tag = f'{tag}_ssl' + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
+        tag = f'{tag}_ssl' + ('ego' if a.ssl_ego else '') + ('' if (a.ssl_mask, a.ssl_seg, a.ssl_max_epochs) == (0.3, 4, 120) else f'm{a.ssl_mask:g}s{a.ssl_seg}e{a.ssl_max_epochs}')
     uses_visual = bool(a.visual or a.visual_window or a.fuse_window)
     if uses_visual and a.visual_tokens != 'cls':
         tag = f'{tag}_cp'
@@ -1687,6 +1753,7 @@ def main():
                          'windows -> head (encoder/harness/visual_window.py). Tag <tag>_viswin.')
     ap.add_argument('--viswin-dim', type=int, default=128)
     ap.add_argument('--ssl', action='store_true', help='track-SSL initialisation (masked agent-track reconstruction on the training routes, epoch by inner validation) before the IRT loss; tag _ssl')
+    ap.add_argument('--ssl-ego', action='store_true', help='with --ssl: also mask and reconstruct the route-level ego steps, so the ego branch phi is pre-trained too (tag _sslego)')
     ap.add_argument('--ssl-max-epochs', type=int, default=120)
     ap.add_argument('--ssl-mask', type=float, default=0.3, help='share of live agents masked per window')
     ap.add_argument('--ssl-seg', type=int, default=4, help='masked segment length in 2-Hz steps')

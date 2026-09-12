@@ -23,6 +23,8 @@ Delta-R1 probe rule:
              (relgraph_r2nolane_nospeed_s*.npz) -> results/ups_nospeed.json,
              a clean speed ablation OF THE ENCODER OF RECORD: it differs from
              the canonical prior in the speed channel and nothing else;
+  _ssl       the encoder of record with the track-SSL initialisation of the
+             initialisation control (relgraph_r2nolane_ssl_s*.npz) -> results/ups_ssl.json;
   _match0.1, _match1  the encoder of record trained with the difficulty-matching
              term of the ablation arm (--match of the training code;
              relgraph_r2nolane_match{0.1,1}_s*.npz) -> results/ups_match0.1.json,
@@ -71,7 +73,13 @@ ENC = {'': ('RelGraph R2-noLane (encoder of record)', 'relgraph_r2nolane'),
        '_lane': ('R2 with the lane graph (control)', 'relgraph_r2'),
        '_nospeed': ('R2-noLane, ego speed removed (control)', 'relgraph_r2nolane_nospeed'),
        '_match0.1': ('R2-noLane + matching term, lambda .1 (ablation arm)', 'relgraph_r2nolane_match0.1'),
-       '_match1': ('R2-noLane + matching term, lambda 1 (ablation arm)', 'relgraph_r2nolane_match1')}
+       '_match1': ('R2-noLane + matching term, lambda 1 (ablation arm)', 'relgraph_r2nolane_match1'),
+       '_ssl': ('R2-noLane, track-SSL initialisation (initialisation control)', 'relgraph_r2nolane_ssl')}
+ARMS = os.environ.get('ATDRIVE_UPS_ARMS')                  # e.g. ',_ssl' runs only the record and the SSL prior
+if ARMS is not None:
+    keep = ARMS.split(',')
+    ENC = {k: v for k, v in ENC.items() if k in keep}
+    assert '' in ENC, 'the encoder of record must stay in the run (it is the paired reference)'
 
 
 def main():
